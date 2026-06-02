@@ -87,3 +87,25 @@ class OrchestratorConfig(BaseModel):
     routing_rules: list[RoutingRule]
     collaboration_patterns: dict = {}
     description: str = ""
+
+
+# --- API Response Models ---
+
+class ConversationResponse(BaseModel):
+    id: str
+    title: str
+    status: str
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class MessageResponse(BaseModel):
+    id: str
+    conversation_id: str
+    from_agent: str
+    to_agent: str
+    message_type: str
+    priority: str
+    content: str
+    thread_id: str
+    created_at: str | None = None

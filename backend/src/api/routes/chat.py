@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.database import get_db
 
 router = APIRouter(tags=["chat"])
 
@@ -20,7 +23,11 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(request: Request, body: ChatRequest):
+async def chat(
+    request: Request,
+    body: ChatRequest,
+    session: AsyncSession = Depends(get_db),
+):
     engine = request.app.state.engine
     if not engine:
         return ChatResponse(
@@ -34,5 +41,6 @@ async def chat(request: Request, body: ChatRequest):
         user_message=body.message,
         conversation_id=body.conversation_id,
         target_agent=body.target_agent,
+        session=session,
     )
     return ChatResponse(**result)

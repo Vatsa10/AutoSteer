@@ -1,35 +1,61 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.database import get_db
+from src.engine.schemas import ConversationResponse, MessageResponse
+from src.models.conversation import Conversation
+from src.models.message import Message
 
 router = APIRouter(tags=["conversations"])
 
 
 @router.get("/conversations")
-async def list_conversations(request: Request):
-    """List all conversations. Returns from in-memory store or empty if DB not configured."""
-    engine = request.app.state.engine
-    if not engine:
-        return []
-
-    # Return conversations from in-memory store if the engine tracks them
-    conversations = getattr(engine, "_conversations", {})
+async def list_conversations(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    """List all conversations from DB, newest first."""
+    result = await session.execute(
+        select(Conversation).order_by(Conversation.updated_at.desc())
+    )
+    conversations = result.scalars().all()
     return [
-        {
-            "id": conv_id,
-            "title": conv.get("title", "Untitled"),
-            "status": conv.get("status", "active"),
-            "created_at": conv.get("created_at", ""),
-            "updated_at": conv.get("updated_at", ""),
-        }
-        for conv_id, conv in conversations.items()
+        ConversationResponse(
+            id=c.id,
+            title=c.title,
+            status=c.status,
+            created_at=c.created_at.isoformat() if c.created_at else None,
+            updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        )
+        for c in conversations
     ]
 
 
 @router.get("/conversations/{conversation_id}/messages")
-async def get_conversation_messages(conversation_id: str, request: Request):
-    """Get messages for a specific conversation."""
-    engine = request.app.state.engine
-    if not engine:
-        return []
-
-    messages = getattr(engine, "_messages", {}).get(conversation_id, [])
-    return messages
+async def get_conversation_messages(
+    conversation_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    """Get messages for a specific conversation, oldest first."""
+    result = await session.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
+    )
+    messages = result.scalars().all()
+    return [
+        MessageResponse(
+            id=m.id,
+            conversation_id=m.conversation_id,
+            from_agent=m.from_agent,
+            to_agent=m.to_agent,
+            message_type=m.message_type.value if hasattr(m.message_type, "value") else str(m.message_type),
+            priority=m.priority.value if hasattr(m.priority, "value") else str(m.priority),
+            content=m.content,
+            thread_id=m.thread_id,
+            created_at=m.created_at.isoformat() if m.created_at else None,
+        )
+        for m in messages
+    ]

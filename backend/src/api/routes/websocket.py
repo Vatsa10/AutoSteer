@@ -2,6 +2,8 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from src.database import get_session_factory
+
 router = APIRouter()
 
 
@@ -27,6 +29,7 @@ manager = ConnectionManager()
 @router.websocket("/ws/chat")
 async def websocket_chat(websocket: WebSocket):
     await manager.connect(websocket)
+    factory = get_session_factory()
     try:
         while True:
             data = await websocket.receive_text()
@@ -36,10 +39,12 @@ async def websocket_chat(websocket: WebSocket):
 
             engine = websocket.app.state.engine
             if engine:
-                result = await engine.process_message(
-                    user_message=message,
-                    conversation_id=conversation_id,
-                )
+                async with factory() as session:
+                    result = await engine.process_message(
+                        user_message=message,
+                        conversation_id=conversation_id,
+                        session=session,
+                    )
                 await websocket.send_json(result)
             else:
                 await websocket.send_json({"error": "Engine not initialized"})

@@ -5,30 +5,54 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import agents, chat, conversations, websocket
 from src.config import get_settings
+from src.database import get_engine, init_db
 from src.engine.llm import LLMProvider
 from src.engine.orchestrator import OrchestrationEngine
+from src.messaging.bus import MessageBus
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: initialize engine
+    # Startup: initialize DB, MessageBus, LLM, and Engine
     settings = get_settings()
+
+    # 1. Initialize database (create tables)
+    try:
+        await init_db()
+        app.state.db_initialized = True
+    except Exception as e:
+        print(f"Warning: Database initialization failed: {e}")
+        app.state.db_initialized = False
+
+    # 2. Initialize MessageBus (Redis)
+    message_bus = MessageBus(redis_url=settings.redis_url)
+    app.state.message_bus = message_bus
+
+    # 3. Initialize LLM Provider
     llm = LLMProvider(
         default_model=settings.default_llm_model,
         anthropic_api_key=settings.anthropic_api_key,
         openai_api_key=settings.openai_api_key,
     )
+
+    # 4. Initialize Orchestration Engine
     try:
         engine = OrchestrationEngine(
             definitions_dir="src/agents/definitions",
             llm=llm,
+            message_bus=message_bus,
         )
     except Exception as e:
         print(f"Warning: Engine initialization failed: {e}")
         engine = None
     app.state.engine = engine
+
     yield
+
     # Shutdown
+    await message_bus.close()
+    sql_engine = get_engine()
+    await sql_engine.dispose()
 
 
 def create_app() -> FastAPI:

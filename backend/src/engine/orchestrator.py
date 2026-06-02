@@ -2,13 +2,18 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.engine.agent_runtime import AgentRuntime
-from src.engine.llm import LLMProvider, LLMResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.engine.agent_runtime import AgentResult, AgentRuntime
+from src.engine.llm import LLMMessage, LLMProvider, LLMResponse
 from src.engine.loader import AgentLoader, LoadedAgent
 from src.engine.router import OrchestratorRouter, RoutingResult
 from src.engine.schemas import OrchestratorConfig, RoutingRule
+from src.engine.workflow_executor import WorkflowExecutor
 from src.messaging.bus import MessageBus
 from src.messaging.schemas import AgentMessage, MessageType, Priority
+from src.models.conversation import Conversation
+from src.models.message import Message as MessageModel
 
 
 class OrchestrationEngine:
@@ -26,10 +31,6 @@ class OrchestrationEngine:
         self.loaded_agents = self.loader.load_all_agents()
         self.orchestrator_configs = self.loader.load_all_orchestrators()
         self.master_config = self.loader.load_master_orchestrator()
-
-        # In-memory conversation tracking (for MVP, no DB required)
-        self._conversations: dict[str, dict] = {}
-        self._messages: dict[str, list[dict]] = {}
 
         # Build agent runtimes indexed by role
         self.agents: dict[str, AgentRuntime] = {}
@@ -70,14 +71,135 @@ class OrchestrationEngine:
         else:
             self.master_router = OrchestratorRouter(routing_rules=[])
 
+        # Build workflow executor (after department routers are populated)
+        self.workflow_executor = WorkflowExecutor(
+            agents=self.agents,
+            llm=self.llm,
+            department_routers=self.department_routers,
+            department_agents=self.department_agents,
+            orchestrator_to_dept=self._orchestrator_to_dept,
+            dept_to_dir=self._dept_to_dir,
+        )
+
     def _normalize_department(self, name: str) -> str:
         return name.lower().replace(" & ", "_").replace(" ", "_")
+
+    async def _llm_classify_department(self, user_message: str) -> str | None:
+        """Fallback: use LLM to classify which department handles this request."""
+        dept_lines = []
+        if self.master_config and "routing_rules" in self.master_config:
+            for rule_dict in self.master_config["routing_rules"]:
+                rule = RoutingRule(**rule_dict)
+                dept_lines.append(f"- {rule.target}: keywords matching {rule.pattern}")
+        else:
+            for config in self.orchestrator_configs:
+                dept_normalized = self._normalize_department(config.department)
+                keywords = "; ".join(r.pattern for r in config.routing_rules)
+                dept_lines.append(f"- {dept_normalized}: {keywords}")
+
+        dept_list = "\n".join(dept_lines)
+
+        prompt = f"""You are an intent classification system. Given a user request, identify which department should handle it.
+
+Available departments:
+{dept_list}
+
+Respond with a JSON object on a single line:
+{{"department": "<department_name>"}}
+
+If you cannot determine the department, respond with:
+{{"department": null}}
+
+User request: {user_message}"""
+
+        try:
+            llm_response = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=prompt)],
+                system_prompt="Classify the user request into the appropriate department.",
+                temperature=0.0,
+                max_tokens=200,
+            )
+            import json as _json
+            data = _json.loads(llm_response.content)
+            dept = data.get("department")
+            if dept:
+                # Try exact match first
+                if dept in self.department_routers:
+                    return dept
+                # Try normalized match
+                normalized = self._normalize_department(dept)
+                if normalized in self.department_routers:
+                    return normalized
+            return None
+        except Exception:
+            return None
+
+    async def _llm_classify_agent(self, user_message: str, dept_key: str) -> str | None:
+        """Fallback: use LLM to classify which agent in a department handles this."""
+        dept_router = self.department_routers.get(dept_key)
+        if not dept_router:
+            return None
+
+        agent_lines = []
+        for rule in dept_router.routing_rules:
+            agent_lines.append(f"- {rule.target}: keywords matching {rule.pattern}")
+        agent_list = "\n".join(agent_lines)
+
+        prompt = f"""You are an intent classification system. Given a user request, identify which agent in the {dept_key} department should handle it.
+
+Available agents:
+{agent_list}
+
+Respond with a JSON object on a single line:
+{{"agent": "<agent_role>"}}
+
+If you cannot determine the agent, respond with:
+{{"agent": null}}
+
+User request: {user_message}"""
+
+        try:
+            llm_response = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=prompt)],
+                system_prompt=f"Classify the user request into the appropriate agent in the {dept_key} department.",
+                temperature=0.0,
+                max_tokens=200,
+            )
+            import json as _json
+            data = _json.loads(llm_response.content)
+            agent = data.get("agent")
+            if agent and agent in self.agents:
+                return agent
+            return None
+        except Exception:
+            return None
+
+    def _detect_workflow_trigger(
+        self, user_message: str, workflows: dict
+    ) -> dict | None:
+        """Detect if a user message triggers a multi-department workflow."""
+        trigger_map = {
+            "product_launch": ["launch", "product launch", "go to market", "ship product"],
+            "incident_response": ["incident", "outage", "security breach", "p0", "emergency"],
+            "quarterly_planning": ["quarterly planning", "quarterly review", "Q1", "Q2", "Q3", "Q4"],
+            "new_hire_onboarding": ["onboard", "new hire", "new employee", "joining"],
+            "fundraise": ["fundraise", "funding round", "series a", "series b", "investor", "raise capital"],
+        }
+        user_lower = user_message.lower()
+        for wf_name, triggers in trigger_map.items():
+            for trigger in triggers:
+                if trigger in user_lower:
+                    wf_def = workflows.get(wf_name)
+                    if wf_def:
+                        return {"name": wf_name, "def": wf_def}
+        return None
 
     async def process_message(
         self,
         user_message: str,
         conversation_id: str | None = None,
         target_agent: str | None = None,
+        session: AsyncSession | None = None,
     ) -> dict:
         conversation_id = conversation_id or str(uuid.uuid4())
 
@@ -96,31 +218,68 @@ class OrchestrationEngine:
             # Step 1: Master orchestrator routes to department
             dept_result = self.master_router.route(user_message)
             if not dept_result:
-                return {
-                    "conversation_id": conversation_id,
-                    "response": "I'm not sure which department can help with that. Could you clarify your request?",
-                    "routed_to": None,
-                    "agent": None,
-                }
+                # LLM fallback for department classification
+                dept_name = await self._llm_classify_department(user_message)
+                if dept_name:
+                    dept_result = RoutingResult(
+                        target=dept_name, confidence=0.6, matched_pattern="llm_fallback"
+                    )
+                else:
+                    return {
+                        "conversation_id": conversation_id,
+                        "response": "I'm not sure which department can help with that. Could you clarify your request?",
+                        "routed_to": None,
+                        "agent": None,
+                    }
             department = dept_result.target
+
+            # Check for multi-department workflow trigger
+            if getattr(self, "master_config", None) and "multi_department_workflows" in self.master_config:
+                triggered = self._detect_workflow_trigger(
+                    user_message, self.master_config["multi_department_workflows"]
+                )
+                if triggered and getattr(self, "workflow_executor", None):
+                    workflow_result = await self.workflow_executor.execute_workflow(
+                        workflow_name=triggered["name"],
+                        workflow_def=triggered["def"],
+                        user_message=user_message,
+                        conversation_id=conversation_id,
+                        session=session,
+                    )
+                    return {
+                        "conversation_id": conversation_id,
+                        "response": workflow_result.get("summary", ""),
+                        "routed_to": None,
+                        "agent": None,
+                        "workflow": workflow_result,
+                    }
 
             # Step 2: Department orchestrator routes to agent
             # Resolve master target (e.g. "sales_orchestrator") to normalized dept key
             target_normalized = department.replace("_", "")
-            dept_key = self._orchestrator_to_dept.get(target_normalized, department)
-            department = self._dept_to_dir.get(dept_key, dept_key)
+            _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
+            _dept_to_dir = getattr(self, "_dept_to_dir", {})
+            dept_key = _orch_to_dept.get(target_normalized, department)
+            department = _dept_to_dir.get(dept_key, dept_key)
             dept_router = self.department_routers.get(dept_key) or self.department_routers.get(department)
             agent_result = None
             if dept_router:
                 agent_result = dept_router.route(user_message)
 
             if not agent_result:
-                return {
-                    "conversation_id": conversation_id,
-                    "response": f"Routed to {department} department, but no specific agent matched. Please provide more details.",
-                    "routed_to": department,
-                    "agent": None,
-                }
+                # LLM fallback for agent classification
+                agent_role_llm = await self._llm_classify_agent(user_message, dept_key)
+                if agent_role_llm:
+                    agent_result = RoutingResult(
+                        target=agent_role_llm, confidence=0.6, matched_pattern="llm_fallback"
+                    )
+                else:
+                    return {
+                        "conversation_id": conversation_id,
+                        "response": f"Routed to {department} department, but no specific agent matched. Please provide more details.",
+                        "routed_to": department,
+                        "agent": None,
+                    }
             agent_role = agent_result.target
 
         # Step 3: Agent processes the message
@@ -135,44 +294,158 @@ class OrchestrationEngine:
 
         response = await agent_runtime.process(user_message)
 
-        # Track conversation in memory
-        now = datetime.now(timezone.utc).isoformat()
-        if conversation_id not in self._conversations:
-            self._conversations[conversation_id] = {
-                "title": user_message[:120],
-                "status": "active",
-                "created_at": now,
-                "updated_at": now,
-            }
+        # HANDOFF: Check if agent requested a handoff to another agent
+        handoff_agent = None
+        if response.handoff:
+            handoff = response.handoff
+            target_runtime = self.agents.get(handoff.target_agent)
+            if target_runtime:
+                handoff_agent = handoff.target_agent
+
+                # Publish HANDOFF message on the bus
+                if self.message_bus:
+                    handoff_msg = AgentMessage(
+                        id=str(uuid.uuid4()),
+                        from_agent=agent_role,
+                        to_agent=handoff.target_agent,
+                        message_type=MessageType.HANDOFF,
+                        priority=Priority.P1,
+                        content=f"Handoff from {agent_role}: {handoff.reason}",
+                        payload={
+                            "context_summary": handoff.context_summary,
+                            "current_state": handoff.current_state,
+                            "expected_outcome": handoff.expected_outcome,
+                        },
+                        thread_id=conversation_id,
+                    )
+                    await self.message_bus.publish(
+                        f"agent:{handoff.target_agent}", handoff_msg
+                    )
+
+                # Build handoff prompt for target agent
+                handoff_prompt = (
+                    f"[HANDOFF from {agent_role}]\n"
+                    f"Reason: {handoff.reason}\n"
+                    f"Context: {handoff.context_summary}\n"
+                    f"Current state: {handoff.current_state}\n"
+                    f"Expected outcome: {handoff.expected_outcome}\n\n"
+                    f"Continue based on this context and provide your response."
+                )
+                target_response = await target_runtime.process(handoff_prompt)
+
+                # Persist handoff message
+                if session is not None:
+                    session.add(MessageModel(
+                        id=str(uuid.uuid4()),
+                        conversation_id=conversation_id,
+                        from_agent=agent_role,
+                        to_agent=handoff.target_agent,
+                        message_type=MessageType.HANDOFF,
+                        priority=Priority.P1,
+                        content=f"Handoff from {agent_role}: {handoff.reason}",
+                        payload={
+                            "context_summary": handoff.context_summary,
+                            "current_state": handoff.current_state,
+                            "expected_outcome": handoff.expected_outcome,
+                        },
+                        thread_id=conversation_id,
+                        created_at=datetime.now(timezone.utc),
+                    ))
+
+                # Target agent's response becomes the final response
+                response = target_response
+                agent_role = handoff.target_agent
+
+        now = datetime.now(timezone.utc)
+
+        # Persist conversation and messages
+        if session is not None:
+            from sqlalchemy import select as sa_select
+
+            result = await session.execute(
+                sa_select(Conversation).where(Conversation.id == conversation_id)
+            )
+            conv = result.scalar_one_or_none()
+
+            if conv is None:
+                conv = Conversation(
+                    id=conversation_id,
+                    title=user_message[:500],
+                    status="active",
+                    created_at=now,
+                    updated_at=now,
+                )
+                session.add(conv)
+            else:
+                conv.updated_at = now
+
+            # Save user message
+            session.add(MessageModel(
+                id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                from_agent="user",
+                to_agent=agent_role or "unknown",
+                message_type=MessageType.REQUEST,
+                priority=Priority.P2,
+                content=user_message,
+                thread_id=conversation_id,
+                created_at=now,
+            ))
+
+            # Save agent response
+            session.add(MessageModel(
+                id=str(uuid.uuid4()),
+                conversation_id=conversation_id,
+                from_agent=agent_role or "unknown",
+                to_agent="user",
+                message_type=MessageType.RESPONSE,
+                priority=Priority.P2,
+                content=response.content,
+                thread_id=conversation_id,
+                created_at=now,
+            ))
+
+            await session.commit()
         else:
-            self._conversations[conversation_id]["updated_at"] = now
-
-        # Save messages in memory
-        if conversation_id not in self._messages:
-            self._messages[conversation_id] = []
-
-        self._messages[conversation_id].append({
-            "id": str(uuid.uuid4()),
-            "conversation_id": conversation_id,
-            "from_agent": "user",
-            "to_agent": agent_role,
-            "message_type": "request",
-            "priority": "P2",
-            "content": user_message,
-            "thread_id": conversation_id,
-            "created_at": now,
-        })
-        self._messages[conversation_id].append({
-            "id": str(uuid.uuid4()),
-            "conversation_id": conversation_id,
-            "from_agent": agent_role,
-            "to_agent": "user",
-            "message_type": "response",
-            "priority": "P2",
-            "content": response.content,
-            "thread_id": conversation_id,
-            "created_at": now,
-        })
+            # Fallback: in-memory tracking for backward compat
+            now_str = now.isoformat()
+            if not hasattr(self, "_conversations"):
+                self._conversations: dict[str, dict] = {}
+            if not hasattr(self, "_messages"):
+                self._messages: dict[str, list[dict]] = {}
+            if conversation_id not in self._conversations:
+                self._conversations[conversation_id] = {
+                    "title": user_message[:120],
+                    "status": "active",
+                    "created_at": now_str,
+                    "updated_at": now_str,
+                }
+            else:
+                self._conversations[conversation_id]["updated_at"] = now_str
+            if conversation_id not in self._messages:
+                self._messages[conversation_id] = []
+            self._messages[conversation_id].append({
+                "id": str(uuid.uuid4()),
+                "conversation_id": conversation_id,
+                "from_agent": "user",
+                "to_agent": agent_role,
+                "message_type": "request",
+                "priority": "P2",
+                "content": user_message,
+                "thread_id": conversation_id,
+                "created_at": now_str,
+            })
+            self._messages[conversation_id].append({
+                "id": str(uuid.uuid4()),
+                "conversation_id": conversation_id,
+                "from_agent": agent_role,
+                "to_agent": "user",
+                "message_type": "response",
+                "priority": "P2",
+                "content": response.content,
+                "thread_id": conversation_id,
+                "created_at": now_str,
+            })
 
         # Publish to message bus if available
         if self.message_bus:
