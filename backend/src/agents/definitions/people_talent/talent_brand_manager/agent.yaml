@@ -1,0 +1,35 @@
+name: TalentBrandManagerAgent
+role: talent_brand_manager
+tools:
+  - cms: Careers page management
+  - social_media: LinkedIn, Twitter/X employer brand
+  - video_editor: Employee spotlight videos
+  - review_platform: Glassdoor management
+  - design_tools: Create employer brand assets
+  - analytics: Track employer brand metrics
+  - survey_tool: Employee brand perception
+
+tasks:
+  evp_development:
+    description: >
+      Define or refine the employer value proposition. Research what makes
+      the company unique and compelling to target talent.
+    inputs: [employee_feedback, market_research, competitive_analysis, company_values]
+    outputs: [evp_document, messaging_framework, pillar_definitions]
+    sla: 2_weeks
+
+  culture_content:
+    description: >
+      Create content showcasing company culture — employee spotlights,
+      team stories, behind-the-scenes, and life at the company.
+    inputs: [content_theme, employees, format_preference]
+    outputs: [content_pieces, distribution_plan, employee_quotes]
+    sla: weekly
+
+  careers_page:
+    description: >
+      Design and maintain the careers page. Ensure it reflects current
+      culture, open roles, and the EVP.
+    inputs: [evp, open_roles, employee_stories, brand_guidelines]
+    outputs: [careers_page_content, visual_assets, job_descriptions]
+    sla: monthly_updates

@@ -1,0 +1,52 @@
+name: CustomerSuccessManagerAgent
+role: customer_success_manager
+tools:
+  - crm: Salesforce/HubSpot account management
+  - cs_platform: Gainsight/Vitally/ChurnZero
+  - health_scorer: Calculate and track customer health
+  - product_analytics: Track customer product usage
+  - email_platform: Customer communication
+  - project_tracker: Manage onboarding projects
+  - presentation_builder: QBR decks
+  - feedback_collector: NPS/CSAT surveys
+
+tasks:
+  customer_onboarding:
+    description: >
+      Design and execute customer onboarding plan. Define milestones,
+      configure product, train users, and track time-to-value.
+    inputs: [customer_profile, contract_scope, technical_requirements, success_criteria]
+    outputs: [onboarding_plan, milestone_tracker, training_materials, configuration_doc]
+    sla: varies_by_tier
+
+  health_monitoring:
+    description: >
+      Monitor customer health using product usage, support tickets, engagement,
+      and business metrics. Identify at-risk accounts and intervene.
+    inputs: [health_metrics, usage_data, support_history, engagement_data]
+    outputs: [health_report, risk_assessment, intervention_plan]
+    sla: weekly
+
+  qbr_preparation:
+    description: >
+      Prepare and deliver quarterly business reviews showing value delivered,
+      usage trends, and future recommendations.
+    inputs: [customer_data, usage_metrics, goals, product_roadmap]
+    outputs: [qbr_deck, talking_points, action_items, expansion_opportunities]
+    sla: quarterly
+
+  renewal_management:
+    description: >
+      Manage the renewal process. Assess risk, prepare value justification,
+      coordinate with sales, and close renewals.
+    inputs: [renewal_date, contract_terms, customer_health, expansion_opportunities]
+    outputs: [renewal_strategy, value_summary, risk_mitigation, forecast_update]
+    sla: 90_days_before_renewal
+
+  expansion_identification:
+    description: >
+      Identify and pursue expansion opportunities based on usage patterns,
+      customer growth, and product fit.
+    inputs: [usage_data, customer_org_structure, product_capabilities, pricing]
+    outputs: [expansion_opportunities, business_case, approach_plan]
+    sla: ongoing

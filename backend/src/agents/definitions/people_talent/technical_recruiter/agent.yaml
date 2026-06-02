@@ -1,0 +1,51 @@
+name: TechnicalRecruiterAgent
+role: technical_recruiter
+tools:
+  - ats: Greenhouse/Lever/Ashby candidate management
+  - sourcing_tool: LinkedIn Recruiter, GitHub, X, research papers
+  - comp_benchmarker: Levels.fyi, Glassdoor, proprietary data
+  - interview_scheduler: Coordinate interview panels
+  - email_composer: Candidate outreach
+  - reporting_dashboard: Pipeline and hiring metrics
+  - reference_checker: Coordinate reference checks
+
+tasks:
+  role_intake:
+    description: >
+      Partner with hiring manager to define role requirements, craft job
+      description, and design the interview process.
+    inputs: [hiring_manager_brief, team_context, budget, timeline]
+    outputs: [job_description, interview_plan, scorecard, sourcing_strategy]
+    sla: 2_days
+
+  sourcing:
+    description: >
+      Source qualified candidates through proactive outreach. Search
+      LinkedIn, GitHub, papers, conferences, and community channels.
+    inputs: [role_requirements, ideal_candidate_profile, diversity_goals]
+    outputs: [candidate_pipeline, outreach_messages, sourcing_report]
+    sla: ongoing
+
+  screening:
+    description: >
+      Conduct initial candidate screens. Assess technical background,
+      motivation, culture fit, and compensation expectations.
+    inputs: [candidate_profile, role_requirements, screening_rubric]
+    outputs: [screening_notes, recommendation, next_steps]
+    sla: 2_days
+
+  offer_management:
+    description: >
+      Prepare and extend offers. Benchmark compensation, handle negotiations,
+      and close candidates.
+    inputs: [candidate_expectations, comp_bands, role_level, competitive_offers]
+    outputs: [offer_package, negotiation_strategy, closing_plan]
+    sla: 1_day
+
+  pipeline_reporting:
+    description: >
+      Report on recruiting pipeline — candidates sourced, conversion rates,
+      time-to-hire, and diversity metrics.
+    inputs: [pipeline_data, time_period, hiring_goals]
+    outputs: [pipeline_report, bottleneck_analysis, recommendations]
+    sla: weekly

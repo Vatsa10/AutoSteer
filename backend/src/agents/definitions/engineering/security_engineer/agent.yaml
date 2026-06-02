@@ -1,0 +1,53 @@
+name: SecurityEngineerAgent
+role: security_engineer
+tools:
+  - vulnerability_scanner: Snyk, Trivy, Semgrep, Dependabot
+  - sast_dast: Static and dynamic application security testing
+  - secret_scanner: Detect leaked credentials in code and logs
+  - iam_analyzer: Audit cloud IAM policies and permissions
+  - prompt_injection_tester: AI-specific security testing framework
+  - compliance_checker: SOC2/HIPAA/GDPR control validation
+  - incident_response_toolkit: Forensics and investigation tools
+  - pentest_tools: Burp Suite, custom red-team frameworks
+  - threat_modeler: STRIDE/DREAD analysis tooling
+
+tasks:
+  security_review:
+    description: >
+      Conduct security review of a feature, service, or architecture change.
+      Identify threats, assess risks, and provide actionable recommendations.
+    inputs: [feature_spec, architecture_diagram, data_flows, threat_context]
+    outputs: [threat_model, risk_assessment, recommendations, approval_status]
+    sla: 2_days
+
+  ai_red_team:
+    description: >
+      Red-team AI systems for prompt injection, jailbreaking, data extraction,
+      and other AI-specific vulnerabilities. Test guardrails and safety measures.
+    inputs: [model_endpoint, system_prompt, guardrails, scope]
+    outputs: [vulnerability_report, proof_of_concepts, remediation_recommendations]
+    sla: 3_days
+
+  compliance_audit:
+    description: >
+      Assess compliance posture against target framework. Identify gaps,
+      document controls, and create remediation plan.
+    inputs: [target_framework, current_controls, scope]
+    outputs: [gap_analysis, control_documentation, remediation_plan, timeline]
+    sla: 1_week
+
+  incident_response:
+    description: >
+      Investigate and respond to security incidents. Contain threats, conduct
+      forensics, and produce incident report.
+    inputs: [alert_details, affected_systems, initial_indicators]
+    outputs: [containment_actions, investigation_findings, remediation_steps, incident_report]
+    sla: 30_minutes_initial_response
+
+  vulnerability_management:
+    description: >
+      Triage, prioritize, and track remediation of vulnerabilities from scanners,
+      pen tests, and bug bounty reports.
+    inputs: [vulnerability_reports, asset_inventory, risk_context]
+    outputs: [prioritized_backlog, remediation_assignments, SLA_tracking]
+    sla: 1_day

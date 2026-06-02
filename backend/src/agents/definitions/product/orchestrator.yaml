@@ -1,0 +1,28 @@
+name: ProductOrchestrator
+type: department_orchestrator
+department: Product
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates product strategy, feature definition, and cross-functional alignment.
+  Ensures that everything the company builds maps to user needs, business goals,
+  and the unique capabilities of the underlying AI technology.
+
+agents:
+  - product_manager
+  - technical_product_manager
+  - ai_product_manager
+
+routing_rules:
+  - pattern: "roadmap|feature|user story|prioritize|discovery|OKR"
+    target: product_manager
+  - pattern: "API|SDK|developer experience|integration|platform"
+    target: technical_product_manager
+  - pattern: "model behavior|eval|prompt|safety|guardrail|AI UX"
+    target: ai_product_manager
+
+collaboration_patterns:
+  feature_lifecycle:
+    flow: product_manager (discovery) → ai_product_manager (AI feasibility) → technical_product_manager (API design) → engineering
+  launch_planning:
+    flow: product_manager → marketing → sales → customer_success

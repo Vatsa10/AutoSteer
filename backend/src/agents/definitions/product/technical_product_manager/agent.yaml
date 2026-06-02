@@ -1,0 +1,44 @@
+name: TechnicalProductManagerAgent
+role: technical_product_manager
+tools:
+  - api_designer: OpenAPI spec editor and validator
+  - docs_platform: Mintlify/ReadMe/Docusaurus management
+  - developer_analytics: Track API usage, error rates, adoption
+  - sdk_builder: Generate and test client SDKs
+  - changelog_manager: Version and publish changelogs
+  - developer_feedback: Aggregate feedback from GitHub, Discord, support
+  - rate_limit_config: Configure and monitor rate limits
+  - usage_metering: Track API consumption and billing
+
+tasks:
+  api_design:
+    description: >
+      Design new API endpoints or evolve existing ones. Produce OpenAPI spec,
+      design request/response schemas, define error handling, and plan migration.
+    inputs: [feature_requirements, existing_api, developer_feedback, constraints]
+    outputs: [api_spec, migration_guide, breaking_change_assessment, documentation]
+    sla: 2_days
+
+  documentation:
+    description: >
+      Create or update developer documentation. Write quickstarts, tutorials,
+      API reference, and conceptual guides.
+    inputs: [feature_spec, api_endpoints, target_developer_persona]
+    outputs: [documentation, code_examples, quickstart_guide]
+    sla: 3_days
+
+  developer_experience_audit:
+    description: >
+      Audit the end-to-end developer experience. Measure time-to-first-API-call,
+      identify friction points, and propose improvements.
+    inputs: [developer_journey, analytics_data, support_tickets]
+    outputs: [dx_audit_report, friction_map, improvement_roadmap]
+    sla: 1_week
+
+  sdk_planning:
+    description: >
+      Plan SDK features, language support, and release strategy. Define
+      abstraction levels and convenience methods.
+    inputs: [api_surface, language_priorities, developer_feedback]
+    outputs: [sdk_roadmap, design_guidelines, test_plan]
+    sla: 3_days

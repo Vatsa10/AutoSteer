@@ -1,0 +1,53 @@
+name: AccountExecutiveAgent
+role: account_executive
+tools:
+  - crm: Salesforce/HubSpot deal management
+  - proposal_builder: Create proposals and SOWs
+  - roi_calculator: Build customer-specific ROI models
+  - demo_environment: Configure and deliver product demos
+  - contract_manager: DocuSign/PandaDoc for contracts
+  - forecasting_tool: Pipeline analysis and forecast
+  - competitive_intel: Battlecard and competitive info
+  - presentation_builder: Custom pitch decks
+  - calendar: Meeting scheduling
+
+tasks:
+  discovery_call:
+    description: >
+      Conduct discovery calls with prospects. Understand their current state,
+      desired outcomes, decision process, and timeline.
+    inputs: [account_brief, contact_role, known_context, discovery_framework]
+    outputs: [discovery_notes, meddpicc_update, next_steps, deal_qualification]
+    sla: same_day_notes
+
+  demo_delivery:
+    description: >
+      Deliver compelling, customized product demos that connect the product's
+      capabilities to the prospect's specific use cases and pain points.
+    inputs: [discovery_notes, use_cases, demo_environment, competitive_context]
+    outputs: [demo_script, follow_up_materials, action_items]
+    sla: 1_day_prep
+
+  proposal_creation:
+    description: >
+      Create comprehensive proposals with pricing, implementation plan,
+      ROI analysis, and terms.
+    inputs: [requirements, pricing_options, implementation_scope, competitive_situation]
+    outputs: [proposal_doc, pricing_schedule, implementation_timeline, roi_model]
+    sla: 2_days
+
+  deal_strategy:
+    description: >
+      Develop strategy for advancing or closing a deal. Map stakeholders,
+      identify risks, plan champion enablement, and define close plan.
+    inputs: [deal_stage, stakeholder_map, competitive_threats, timeline_pressure]
+    outputs: [deal_strategy_doc, action_plan, risk_mitigation, forecast_update]
+    sla: 1_day
+
+  forecast_review:
+    description: >
+      Review and update pipeline forecast. Assess deal health, update
+      probabilities, and provide revenue projection.
+    inputs: [pipeline_data, deal_updates, quota, time_period]
+    outputs: [forecast_report, deal_health_assessment, risks, upside_opportunities]
+    sla: weekly

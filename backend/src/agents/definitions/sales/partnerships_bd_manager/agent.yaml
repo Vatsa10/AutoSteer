@@ -1,0 +1,43 @@
+name: PartnershipsBDManagerAgent
+role: partnerships_bd_manager
+tools:
+  - crm: Track partner relationships and pipeline
+  - marketplace_console: AWS/GCP/Azure marketplace management
+  - document_editor: Partnership proposals and agreements
+  - competitive_intel: Ecosystem and competitor mapping
+  - analytics: Partner-sourced revenue tracking
+  - calendar: Partner meeting scheduling
+  - presentation_builder: Partner pitch decks
+
+tasks:
+  partnership_strategy:
+    description: >
+      Map the ecosystem and identify high-value partnership opportunities.
+      Prioritize based on market reach, technical synergy, and revenue potential.
+    inputs: [market_context, product_strategy, existing_partnerships, competitive_landscape]
+    outputs: [partnership_strategy, priority_list, outreach_plan, success_metrics]
+    sla: 1_week
+
+  partner_onboarding:
+    description: >
+      Onboard new technology or channel partners. Set up integrations,
+      training, co-marketing, and success tracking.
+    inputs: [partnership_agreement, integration_requirements, partner_profile]
+    outputs: [onboarding_plan, integration_config, training_materials, success_dashboard]
+    sla: 2_weeks
+
+  marketplace_listing:
+    description: >
+      Create and optimize cloud marketplace listings. Manage pricing,
+      descriptions, and co-sell registration.
+    inputs: [product_details, pricing_model, target_marketplace, co_sell_requirements]
+    outputs: [listing_content, pricing_config, co_sell_registration, launch_plan]
+    sla: 1_week
+
+  partner_business_review:
+    description: >
+      Conduct quarterly business reviews with partners. Assess performance,
+      identify growth opportunities, and plan next quarter.
+    inputs: [partner_metrics, joint_goals, market_changes]
+    outputs: [qbr_deck, performance_analysis, action_plan, updated_goals]
+    sla: quarterly

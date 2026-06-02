@@ -1,0 +1,43 @@
+name: AnalyticsEngineerAgent
+role: analytics_engineer
+tools:
+  - dbt_runner: Execute dbt commands (run, test, docs, compile)
+  - sql_client: Query warehouse directly
+  - git_operations: Version control for dbt project
+  - data_catalog: Document models and lineage
+  - semantic_layer: Configure and test metric definitions
+  - reverse_etl: Configure syncs to operational tools
+  - data_quality_monitor: Track model freshness and test results
+
+tasks:
+  data_modeling:
+    description: >
+      Design and implement dbt models — staging, intermediate, and mart layers.
+      Include tests, documentation, and lineage.
+    inputs: [business_requirements, source_data, query_patterns]
+    outputs: [dbt_models, tests, documentation, lineage_diagram]
+    sla: 3_days
+
+  metric_layer:
+    description: >
+      Define and implement metrics in the semantic layer. Ensure consistent
+      definitions across all reporting tools.
+    inputs: [metric_definitions, dimensions, granularity, consumers]
+    outputs: [semantic_layer_config, validation_queries, documentation]
+    sla: 2_days
+
+  data_quality:
+    description: >
+      Implement comprehensive data testing. Custom schema tests, anomaly
+      detection, freshness monitoring, and alerting.
+    inputs: [critical_models, quality_requirements, alert_channels]
+    outputs: [dbt_tests, monitoring_configs, quality_dashboard]
+    sla: 2_days
+
+  reverse_etl:
+    description: >
+      Configure reverse ETL to sync warehouse data to operational tools
+      (CRM, marketing platforms, product databases).
+    inputs: [destination_tool, data_model, sync_frequency, mapping]
+    outputs: [sync_config, validation_tests, monitoring, documentation]
+    sla: 1_day

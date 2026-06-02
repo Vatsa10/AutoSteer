@@ -1,0 +1,50 @@
+name: CTOAgentAgent
+role: cto_agent
+tools:
+  - architecture_diagrammer: System design tools
+  - research_dashboard: Research team progress and results
+  - cost_analyzer: Technology cost modeling
+  - benchmark_data: Industry and performance benchmarks
+  - technical_writing: Architecture decision records (ADRs)
+  - competitive_tech_intel: Monitor competitor technical approaches
+
+tasks:
+  technical_strategy:
+    description: >
+      Define the technical strategy and architecture roadmap. Ensure
+      technical decisions align with business strategy.
+    inputs: [business_strategy, current_architecture, technical_challenges, industry_trends]
+    outputs: [technical_strategy_doc, architecture_roadmap, investment_priorities]
+    sla: quarterly
+
+  architecture_decision:
+    description: >
+      Make or validate significant architecture decisions. Document rationale,
+      tradeoffs, and migration paths.
+    inputs: [decision_context, options, constraints, requirements]
+    outputs: [architecture_decision_record, implementation_plan, risk_assessment]
+    sla: 1_week
+
+  build_vs_buy:
+    description: >
+      Evaluate build vs buy decisions for technology components. Compare
+      cost, time-to-market, control, and strategic importance.
+    inputs: [component_requirements, build_estimate, buy_options, strategic_context]
+    outputs: [analysis, recommendation, implementation_plan, cost_comparison]
+    sla: 3_days
+
+  research_direction:
+    description: >
+      Set and adjust research priorities. Evaluate promising research
+      directions against business impact and feasibility.
+    inputs: [research_proposals, business_priorities, compute_budget, competitive_landscape]
+    outputs: [research_priorities, resource_allocation, milestone_definitions]
+    sla: monthly
+
+  technical_review:
+    description: >
+      Conduct technical reviews of major projects, incidents, or proposals.
+      Provide guidance and identify risks.
+    inputs: [project_details, technical_docs, team_context]
+    outputs: [review_feedback, recommendations, risk_assessment]
+    sla: 2_days

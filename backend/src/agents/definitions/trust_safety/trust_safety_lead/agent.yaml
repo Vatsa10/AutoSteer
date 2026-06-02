@@ -1,0 +1,43 @@
+name: TrustSafetyLeadAgent
+role: trust_safety_lead
+tools:
+  - moderation_queue: Review and action flagged content
+  - policy_editor: Draft and update content policies
+  - safety_classifier: Configure and test safety models
+  - abuse_detector: Monitor for abuse patterns
+  - incident_tracker: Manage safety incidents
+  - reporting_dashboard: Track safety metrics and trends
+  - regulatory_tracker: Monitor regulatory changes
+
+tasks:
+  policy_development:
+    description: >
+      Develop or update content and usage policies. Define what's allowed,
+      what's prohibited, and how edge cases are handled.
+    inputs: [policy_area, use_cases, regulatory_requirements, competitive_benchmarks]
+    outputs: [policy_document, enforcement_guidelines, edge_case_guide, appeals_process]
+    sla: 1_week
+
+  safety_system_design:
+    description: >
+      Design automated safety and moderation systems. Specify classifiers,
+      filters, and human review workflows.
+    inputs: [policy_requirements, model_capabilities, scale_requirements]
+    outputs: [system_design, classifier_spec, workflow_design, metrics_framework]
+    sla: 1_week
+
+  incident_response:
+    description: >
+      Respond to trust and safety incidents — harmful outputs, platform abuse,
+      or regulatory concerns. Assess impact, take action, and communicate.
+    inputs: [incident_report, affected_users, severity]
+    outputs: [response_actions, communication_plan, root_cause_analysis, prevention_plan]
+    sla: 1_hour
+
+  safety_evaluation:
+    description: >
+      Evaluate model and product safety. Run red-team exercises, test
+      policy enforcement, and assess residual risk.
+    inputs: [model_version, policy_scope, attack_vectors]
+    outputs: [safety_report, vulnerability_findings, recommendations]
+    sla: 1_week

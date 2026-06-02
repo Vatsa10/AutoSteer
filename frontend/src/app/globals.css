@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-amber-50: oklch(0.96 0.02 85);
+  --color-amber-100: oklch(0.90 0.04 85);
+  --color-amber-200: oklch(0.82 0.08 82);
+  --color-amber-300: oklch(0.73 0.14 78);
+  --color-amber-400: oklch(0.67 0.18 70);
+  --color-amber-500: oklch(0.62 0.18 62);
+  --color-amber-600: oklch(0.55 0.16 55);
+  --color-amber-700: oklch(0.47 0.14 48);
+  --color-amber-800: oklch(0.39 0.10 42);
+  --color-amber-900: oklch(0.30 0.06 40);
+
+  --color-warm-50: oklch(0.96 0.004 85);
+  --color-warm-100: oklch(0.88 0.005 85);
+  --color-warm-200: oklch(0.78 0.006 84);
+  --color-warm-300: oklch(0.65 0.008 82);
+  --color-warm-400: oklch(0.52 0.008 80);
+  --color-warm-500: oklch(0.40 0.008 78);
+  --color-warm-600: oklch(0.30 0.007 76);
+  --color-warm-700: oklch(0.22 0.006 74);
+  --color-warm-800: oklch(0.15 0.005 72);
+  --color-warm-900: oklch(0.10 0.003 70);
+  --color-warm-950: oklch(0.06 0.002 68);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-warm-700) transparent;
+}
+
+body {
+  background: var(--color-warm-950);
+  color: var(--color-warm-100);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Routing path animation */
+@keyframes trace-path {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+
+.animate-trace {
+  animation: trace-path 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: left;
+}
+
+/* Pulse for live indicator */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 oklch(0.62 0.18 62 / 0.4); }
+  50%      { box-shadow: 0 0 0 4px oklch(0.62 0.18 62 / 0); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}

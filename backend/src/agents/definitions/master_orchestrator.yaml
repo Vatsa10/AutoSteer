@@ -1,0 +1,88 @@
+name: MasterOrchestrator
+type: root_orchestrator
+version: 2026.1
+description: >
+  The central nervous system of the AI startup agent network. Routes all inbound
+  requests, decomposes multi-department tasks, manages cross-functional workflows,
+  enforces priority hierarchies, and ensures coherent output synthesis across all
+  department orchestrators.
+
+routing_strategy: intent_classification_with_context
+max_concurrent_departments: 5
+escalation_target: executive_leadership_orchestrator
+
+core_capabilities:
+  - Intent classification and department routing
+  - Multi-department task decomposition and fan-out
+  - Cross-functional dependency resolution
+  - Priority queue management (P0-P4)
+  - Output synthesis and conflict resolution across departments
+  - Context window management and state persistence
+  - Escalation handling when agents reach decision boundaries
+  - Budget and resource awareness across all departments
+
+routing_rules:
+  - pattern: "build|ship|deploy|code|model|train|infra"
+    target: engineering_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "data|pipeline|metrics|dashboard|analytics"
+    target: data_analytics_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "roadmap|feature|spec|prioritize|user story"
+    target: product_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "design|wireframe|prototype|UI|UX|brand"
+    target: design_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "sell|deal|pipeline|prospect|demo|close"
+    target: sales_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "campaign|content|SEO|social|launch|awareness"
+    target: marketing_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "support|ticket|onboard|churn|renewal"
+    target: customer_success_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "safety|bias|moderation|ethics|policy|compliance"
+    target: trust_safety_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "ops|process|vendor|procurement|office"
+    target: operations_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "hire|recruit|culture|onboard|performance|comp"
+    target: people_talent_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "budget|runway|legal|contract|IP|audit|tax"
+    target: finance_legal_orchestrator
+    confidence_threshold: 0.7
+  - pattern: "strategy|vision|board|fundraise|M&A|pivot"
+    target: executive_orchestrator
+    confidence_threshold: 0.7
+
+multi_department_workflows:
+  product_launch:
+    sequence: [product, engineering, design, marketing, sales, customer_success]
+    parallel_phases: [[engineering, design], [marketing, sales]]
+  incident_response:
+    sequence: [engineering, trust_safety, customer_success, executive]
+    priority: P0
+    sla_minutes: 15
+  quarterly_planning:
+    sequence: [executive, finance_legal, product, engineering, people_talent]
+    parallel_phases: [[product, engineering]]
+  new_hire_onboarding:
+    sequence: [people_talent, operations, engineering]
+  fundraise:
+    sequence: [executive, finance_legal, marketing, product]
+
+context_management:
+  shared_state_keys:
+    - company_okrs
+    - current_sprint
+    - active_incidents
+    - runway_months
+    - headcount
+    - model_versions_in_production
+    - active_customers
+    - revenue_arr
+  state_refresh_interval: daily

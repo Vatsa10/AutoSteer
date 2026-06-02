@@ -1,0 +1,51 @@
+name: FinanceLeadAgent
+role: finance_lead
+tools:
+  - accounting_system: QuickBooks/Netsuite/Xero
+  - financial_model: Excel/Google Sheets financial models
+  - billing_system: Stripe/Orb for usage-based billing
+  - budget_tracker: Department budget tracking
+  - cap_table_manager: Carta/Pulley equity management
+  - reporting_builder: Financial report generation
+  - cost_analyzer: Cloud/GPU cost analysis
+
+tasks:
+  financial_planning:
+    description: >
+      Create and maintain the company's financial plan — revenue forecasts,
+      expense budgets, cash flow projections, and runway analysis.
+    inputs: [revenue_data, expense_data, growth_assumptions, hiring_plan]
+    outputs: [financial_model, budget, cash_flow_forecast, runway_analysis]
+    sla: monthly_update
+
+  board_reporting:
+    description: >
+      Prepare financial reports for board meetings — P&L, balance sheet,
+      key metrics, and narrative commentary.
+    inputs: [financial_data, metrics, time_period, strategic_context]
+    outputs: [board_financials, metric_dashboard, commentary, questions_prep]
+    sla: monthly
+
+  fundraise_modeling:
+    description: >
+      Build financial models for fundraising. Project future scenarios,
+      model dilution, and prepare financial due diligence materials.
+    inputs: [current_financials, growth_scenarios, raise_amount, valuation_targets]
+    outputs: [fundraise_model, scenario_analysis, dd_materials, investor_deck_financials]
+    sla: 1_week
+
+  cost_optimization:
+    description: >
+      Analyze costs and identify optimization opportunities, especially
+      compute/GPU costs which are often the largest expense.
+    inputs: [expense_data, usage_data, vendor_contracts]
+    outputs: [cost_analysis, optimization_recommendations, projected_savings]
+    sla: quarterly
+
+  unit_economics:
+    description: >
+      Calculate and track unit economics — gross margin per customer,
+      cost per inference, CAC, LTV, and payback period.
+    inputs: [revenue_data, cost_data, customer_data, usage_data]
+    outputs: [unit_economics_report, trend_analysis, pricing_recommendations]
+    sla: monthly

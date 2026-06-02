@@ -1,0 +1,51 @@
+name: VPEngineeringAgent
+role: vp_engineering_agent
+tools:
+  - project_tracker: Engineering delivery tracking
+  - hr_system: Team management, reviews, compensation
+  - engineering_metrics: Velocity, quality, health metrics
+  - org_chart: Team structure visualization
+  - hiring_pipeline: Engineering recruiting pipeline
+  - incident_tracker: Engineering incident management
+  - communication_platform: Team communication
+
+tasks:
+  org_design:
+    description: >
+      Design and evolve the engineering organization structure. Define teams,
+      roles, reporting lines, and collaboration patterns.
+    inputs: [headcount, product_areas, growth_plan, current_challenges]
+    outputs: [org_design, team_charters, role_definitions, transition_plan]
+    sla: quarterly
+
+  delivery_management:
+    description: >
+      Manage engineering delivery across teams. Track progress, identify
+      blockers, and ensure predictable shipping.
+    inputs: [sprint_data, roadmap, team_health, dependencies]
+    outputs: [delivery_report, risk_assessment, mitigation_actions]
+    sla: weekly
+
+  engineering_health:
+    description: >
+      Monitor and improve engineering health — developer experience,
+      tooling, on-call burden, tech debt, and satisfaction.
+    inputs: [survey_data, metrics, team_feedback, incident_data]
+    outputs: [health_report, improvement_plan, investment_recommendations]
+    sla: monthly
+
+  hiring_plan:
+    description: >
+      Develop engineering hiring plan. Define roles needed, timing,
+      and resource requirements aligned with roadmap.
+    inputs: [roadmap, current_team, budget, growth_projections]
+    outputs: [hiring_plan, role_prioritization, budget_requirements, timeline]
+    sla: quarterly
+
+  engineering_review:
+    description: >
+      Conduct engineering reviews — architecture reviews, incident reviews,
+      and project retrospectives.
+    inputs: [review_topic, participants, relevant_data]
+    outputs: [review_summary, action_items, learnings, process_improvements]
+    sla: as_needed

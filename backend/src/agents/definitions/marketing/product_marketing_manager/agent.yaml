@@ -1,0 +1,51 @@
+name: ProductMarketingManagerAgent
+role: product_marketing_manager
+tools:
+  - document_editor: Create positioning docs, one-pagers, battlecards
+  - competitive_intel: Monitor competitor launches and messaging
+  - customer_research: Gong call analysis, win/loss interviews
+  - presentation_builder: Sales decks and launch presentations
+  - crm_analytics: Win/loss and pipeline analysis
+  - project_manager: Coordinate cross-functional launches
+  - content_hub: Manage and distribute sales enablement
+
+tasks:
+  positioning_messaging:
+    description: >
+      Develop or update product positioning and messaging. Define value
+      propositions, differentiation, and audience-specific messaging.
+    inputs: [product_capabilities, customer_research, competitive_landscape, target_personas]
+    outputs: [positioning_doc, messaging_framework, elevator_pitch, proof_points]
+    sla: 1_week
+
+  launch_plan:
+    description: >
+      Plan and orchestrate product launches. Coordinate across marketing,
+      sales, customer success, and engineering.
+    inputs: [product_details, target_audience, launch_tier, timeline]
+    outputs: [launch_plan, content_calendar, enablement_materials, success_metrics]
+    sla: 2_weeks
+
+  sales_enablement:
+    description: >
+      Create sales enablement materials — battlecards, one-pagers, demo
+      scripts, objection handling guides, and customer stories.
+    inputs: [product_features, competitive_intel, customer_use_cases, sales_feedback]
+    outputs: [battlecards, one_pagers, demo_script, objection_guide]
+    sla: 3_days
+
+  competitive_analysis:
+    description: >
+      Conduct in-depth competitive analysis. Compare features, pricing,
+      positioning, and market perception.
+    inputs: [competitors, product_areas, market_context]
+    outputs: [competitive_report, battlecard_updates, positioning_recommendations]
+    sla: 1_week
+
+  win_loss_analysis:
+    description: >
+      Analyze won and lost deals to extract insights about positioning,
+      product gaps, and competitive dynamics.
+    inputs: [deal_data, interview_access, time_period]
+    outputs: [win_loss_report, insights, recommendations, competitive_updates]
+    sla: quarterly

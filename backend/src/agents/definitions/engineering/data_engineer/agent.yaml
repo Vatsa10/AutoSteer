@@ -1,0 +1,53 @@
+name: DataEngineerAgent
+role: data_engineer
+tools:
+  - code_execution: Python, SQL, Spark, dbt
+  - pipeline_orchestrator: Airflow/Dagster DAG management
+  - warehouse_client: Snowflake/BigQuery/Redshift query interface
+  - streaming_console: Kafka topic management and monitoring
+  - data_quality_runner: Great Expectations/Soda test execution
+  - schema_registry: Manage Avro/Protobuf schemas
+  - data_catalog: DataHub/Atlan search and documentation
+  - cost_monitor: Track compute and storage costs
+  - git_operations: Version control for pipeline code
+
+tasks:
+  pipeline_development:
+    description: >
+      Design and build data pipelines for ingestion, transformation, and delivery.
+      Implement error handling, retries, monitoring, and data quality checks.
+    inputs: [source_systems, transformation_logic, destination, schedule, SLA]
+    outputs: [pipeline_code, dbt_models, quality_tests, documentation]
+    sla: 3_days
+
+  training_data_pipeline:
+    description: >
+      Build pipelines that curate, clean, deduplicate, and prepare training
+      datasets for ML models. Implement data versioning and reproducibility.
+    inputs: [data_sources, curation_criteria, output_format, quality_requirements]
+    outputs: [pipeline, dataset_version, quality_report, lineage_docs]
+    sla: 1_week
+
+  real_time_pipeline:
+    description: >
+      Build streaming data pipelines for real-time use cases — feature serving,
+      event processing, live dashboards, or real-time model inputs.
+    inputs: [event_sources, processing_logic, latency_requirements, consumers]
+    outputs: [streaming_pipeline, monitoring, schema_definitions]
+    sla: 3_days
+
+  data_quality_framework:
+    description: >
+      Implement data quality monitoring and alerting. Define quality rules,
+      anomaly detection, and automated remediation where possible.
+    inputs: [critical_datasets, quality_dimensions, alert_requirements]
+    outputs: [quality_tests, monitoring_dashboard, alert_configs, runbook]
+    sla: 2_days
+
+  data_modeling:
+    description: >
+      Design dimensional models, define data contracts, and create documentation
+      for the data warehouse/lakehouse.
+    inputs: [business_requirements, source_systems, query_patterns]
+    outputs: [data_model, dbt_models, documentation, data_contracts]
+    sla: 2_days

@@ -1,0 +1,31 @@
+name: SalesOrchestrator
+type: department_orchestrator
+department: Go-to-Market & Sales
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates the full sales cycle from prospecting through closing and expansion.
+  Manages pipeline health, forecasting, deal strategy, and technical validation.
+  Works closely with marketing for lead generation and customer success for retention.
+
+agents:
+  - sales_development_rep
+  - account_executive
+  - solutions_engineer
+  - partnerships_bd_manager
+
+routing_rules:
+  - pattern: "prospect|outbound|cold|lead|qualify|SDR"
+    target: sales_development_rep
+  - pattern: "deal|close|negotiate|contract|proposal|demo"
+    target: account_executive
+  - pattern: "POC|proof of concept|technical demo|integration|pilot"
+    target: solutions_engineer
+  - pattern: "partner|channel|integration|ecosystem|alliance"
+    target: partnerships_bd_manager
+
+collaboration_patterns:
+  deal_cycle:
+    flow: sales_development_rep (qualify) → account_executive (demo/close) → solutions_engineer (technical validation)
+  expansion:
+    flow: customer_success → account_executive → solutions_engineer

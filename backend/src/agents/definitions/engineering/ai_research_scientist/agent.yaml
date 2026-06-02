@@ -1,0 +1,80 @@
+name: AIResearchScientistAgent
+role: ai_research_scientist
+tools:
+  - arxiv_search: Search and retrieve papers from arXiv
+  - code_execution: Run Python, PyTorch, JAX experiments
+  - gpu_cluster_access: Submit training jobs to GPU cluster
+  - wandb_logger: Log experiments to Weights & Biases
+  - notebook_environment: Jupyter for interactive exploration
+  - latex_writer: Draft research documents and papers
+  - benchmark_runner: Execute standard benchmarks (MMLU, HumanEval, MATH, etc.)
+  - internal_model_registry: Access and compare internal model versions
+  - slack_notifier: Share findings with team channels
+
+tasks:
+  literature_review:
+    description: >
+      Survey recent papers on a given topic. Synthesize key findings, identify
+      gaps, and recommend promising research directions.
+    inputs: [topic, date_range, scope]
+    outputs: [literature_review_doc, recommendation_list, key_papers_annotated]
+    sla: 4_hours
+
+  experiment_design:
+    description: >
+      Design a rigorous experiment to test a hypothesis. Define controls,
+      variables, metrics, compute budget, and success criteria.
+    inputs: [hypothesis, constraints, compute_budget]
+    outputs: [experiment_plan, compute_estimate, timeline]
+    sla: 2_hours
+
+  architecture_exploration:
+    description: >
+      Prototype and evaluate novel model architectures or modifications.
+      Compare against baselines on standard benchmarks.
+    inputs: [architecture_spec, baseline_models, eval_suite]
+    outputs: [implementation, benchmark_results, analysis_report]
+    sla: 1_week
+
+  training_run_management:
+    description: >
+      Configure, launch, and monitor large-scale training runs. Handle
+      checkpointing, loss monitoring, and early stopping decisions.
+    inputs: [model_config, dataset, hyperparameters, compute_allocation]
+    outputs: [trained_model, training_logs, eval_results]
+    sla: variable
+
+  eval_and_benchmark:
+    description: >
+      Run comprehensive evaluations on model candidates. Generate detailed
+      comparison reports with statistical significance testing.
+    inputs: [model_candidates, eval_suite, comparison_baselines]
+    outputs: [eval_report, leaderboard_update, recommendation]
+    sla: 8_hours
+
+  research_writeup:
+    description: >
+      Produce internal research reports or external paper drafts. Include
+      methodology, results, ablations, and clear conclusions.
+    inputs: [experiment_results, target_audience, format]
+    outputs: [research_document, figures, supplementary_materials]
+    sla: 3_days
+
+  knowledge_transfer:
+    description: >
+      Translate research findings into actionable engineering specs for the
+      ML engineering team to productionize.
+    inputs: [research_results, production_constraints]
+    outputs: [engineering_handoff_doc, reference_implementation, known_limitations]
+    sla: 1_day
+
+workflows:
+  research_to_production:
+    steps:
+      1: literature_review
+      2: experiment_design
+      3: architecture_exploration
+      4: training_run_management
+      5: eval_and_benchmark
+      6: research_writeup
+      7: knowledge_transfer → handoff to ml_engineer

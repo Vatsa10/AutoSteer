@@ -1,0 +1,60 @@
+name: LegalCounselAgent
+role: legal_counsel
+tools:
+  - contract_manager: Contract drafting, review, and management
+  - compliance_tracker: Regulatory compliance monitoring
+  - ip_manager: Patent and trademark portfolio
+  - privacy_assessor: Data privacy impact assessments
+  - legal_research: Case law and regulatory research
+  - document_editor: Legal document drafting
+  - e_signature: DocuSign/PandaDoc for signatures
+  - regulatory_monitor: Track AI legislation changes
+
+tasks:
+  contract_review:
+    description: >
+      Review and negotiate commercial contracts — customer agreements,
+      vendor contracts, partnership agreements, and NDAs.
+    inputs: [contract_draft, deal_context, risk_tolerance, business_terms]
+    outputs: [redlined_contract, risk_assessment, negotiation_recommendations]
+    sla: 2_days
+
+  privacy_compliance:
+    description: >
+      Ensure data privacy compliance across products. Conduct DPIAs,
+      review data flows, and update privacy documentation.
+    inputs: [data_processing_activities, jurisdictions, product_features]
+    outputs: [dpia, compliance_assessment, documentation_updates, recommendations]
+    sla: 1_week
+
+  ip_protection:
+    description: >
+      Manage IP strategy — patent filings, trade secret protocols,
+      copyright registration, and IP in employment agreements.
+    inputs: [innovations, competitive_context, protection_priorities]
+    outputs: [ip_strategy, filing_recommendations, employee_ip_agreements]
+    sla: ongoing
+
+  regulatory_assessment:
+    description: >
+      Assess impact of new or proposed AI regulations on the company.
+      Map requirements to current practices and identify gaps.
+    inputs: [regulation, product_features, current_practices]
+    outputs: [regulatory_assessment, gap_analysis, compliance_roadmap, risk_rating]
+    sla: 1_week
+
+  terms_of_service:
+    description: >
+      Draft or update terms of service, acceptable use policies, and
+      other user-facing legal documents.
+    inputs: [product_features, usage_policies, risk_areas, competitive_terms]
+    outputs: [tos_draft, aup_draft, privacy_policy_updates, changelog]
+    sla: 1_week
+
+  fundraise_legal:
+    description: >
+      Manage legal aspects of fundraising — term sheet review, due diligence
+      preparation, and closing documentation.
+    inputs: [term_sheet, corporate_docs, dd_requests, timeline]
+    outputs: [legal_review, dd_response, closing_docs, corporate_resolutions]
+    sla: varies

@@ -1,0 +1,43 @@
+name: SalesDevelopmentRepAgent
+role: sales_development_rep
+tools:
+  - crm: Salesforce/HubSpot lead and contact management
+  - engagement_platform: Outreach/Salesloft sequence management
+  - prospecting_tool: Apollo/ZoomInfo for contact discovery
+  - linkedin: LinkedIn Sales Navigator for research and outreach
+  - email_composer: Draft personalized outreach emails
+  - calendar: Schedule meetings and demos
+  - enrichment_tool: Clearbit/Apollo for account enrichment
+
+tasks:
+  outbound_prospecting:
+    description: >
+      Research target accounts, identify key contacts, craft personalized
+      multi-channel outreach sequences, and execute campaigns.
+    inputs: [icp_criteria, target_accounts, value_propositions, sequence_templates]
+    outputs: [outreach_sequences, personalized_messages, contact_list, campaign_metrics]
+    sla: daily
+
+  inbound_qualification:
+    description: >
+      Qualify inbound leads against ICP criteria. Research the account, assess
+      fit, and either schedule a meeting or disqualify with reason.
+    inputs: [lead_info, icp_criteria, qualification_framework]
+    outputs: [qualification_assessment, next_action, crm_update]
+    sla: 15_minutes_response_time
+
+  account_research:
+    description: >
+      Deep-dive research on target accounts. Map org structure, identify
+      champions, understand tech stack, and find trigger events.
+    inputs: [account_name, industry, known_context]
+    outputs: [account_brief, contact_map, trigger_events, talking_points]
+    sla: 30_minutes
+
+  pipeline_reporting:
+    description: >
+      Report on pipeline generation metrics — meetings booked, conversion
+      rates, sequence performance, and forecast contribution.
+    inputs: [date_range, pipeline_data, targets]
+    outputs: [pipeline_report, performance_analysis, optimization_recommendations]
+    sla: weekly

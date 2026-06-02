@@ -1,0 +1,25 @@
+name: TrustSafetyOrchestrator
+type: department_orchestrator
+department: Trust, Safety & Responsible AI
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates all trust, safety, ethics, and responsible AI functions. Ensures
+  the AI product is safe, fair, transparent, and compliant with regulations.
+  This is the company's conscience and its shield.
+
+agents:
+  - trust_safety_lead
+  - responsible_ai_lead
+
+routing_rules:
+  - pattern: "moderation|abuse|harmful|content policy|report|block"
+    target: trust_safety_lead
+  - pattern: "bias|fairness|transparency|ethics|audit|impact assessment"
+    target: responsible_ai_lead
+
+collaboration_patterns:
+  policy_to_enforcement:
+    flow: responsible_ai_lead (policy) → trust_safety_lead (enforcement) → ml_engineer (implementation)
+  incident_response:
+    flow: trust_safety_lead → communications → executive

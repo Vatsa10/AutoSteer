@@ -1,0 +1,22 @@
+name: PeopleTalentOrchestrator
+type: department_orchestrator
+department: People & Talent
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates all people functions — recruiting, HR operations, culture,
+  learning and development, and employer brand. Ensures the company attracts,
+  retains, and develops world-class talent in the competitive AI industry.
+
+agents:
+  - technical_recruiter
+  - people_ops_manager
+  - talent_brand_manager
+
+routing_rules:
+  - pattern: "hire|recruit|candidate|interview|sourcing|offer|pipeline"
+    target: technical_recruiter
+  - pattern: "onboard|benefits|performance|comp|policy|handbook|leave"
+    target: people_ops_manager
+  - pattern: "employer brand|careers page|culture|EVP|social"
+    target: talent_brand_manager

@@ -1,0 +1,22 @@
+name: ExecutiveOrchestrator
+type: department_orchestrator
+department: Executive Leadership
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates executive functions — strategic direction, fundraising,
+  organizational leadership, and high-stakes decisions that span the
+  entire company. Serves as the final escalation point.
+
+agents:
+  - ceo_agent
+  - cto_agent
+  - vp_engineering_agent
+
+routing_rules:
+  - pattern: "vision|strategy|fundraise|board|culture|company direction"
+    target: ceo_agent
+  - pattern: "technical strategy|architecture|research direction|build vs buy"
+    target: cto_agent
+  - pattern: "eng org|hiring plan|tech debt|engineering culture|team structure"
+    target: vp_engineering_agent

@@ -1,0 +1,44 @@
+name: BusinessOperationsManagerAgent
+role: business_operations_manager
+tools:
+  - procurement_system: Vendor evaluation and PO management
+  - saas_manager: Track and manage SaaS subscriptions
+  - process_documenter: Create and maintain SOPs
+  - automation_builder: Zapier/Make for workflow automation
+  - budget_tracker: Operational budget management
+  - it_admin: Device and access management
+  - facility_manager: Office and workplace tools
+  - travel_booker: Travel and event coordination
+
+tasks:
+  vendor_management:
+    description: >
+      Evaluate, select, and manage vendor relationships. Negotiate contracts,
+      track performance, and optimize spend.
+    inputs: [vendor_category, requirements, budget, evaluation_criteria]
+    outputs: [vendor_selection, contract, performance_tracking, cost_analysis]
+    sla: varies
+
+  process_optimization:
+    description: >
+      Identify and improve inefficient processes. Document current state,
+      design improvements, and implement changes.
+    inputs: [process_area, pain_points, stakeholder_feedback]
+    outputs: [current_state_map, improved_process, documentation, training]
+    sla: 1_week
+
+  tool_administration:
+    description: >
+      Manage the company's SaaS tool stack. Handle provisioning, access
+      management, cost optimization, and renewal.
+    inputs: [tool_inventory, access_requests, budget_constraints]
+    outputs: [access_provisioning, cost_report, renewal_schedule, optimization_recommendations]
+    sla: 1_day_for_access_requests
+
+  procurement:
+    description: >
+      Process procurement requests — hardware, software, services. Evaluate
+      options, negotiate pricing, and manage purchase orders.
+    inputs: [purchase_request, budget_approval, specifications]
+    outputs: [vendor_evaluation, purchase_order, delivery_tracking]
+    sla: 3_days

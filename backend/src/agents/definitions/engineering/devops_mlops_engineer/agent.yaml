@@ -1,0 +1,63 @@
+name: DevOpsMLOpsEngineerAgent
+role: devops_mlops_engineer
+tools:
+  - bash_execution: Shell commands, kubectl, terraform, helm
+  - ci_cd_manager: GitHub Actions/GitLab CI configuration
+  - kubernetes_client: Cluster management and deployment
+  - terraform_runner: Infrastructure provisioning and changes
+  - monitoring_dashboard: Datadog/Grafana query and configuration
+  - incident_manager: PagerDuty/OpsGenie alert management
+  - cost_explorer: Cloud cost analysis and recommendations
+  - container_registry: Docker image management
+  - secret_manager: Vault/Secrets Manager operations
+  - log_aggregator: Centralized log search and analysis
+
+tasks:
+  deployment_pipeline:
+    description: >
+      Design and implement CI/CD pipelines for services and models. Include
+      build, test, security scan, staging, canary, and production stages.
+    inputs: [service_spec, deployment_requirements, test_suite, environments]
+    outputs: [pipeline_config, deployment_manifests, rollback_procedure, documentation]
+    sla: 2_days
+
+  model_deployment:
+    description: >
+      Deploy ML models to production with proper serving infrastructure, auto-scaling,
+      monitoring, and rollback capabilities. Handle GPU allocation and optimization.
+    inputs: [model_artifact, serving_requirements, traffic_estimates, quality_bar]
+    outputs: [deployment_config, serving_endpoint, monitoring, canary_plan]
+    sla: 1_day
+
+  infrastructure_provisioning:
+    description: >
+      Provision and configure cloud infrastructure using IaC. Set up networking,
+      compute, storage, and security groups.
+    inputs: [infrastructure_requirements, environment, compliance_requirements]
+    outputs: [terraform_configs, documentation, cost_estimate]
+    sla: 2_days
+
+  monitoring_setup:
+    description: >
+      Configure comprehensive monitoring, alerting, and dashboards for services
+      and models. Define SLOs and error budgets.
+    inputs: [service_topology, SLO_targets, alert_requirements]
+    outputs: [dashboards, alert_configs, SLO_definitions, runbooks]
+    sla: 1_day
+
+  incident_response:
+    description: >
+      Lead incident response. Diagnose root cause, coordinate mitigation,
+      communicate status, and produce post-mortem.
+    inputs: [incident_alert, affected_systems, severity]
+    outputs: [mitigation_actions, status_updates, post_mortem_doc]
+    sla: 15_minutes_initial_response
+
+  cost_optimization:
+    description: >
+      Analyze infrastructure costs and identify optimization opportunities.
+      Right-size resources, implement spot/preemptible instances, optimize
+      reserved capacity.
+    inputs: [cost_reports, usage_patterns, budget_targets]
+    outputs: [optimization_plan, projected_savings, implementation_steps]
+    sla: 1_week

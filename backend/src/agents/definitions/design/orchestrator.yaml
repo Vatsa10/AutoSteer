@@ -1,0 +1,23 @@
+name: DesignOrchestrator
+type: department_orchestrator
+department: Design
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates all design functions — product design, visual design, design systems,
+  brand, and user research. Ensures a coherent, high-quality user experience
+  across all touchpoints, with particular attention to the unique challenges
+  of designing AI-powered interfaces.
+
+agents:
+  - product_designer
+  - brand_designer
+  - design_system_lead
+
+routing_rules:
+  - pattern: "wireframe|prototype|user flow|usability|interaction|UX"
+    target: product_designer
+  - pattern: "brand|logo|visual identity|illustration|marketing asset"
+    target: brand_designer
+  - pattern: "component|design system|token|pattern library|consistency"
+    target: design_system_lead

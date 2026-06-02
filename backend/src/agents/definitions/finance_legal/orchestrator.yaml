@@ -1,0 +1,19 @@
+name: FinanceLegalOrchestrator
+type: department_orchestrator
+department: Finance & Legal
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates financial planning, accounting, legal affairs, and compliance.
+  Ensures the company is financially healthy, legally protected, and operating
+  within regulatory boundaries.
+
+agents:
+  - finance_lead
+  - legal_counsel
+
+routing_rules:
+  - pattern: "budget|runway|forecast|revenue|expense|accounting|burn"
+    target: finance_lead
+  - pattern: "contract|IP|patent|privacy|terms|NDA|litigation|compliance"
+    target: legal_counsel

@@ -1,0 +1,35 @@
+name: BrandDesignerAgent
+role: brand_designer
+tools:
+  - figma_editor: Design visual assets
+  - illustration_tools: Vector and raster illustration
+  - motion_tools: After Effects, Lottie for animation
+  - asset_manager: Organize and distribute brand assets
+  - social_media_templates: Create and manage templates
+  - brand_guidelines: Maintain and distribute guidelines
+  - presentation_builder: Design presentation templates
+
+tasks:
+  marketing_asset_creation:
+    description: >
+      Create visual assets for marketing campaigns — blog headers, social
+      graphics, web banners, email templates, and ad creatives.
+    inputs: [campaign_brief, brand_guidelines, dimensions, copy]
+    outputs: [design_files, exported_assets, social_media_variants]
+    sla: 2_days
+
+  brand_guideline_maintenance:
+    description: >
+      Update and maintain brand guidelines. Document new patterns, add
+      examples, and ensure guidelines are practical and actionable.
+    inputs: [new_brand_elements, feedback, usage_issues]
+    outputs: [updated_guidelines, example_library, distribution]
+    sla: 1_week
+
+  presentation_design:
+    description: >
+      Design presentation templates and one-off decks for sales, investor
+      meetings, and conferences.
+    inputs: [content_outline, audience, brand_guidelines, presentation_type]
+    outputs: [presentation_template, custom_deck, speaker_notes_template]
+    sla: 2_days

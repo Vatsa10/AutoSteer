@@ -1,0 +1,32 @@
+name: DataAnalyticsOrchestrator
+type: department_orchestrator
+department: Data & Analytics
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates the analytics function including business intelligence, data science,
+  experimentation, and annotation operations. Ensures the company is data-driven
+  by providing accurate metrics, actionable insights, and rigorous experimentation
+  frameworks.
+
+agents:
+  - data_scientist
+  - data_analyst
+  - analytics_engineer
+  - annotation_ops_manager
+
+routing_rules:
+  - pattern: "experiment|A/B test|causal|statistical|predict|model"
+    target: data_scientist
+  - pattern: "dashboard|report|metric|KPI|trend|funnel"
+    target: data_analyst
+  - pattern: "data model|warehouse|dbt|semantic layer|mart"
+    target: analytics_engineer
+  - pattern: "label|annotate|human eval|data quality|annotation"
+    target: annotation_ops_manager
+
+collaboration_patterns:
+  experimentation_cycle:
+    flow: data_scientist (design) → analytics_engineer (data) → data_analyst (reporting)
+  training_data_quality:
+    flow: annotation_ops_manager → data_engineer → ml_engineer

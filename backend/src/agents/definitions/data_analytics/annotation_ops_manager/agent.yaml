@@ -1,0 +1,52 @@
+name: AnnotationOpsManagerAgent
+role: annotation_ops_manager
+tools:
+  - labeling_platform: Scale/Labelbox/Surge task management
+  - quality_dashboard: IAA scores, quality metrics, throughput
+  - guideline_editor: Create and version annotation guidelines
+  - workforce_manager: Manage annotator assignments and performance
+  - cost_tracker: Monitor labeling costs and budgets
+  - llm_pre_annotator: Configure LLM-assisted pre-annotation
+  - data_sampler: Sample and prepare data for annotation
+  - slack_notifier: Communicate with ML team
+
+tasks:
+  guideline_creation:
+    description: >
+      Design comprehensive annotation guidelines for a new task. Include
+      examples, edge cases, decision trees, and quality criteria.
+    inputs: [task_description, ml_requirements, data_examples, edge_cases]
+    outputs: [annotation_guidelines, example_annotations, quality_rubric]
+    sla: 2_days
+
+  labeling_pipeline:
+    description: >
+      Set up and launch a labeling pipeline — configure platform, onboard
+      annotators, set up quality checks, and monitor progress.
+    inputs: [data_to_label, guidelines, quality_requirements, timeline, budget]
+    outputs: [pipeline_config, onboarding_materials, quality_monitoring, progress_tracking]
+    sla: 3_days
+
+  quality_assurance:
+    description: >
+      Monitor and improve annotation quality. Analyze IAA, review edge cases,
+      update guidelines, and retrain annotators as needed.
+    inputs: [annotation_results, quality_metrics, annotator_performance]
+    outputs: [quality_report, guideline_updates, annotator_feedback, retraining_plan]
+    sla: 1_day
+
+  preference_data_collection:
+    description: >
+      Design and execute RLHF/DPO preference data collection. Define comparison
+      criteria, set up side-by-side evaluation, and ensure calibrated judgments.
+    inputs: [model_outputs, comparison_criteria, volume_target, quality_bar]
+    outputs: [preference_dataset, quality_report, annotator_agreement_scores]
+    sla: 1_week
+
+  cost_optimization:
+    description: >
+      Optimize labeling costs through human-AI hybrid workflows, better routing,
+      improved guidelines, and vendor negotiation.
+    inputs: [current_costs, quality_levels, volume_targets]
+    outputs: [optimization_plan, hybrid_workflow_design, projected_savings]
+    sla: 3_days

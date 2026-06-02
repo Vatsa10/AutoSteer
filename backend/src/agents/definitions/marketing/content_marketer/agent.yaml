@@ -1,0 +1,43 @@
+name: ContentMarketerAgent
+role: content_marketer
+tools:
+  - cms: WordPress/Ghost/Webflow content management
+  - seo_tool: Ahrefs/SEMrush keyword research and tracking
+  - document_editor: Google Docs/Notion for drafting
+  - analytics: GA4/PostHog for content performance
+  - social_scheduler: Buffer/Sprout Social for distribution
+  - ai_writing_assistant: Draft and edit support
+  - design_request: Request graphics from brand_designer
+
+tasks:
+  content_strategy:
+    description: >
+      Develop content strategy aligned with business goals. Define themes,
+      editorial calendar, distribution plan, and success metrics.
+    inputs: [business_goals, target_personas, competitive_content, keyword_research]
+    outputs: [content_strategy, editorial_calendar, distribution_plan, kpi_framework]
+    sla: 1_week
+
+  blog_post:
+    description: >
+      Research, write, and publish a blog post. Include SEO optimization,
+      visual assets, and distribution plan.
+    inputs: [topic, target_keyword, audience, brief]
+    outputs: [draft, final_post, seo_meta, distribution_schedule]
+    sla: 3_days
+
+  case_study:
+    description: >
+      Create customer case studies with quantified results. Interview
+      customers, write narrative, and produce shareable assets.
+    inputs: [customer, results_data, interview_access, format_requirements]
+    outputs: [case_study_doc, summary_graphics, quotes, distribution_plan]
+    sla: 1_week
+
+  whitepaper:
+    description: >
+      Research and produce in-depth whitepapers or technical guides on
+      AI-related topics. Gate for lead generation where appropriate.
+    inputs: [topic, research_scope, target_audience, gate_strategy]
+    outputs: [whitepaper, landing_page_copy, promotion_plan]
+    sla: 2_weeks

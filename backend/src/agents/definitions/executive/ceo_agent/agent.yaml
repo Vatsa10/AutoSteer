@@ -1,0 +1,51 @@
+name: CEOAgentAgent
+role: ceo_agent
+tools:
+  - strategy_framework: Strategic planning tools and frameworks
+  - financial_dashboard: Company-level financial metrics
+  - investor_crm: Investor relationship management
+  - presentation_builder: Board and investor presentations
+  - communication_platform: Company-wide announcements
+  - market_research: Industry and competitive intelligence
+  - executive_calendar: Schedule management
+
+tasks:
+  strategic_planning:
+    description: >
+      Define and communicate company strategy. Set vision, identify strategic
+      priorities, and ensure organizational alignment.
+    inputs: [market_data, competitive_landscape, internal_capabilities, financial_position]
+    outputs: [strategy_document, priority_framework, communication_plan]
+    sla: quarterly
+
+  fundraise_strategy:
+    description: >
+      Plan and execute fundraising rounds. Define narrative, prepare materials,
+      manage investor relationships, and negotiate terms.
+    inputs: [financial_position, growth_metrics, market_conditions, target_raise]
+    outputs: [fundraise_narrative, investor_deck, target_list, timeline, term_sheet_analysis]
+    sla: varies
+
+  investor_update:
+    description: >
+      Prepare and send investor updates. Communicate progress, metrics,
+      and strategic developments.
+    inputs: [metrics, milestones, challenges, strategic_updates]
+    outputs: [investor_update_email, supporting_data, follow_up_items]
+    sla: monthly
+
+  crisis_management:
+    description: >
+      Lead crisis response at the company level. Coordinate across departments,
+      make decisive calls, and communicate transparently.
+    inputs: [crisis_situation, affected_stakeholders, initial_assessment]
+    outputs: [response_plan, communication_strategy, resource_allocation, timeline]
+    sla: immediate
+
+  culture_and_values:
+    description: >
+      Define and reinforce company culture and values. Design rituals,
+      communications, and programs that embody the culture.
+    inputs: [current_culture_assessment, growth_stage, employee_feedback]
+    outputs: [culture_document, ritual_designs, communication_plan]
+    sla: ongoing

@@ -1,0 +1,61 @@
+name: ProductManagerAgent
+role: product_manager
+tools:
+  - project_tracker: Linear/Jira for backlog and sprint management
+  - roadmap_tool: Productboard/Aha roadmap visualization
+  - analytics_platform: Amplitude/Mixpanel/PostHog for user analytics
+  - user_research: UserTesting, Dovetail for interviews and synthesis
+  - document_editor: Notion/Google Docs for PRDs and specs
+  - survey_tool: Typeform/SurveyMonkey for user surveys
+  - competitive_intel: Monitor competitor products and launches
+  - slack_notifier: Cross-functional communication
+  - presentation_builder: Create product review decks
+
+tasks:
+  product_discovery:
+    description: >
+      Investigate a problem space to identify user needs and opportunities.
+      Conduct user interviews, analyze usage data, and map competitive landscape.
+    inputs: [problem_area, user_segments, business_context]
+    outputs: [discovery_report, opportunity_map, user_personas, recommended_direction]
+    sla: 1_week
+
+  prd_creation:
+    description: >
+      Write a comprehensive product requirements document. Define problem,
+      success metrics, user stories, requirements, and edge cases.
+    inputs: [opportunity, user_research, technical_constraints, business_goals]
+    outputs: [prd, user_stories, acceptance_criteria, success_metrics]
+    sla: 3_days
+
+  roadmap_planning:
+    description: >
+      Plan and prioritize the product roadmap. Balance user needs, technical
+      debt, business goals, and team capacity.
+    inputs: [opportunities, team_capacity, business_goals, dependencies]
+    outputs: [roadmap, priority_rationale, resource_requirements, timeline]
+    sla: 1_week
+
+  sprint_planning:
+    description: >
+      Define sprint goals, select backlog items, and coordinate with engineering
+      on scope and deliverables.
+    inputs: [backlog, roadmap_priorities, team_velocity, dependencies]
+    outputs: [sprint_plan, story_assignments, acceptance_criteria, risks]
+    sla: 2_hours
+
+  competitive_analysis:
+    description: >
+      Analyze competitor products, features, and strategies. Identify
+      differentiation opportunities and threats.
+    inputs: [competitors, feature_areas, market_context]
+    outputs: [competitive_matrix, differentiation_analysis, recommendations]
+    sla: 3_days
+
+  launch_planning:
+    description: >
+      Plan feature or product launches. Coordinate across marketing, sales,
+      support, and engineering for smooth rollout.
+    inputs: [feature_spec, target_audience, rollout_strategy]
+    outputs: [launch_plan, checklist, rollback_criteria, success_metrics]
+    sla: 1_week

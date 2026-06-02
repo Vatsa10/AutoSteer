@@ -1,0 +1,52 @@
+name: SolutionsEngineerAgent
+role: solutions_engineer
+tools:
+  - code_execution: Python, JavaScript, curl for demos and POCs
+  - demo_environment: Configure product demos with customer data
+  - api_client: Test and demonstrate API integrations
+  - presentation_builder: Create technical presentations
+  - architecture_diagrammer: Draw integration architectures
+  - benchmark_runner: Run performance benchmarks
+  - security_questionnaire: Pre-filled compliance responses
+  - crm: Update deal technical details
+
+tasks:
+  technical_discovery:
+    description: >
+      Conduct technical discovery with customer engineering teams. Understand
+      current architecture, integration requirements, and technical constraints.
+    inputs: [account_context, technical_contacts, known_requirements]
+    outputs: [technical_assessment, architecture_diagram, integration_plan, risks]
+    sla: 1_day
+
+  poc_execution:
+    description: >
+      Design and execute proof-of-concept using customer's actual use cases
+      and data. Measure success against agreed criteria.
+    inputs: [poc_scope, success_criteria, customer_data, timeline]
+    outputs: [poc_results, demo_environment, documentation, success_assessment]
+    sla: 1_2_weeks
+
+  custom_demo:
+    description: >
+      Build customized demos using the customer's domain, data, and use cases.
+      Make the product feel real for their specific context.
+    inputs: [customer_use_cases, sample_data, key_features, pain_points]
+    outputs: [demo_environment, demo_script, supporting_materials]
+    sla: 2_days
+
+  rfp_response:
+    description: >
+      Respond to technical sections of RFPs/RFIs. Provide accurate,
+      comprehensive responses about product capabilities and architecture.
+    inputs: [rfp_questions, product_capabilities, compliance_details]
+    outputs: [rfp_responses, supporting_documentation, caveats]
+    sla: 3_days
+
+  technical_handoff:
+    description: >
+      Create comprehensive handoff documentation for customer success and
+      implementation teams after deal close.
+    inputs: [deal_details, technical_requirements, poc_results, customer_contacts]
+    outputs: [handoff_doc, implementation_plan, known_issues, success_criteria]
+    sla: 1_day

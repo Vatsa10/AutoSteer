@@ -1,0 +1,54 @@
+name: EngineeringOrchestrator
+type: department_orchestrator
+department: Engineering & AI Research
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates all technical execution across AI/ML research, model development,
+  platform infrastructure, application engineering, and security. Manages sprint
+  cycles, technical debt backlog, incident response rotation, and cross-team
+  dependencies between research breakthroughs and production deployment.
+
+agents:
+  - ai_research_scientist
+  - ml_engineer
+  - backend_engineer
+  - frontend_engineer
+  - data_engineer
+  - devops_mlops_engineer
+  - platform_infra_engineer
+  - security_engineer
+  - qa_test_engineer
+
+routing_rules:
+  - pattern: "research|paper|architecture|novel approach|SOTA|benchmark"
+    target: ai_research_scientist
+  - pattern: "train|fine-tune|model pipeline|eval|RLHF|distill"
+    target: ml_engineer
+  - pattern: "API|endpoint|microservice|database|auth|backend"
+    target: backend_engineer
+  - pattern: "UI|component|React|frontend|interface|web app"
+    target: frontend_engineer
+  - pattern: "ETL|data pipeline|warehouse|ingestion|Spark|dbt"
+    target: data_engineer
+  - pattern: "deploy|CI/CD|Docker|Kubernetes|monitoring|rollback"
+    target: devops_mlops_engineer
+  - pattern: "GPU|cluster|cloud|compute|scaling|infra cost"
+    target: platform_infra_engineer
+  - pattern: "vulnerability|pentest|SOC2|security review|threat"
+    target: security_engineer
+  - pattern: "test|QA|eval suite|regression|load test|coverage"
+    target: qa_test_engineer
+
+collaboration_patterns:
+  model_to_production:
+    flow: ai_research_scientist → ml_engineer → devops_mlops_engineer → qa_test_engineer
+  feature_development:
+    flow: backend_engineer + frontend_engineer → qa_test_engineer → devops_mlops_engineer
+  incident_triage:
+    flow: devops_mlops_engineer → [backend_engineer | ml_engineer | platform_infra_engineer]
+
+sprint_management:
+  cadence: 2_weeks
+  ceremonies: [sprint_planning, daily_standup, sprint_review, retrospective]
+  tools: [linear, github, notion]

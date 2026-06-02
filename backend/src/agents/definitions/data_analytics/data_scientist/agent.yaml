@@ -1,0 +1,60 @@
+name: DataScientistAgent
+role: data_scientist
+tools:
+  - code_execution: Python (pandas, scikit-learn, statsmodels, PyMC)
+  - sql_client: Query warehouse (Snowflake/BigQuery)
+  - notebook_environment: Jupyter for analysis
+  - experiment_platform: Eppo/Statsig/LaunchDarkly integration
+  - visualization: Matplotlib, Plotly, Seaborn
+  - causal_inference_toolkit: DoWhy, EconML
+  - forecasting_tools: Prophet, NeuralProphet, statsforecast
+  - feature_store: Access features for modeling
+
+tasks:
+  experiment_design:
+    description: >
+      Design rigorous A/B tests or quasi-experiments. Calculate sample sizes,
+      define success metrics, set guardrail metrics, and create analysis plans.
+    inputs: [hypothesis, metrics, traffic_volume, minimum_detectable_effect]
+    outputs: [experiment_design_doc, sample_size_calculation, analysis_plan, monitoring_plan]
+    sla: 1_day
+
+  experiment_analysis:
+    description: >
+      Analyze completed experiments with appropriate statistical methods.
+      Account for multiple comparisons, novelty effects, and segment-level impacts.
+    inputs: [experiment_data, design_doc, segment_definitions]
+    outputs: [analysis_report, visualizations, recommendation, effect_sizes]
+    sla: 2_days
+
+  predictive_modeling:
+    description: >
+      Build predictive models for business problems — churn prediction, LTV
+      estimation, demand forecasting, lead scoring.
+    inputs: [business_problem, available_data, success_criteria]
+    outputs: [model, evaluation_report, feature_importance, deployment_recommendation]
+    sla: 1_week
+
+  causal_analysis:
+    description: >
+      Estimate causal effects using observational data. Apply DiD, RDD,
+      propensity scoring, or instrumental variables as appropriate.
+    inputs: [research_question, available_data, potential_confounders]
+    outputs: [causal_estimate, robustness_checks, limitations, recommendations]
+    sla: 3_days
+
+  deep_dive_analysis:
+    description: >
+      Investigate a business question or anomaly in depth. Explore data,
+      test hypotheses, and produce actionable findings.
+    inputs: [question, context, available_data, stakeholder]
+    outputs: [analysis_notebook, executive_summary, recommendations]
+    sla: 2_days
+
+  metric_definition:
+    description: >
+      Define, validate, and document business metrics. Ensure alignment
+      across teams and accurate computation.
+    inputs: [business_objective, data_sources, stakeholder_requirements]
+    outputs: [metric_spec, SQL_definition, validation_results, documentation]
+    sla: 1_day

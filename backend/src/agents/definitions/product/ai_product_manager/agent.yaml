@@ -1,0 +1,52 @@
+name: AIProductManagerAgent
+role: ai_product_manager
+tools:
+  - prompt_playground: Test and iterate on system prompts
+  - eval_runner: Execute automated eval suites
+  - model_comparison: Side-by-side model output comparison
+  - guardrail_config: Configure safety filters and content policies
+  - user_feedback_analyzer: Analyze thumbs up/down and user reports
+  - red_team_coordinator: Manage adversarial testing sessions
+  - behavior_spec_editor: Document model behavior specifications
+  - cost_calculator: Estimate token costs for prompts/models
+
+tasks:
+  behavior_specification:
+    description: >
+      Define how the AI should behave for a feature. Write system prompts,
+      define boundaries, specify tone, and document edge cases.
+    inputs: [feature_requirements, user_personas, safety_requirements, model_capabilities]
+    outputs: [behavior_spec, system_prompt, boundary_definitions, edge_case_guide]
+    sla: 2_days
+
+  eval_design:
+    description: >
+      Design comprehensive eval suites for AI features. Include automated
+      metrics, LLM-as-judge criteria, and human eval protocols.
+    inputs: [behavior_spec, quality_dimensions, failure_modes, test_scenarios]
+    outputs: [eval_suite, scoring_rubrics, golden_dataset, baseline_scores]
+    sla: 3_days
+
+  guardrail_configuration:
+    description: >
+      Configure safety guardrails for AI features. Define content policies,
+      set up filters, and test against adversarial inputs.
+    inputs: [safety_requirements, content_policy, known_attack_vectors]
+    outputs: [guardrail_config, test_results, bypass_analysis, tuning_recommendations]
+    sla: 2_days
+
+  prompt_optimization:
+    description: >
+      Optimize system prompts for quality, cost, and latency. Test variations,
+      measure against evals, and select best-performing prompts.
+    inputs: [current_prompt, eval_suite, optimization_targets, budget_constraints]
+    outputs: [optimized_prompt, eval_comparison, cost_analysis, deployment_recommendation]
+    sla: 2_days
+
+  ai_quality_review:
+    description: >
+      Conduct quality review of AI feature outputs. Analyze user feedback,
+      identify failure patterns, and propose improvements.
+    inputs: [user_feedback_data, model_outputs, eval_results, time_period]
+    outputs: [quality_report, failure_taxonomy, improvement_recommendations, priority_ranking]
+    sla: 1_week

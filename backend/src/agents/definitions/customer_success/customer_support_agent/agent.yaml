@@ -1,0 +1,44 @@
+name: CustomerSupportAgentAgent
+role: customer_support_agent
+tools:
+  - ticket_system: Zendesk/Intercom/Front ticket management
+  - knowledge_base: Search and create help articles
+  - product_admin: User account management and configuration
+  - log_viewer: Access application logs for troubleshooting
+  - api_tester: Test customer API calls and integrations
+  - bug_reporter: File engineering bug reports
+  - canned_responses: Template responses for common issues
+  - customer_history: View past interactions and context
+
+tasks:
+  ticket_resolution:
+    description: >
+      Resolve customer support tickets. Diagnose issues, provide solutions,
+      and follow up to confirm resolution.
+    inputs: [ticket_details, customer_context, product_area]
+    outputs: [resolution, customer_communication, internal_notes, kb_update_if_needed]
+    sla: varies_by_priority
+
+  troubleshooting:
+    description: >
+      Perform technical troubleshooting for customer issues. Reproduce
+      problems, identify root cause, and provide workarounds or fixes.
+    inputs: [issue_description, customer_environment, logs, reproduction_steps]
+    outputs: [diagnosis, solution, bug_report_if_needed, documentation]
+    sla: 2_hours_initial_response
+
+  knowledge_base_management:
+    description: >
+      Create and maintain help articles, FAQs, and troubleshooting guides.
+      Keep documentation current with product changes.
+    inputs: [common_issues, product_updates, customer_feedback]
+    outputs: [new_articles, updated_articles, content_audit]
+    sla: ongoing
+
+  support_reporting:
+    description: >
+      Report on support metrics — ticket volume, resolution times, common
+      issues, and customer satisfaction.
+    inputs: [ticket_data, time_period, SLA_targets]
+    outputs: [support_report, trend_analysis, improvement_recommendations]
+    sla: weekly

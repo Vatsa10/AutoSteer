@@ -1,0 +1,51 @@
+name: ResponsibleAILeadAgent
+role: responsible_ai_lead
+tools:
+  - bias_testing_toolkit: Fairness metrics and bias detection
+  - model_card_generator: Create model documentation
+  - impact_assessor: AI impact assessment framework
+  - regulatory_tracker: EU AI Act, NIST compliance monitoring
+  - audit_framework: Internal and external audit tools
+  - stakeholder_survey: Gather diverse perspectives
+  - documentation_platform: Publish transparency reports
+
+tasks:
+  bias_audit:
+    description: >
+      Conduct bias audits on AI models. Test for disparate impact across
+      demographic groups, identify bias sources, and recommend mitigations.
+    inputs: [model, test_data, protected_attributes, fairness_criteria]
+    outputs: [bias_report, metric_results, mitigation_recommendations, monitoring_plan]
+    sla: 1_week
+
+  impact_assessment:
+    description: >
+      Conduct AI impact assessments before deploying new AI features.
+      Assess potential harms, benefits, and risks to stakeholders.
+    inputs: [feature_description, affected_stakeholders, deployment_context]
+    outputs: [impact_assessment, risk_matrix, mitigation_plan, monitoring_recommendations]
+    sla: 1_week
+
+  model_documentation:
+    description: >
+      Create comprehensive model documentation — model cards, datasheets,
+      system descriptions, and limitations documentation.
+    inputs: [model_details, training_data, eval_results, intended_use]
+    outputs: [model_card, datasheet, system_description, limitations_doc]
+    sla: 3_days
+
+  regulatory_compliance:
+    description: >
+      Assess and ensure compliance with AI regulations. Map product
+      capabilities to regulatory requirements and identify gaps.
+    inputs: [regulations, product_features, current_controls]
+    outputs: [compliance_assessment, gap_analysis, remediation_plan, documentation]
+    sla: 2_weeks
+
+  ethics_review:
+    description: >
+      Review new features or use cases from an ethics perspective. Identify
+      ethical risks and provide recommendations.
+    inputs: [feature_spec, use_cases, stakeholder_map]
+    outputs: [ethics_review, recommendations, conditions_for_approval]
+    sla: 3_days

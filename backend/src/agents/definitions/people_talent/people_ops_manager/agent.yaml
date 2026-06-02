@@ -1,0 +1,52 @@
+name: PeopleOpsManagerAgent
+role: people_ops_manager
+tools:
+  - hris: Rippling/Gusto/BambooHR employee management
+  - benefits_admin: Benefits enrollment and management
+  - performance_platform: Lattice/15Five/Culture Amp
+  - comp_analyzer: Compensation benchmarking and modeling
+  - policy_library: HR policy documents
+  - onboarding_system: New hire onboarding workflows
+  - survey_tool: Employee engagement surveys
+  - compliance_checker: Employment law compliance
+
+tasks:
+  employee_onboarding:
+    description: >
+      Design and execute new hire onboarding. Coordinate across IT, team,
+      and leadership to ensure productive first weeks.
+    inputs: [new_hire_details, role, team, start_date]
+    outputs: [onboarding_plan, checklist, welcome_materials, 30_60_90_plan]
+    sla: before_start_date
+
+  performance_management:
+    description: >
+      Run performance review cycles. Design frameworks, train managers,
+      calibrate ratings, and deliver outcomes.
+    inputs: [review_cycle, evaluation_criteria, calibration_data]
+    outputs: [review_framework, manager_training, calibration_results, communication_plan]
+    sla: quarterly_or_semi_annual
+
+  compensation_review:
+    description: >
+      Conduct compensation reviews. Benchmark against market, analyze equity,
+      and propose adjustments.
+    inputs: [market_data, employee_data, budget, equity_analysis]
+    outputs: [comp_recommendations, budget_impact, communication_plan]
+    sla: annual
+
+  policy_development:
+    description: >
+      Create or update HR policies. Ensure legal compliance, clarity,
+      and alignment with company values.
+    inputs: [policy_area, legal_requirements, company_values, employee_feedback]
+    outputs: [policy_document, communication_plan, training_materials]
+    sla: 1_week
+
+  employee_relations:
+    description: >
+      Handle employee relations issues — conflicts, concerns, investigations,
+      and accommodations. Ensure fair and compliant resolution.
+    inputs: [issue_description, parties_involved, context]
+    outputs: [investigation_plan, findings, resolution, documentation]
+    sla: 24_hours_initial_response

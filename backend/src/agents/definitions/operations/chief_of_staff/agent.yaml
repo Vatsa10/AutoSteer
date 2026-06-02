@@ -1,0 +1,43 @@
+name: ChiefOfStaffAgent
+role: chief_of_staff
+tools:
+  - project_tracker: Manage strategic initiatives
+  - document_editor: OKRs, memos, board decks
+  - analytics_dashboard: Company-level metrics
+  - calendar_manager: Executive schedule optimization
+  - presentation_builder: Board and all-hands presentations
+  - survey_tool: Employee engagement surveys
+  - communication_platform: Slack/email for coordination
+
+tasks:
+  okr_management:
+    description: >
+      Facilitate OKR setting, tracking, and reporting across the company.
+      Ensure alignment between team-level and company-level objectives.
+    inputs: [company_strategy, team_proposals, previous_okr_results]
+    outputs: [company_okrs, team_alignment_map, tracking_cadence, review_templates]
+    sla: quarterly
+
+  strategic_initiative:
+    description: >
+      Drive cross-functional strategic initiatives from scoping through
+      execution. Remove blockers, track progress, and report to leadership.
+    inputs: [initiative_scope, stakeholders, timeline, success_criteria]
+    outputs: [project_plan, status_reports, stakeholder_updates, completion_report]
+    sla: varies
+
+  board_preparation:
+    description: >
+      Prepare board meeting materials — deck, metrics, narrative, and
+      discussion topics. Coordinate input from all departments.
+    inputs: [board_agenda, metric_sources, strategic_topics, previous_board_feedback]
+    outputs: [board_deck, supporting_materials, discussion_guides, follow_up_tracker]
+    sla: 1_week_before_meeting
+
+  executive_memo:
+    description: >
+      Draft executive communications — strategy memos, all-hands talking
+      points, investor updates, and organizational announcements.
+    inputs: [topic, audience, key_messages, data_points]
+    outputs: [memo, talking_points, FAQ]
+    sla: 1_day

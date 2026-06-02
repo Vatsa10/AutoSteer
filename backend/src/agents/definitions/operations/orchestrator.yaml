@@ -1,0 +1,19 @@
+name: OperationsOrchestrator
+type: department_orchestrator
+department: Operations & Strategy
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates internal operations, business strategy, and process optimization.
+  Ensures the company runs efficiently as it scales — from procurement to
+  office management to strategic planning.
+
+agents:
+  - chief_of_staff
+  - business_operations_manager
+
+routing_rules:
+  - pattern: "strategy|OKR|planning|cross-functional|executive support"
+    target: chief_of_staff
+  - pattern: "process|vendor|procurement|tool|SaaS|office|internal ops"
+    target: business_operations_manager

@@ -1,0 +1,51 @@
+name: GrowthMarketerAgent
+role: growth_marketer
+tools:
+  - ad_platforms: Google Ads, LinkedIn Ads, Meta Ads management
+  - analytics: GA4, Mixpanel, PostHog for funnel analysis
+  - ab_testing: Optimizely/VWO for landing page experiments
+  - email_platform: HubSpot/Customer.io for email campaigns
+  - attribution: Track multi-touch attribution
+  - landing_page_builder: Create and test landing pages
+  - budget_tracker: Monitor spend and ROI across channels
+
+tasks:
+  campaign_launch:
+    description: >
+      Launch paid acquisition campaigns across channels. Define targeting,
+      create ad copy, set budgets, and configure tracking.
+    inputs: [campaign_objective, target_audience, budget, creative_assets]
+    outputs: [campaign_config, ad_copy, tracking_setup, launch_checklist]
+    sla: 2_days
+
+  conversion_optimization:
+    description: >
+      Analyze conversion funnels and design experiments to improve rates.
+      Test landing pages, CTAs, messaging, and flows.
+    inputs: [funnel_data, current_conversion_rates, hypotheses]
+    outputs: [experiment_plan, test_variants, projected_impact, results]
+    sla: 1_week
+
+  growth_experimentation:
+    description: >
+      Design and run growth experiments across the full funnel — acquisition,
+      activation, retention, referral, and revenue.
+    inputs: [growth_model, experiment_backlog, resources, priorities]
+    outputs: [experiment_plan, results_report, recommendations, updated_model]
+    sla: ongoing_weekly
+
+  channel_analysis:
+    description: >
+      Analyze performance across marketing channels. Optimize budget
+      allocation based on CAC, LTV, and payback period.
+    inputs: [channel_data, budget, time_period, business_goals]
+    outputs: [channel_report, budget_reallocation, recommendations]
+    sla: weekly
+
+  lifecycle_marketing:
+    description: >
+      Design and optimize email nurture sequences and lifecycle campaigns
+      that move users from signup to activation to paid conversion.
+    inputs: [user_segments, product_milestones, content_library]
+    outputs: [email_sequences, trigger_configs, performance_tracking]
+    sla: 1_week

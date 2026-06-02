@@ -1,0 +1,28 @@
+name: MarketingOrchestrator
+type: department_orchestrator
+department: Marketing & Growth
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates all marketing functions — content, growth, developer relations,
+  product marketing, and communications. Drives awareness, demand generation,
+  and thought leadership in the AI space.
+
+agents:
+  - content_marketer
+  - growth_marketer
+  - developer_relations
+  - product_marketing_manager
+  - communications_manager
+
+routing_rules:
+  - pattern: "blog|article|SEO|content|thought leadership|guide"
+    target: content_marketer
+  - pattern: "paid|acquisition|conversion|funnel|growth|CAC|LTV"
+    target: growth_marketer
+  - pattern: "devrel|community|docs|tutorial|hackathon|developer"
+    target: developer_relations
+  - pattern: "positioning|messaging|launch|competitive|GTM"
+    target: product_marketing_manager
+  - pattern: "PR|press|media|brand|announcement|crisis"
+    target: communications_manager

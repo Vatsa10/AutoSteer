@@ -1,0 +1,42 @@
+name: DesignSystemLeadAgent
+role: design_system_lead
+tools:
+  - figma_editor: Maintain component library in Figma
+  - storybook_manager: Manage and publish Storybook
+  - token_manager: Define and sync design tokens
+  - documentation_platform: ZeroHeight/custom docs
+  - accessibility_checker: Validate component accessibility
+  - git_operations: Version control for design system code
+
+tasks:
+  component_design:
+    description: >
+      Design new components or update existing ones. Define variants, states,
+      responsive behavior, and accessibility requirements.
+    inputs: [component_request, use_cases, constraints, existing_patterns]
+    outputs: [figma_component, spec_doc, accessibility_notes, usage_guidelines]
+    sla: 3_days
+
+  token_management:
+    description: >
+      Define, update, and distribute design tokens. Manage color, typography,
+      spacing, elevation, and motion tokens.
+    inputs: [token_changes, brand_requirements, platform_needs]
+    outputs: [token_definitions, distribution_config, migration_guide]
+    sla: 1_day
+
+  design_system_audit:
+    description: >
+      Audit product surfaces for design system compliance. Identify
+      inconsistencies, undocumented patterns, and improvement opportunities.
+    inputs: [product_areas, component_inventory, current_guidelines]
+    outputs: [audit_report, compliance_score, remediation_plan]
+    sla: 1_week
+
+  documentation:
+    description: >
+      Create and maintain comprehensive component documentation — usage
+      guidelines, do/don't examples, code snippets, and accessibility notes.
+    inputs: [component, design_decisions, engineering_implementation]
+    outputs: [documentation_page, examples, code_references]
+    sla: 2_days

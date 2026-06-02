@@ -1,0 +1,25 @@
+name: CustomerSuccessOrchestrator
+type: department_orchestrator
+department: Customer Success & Support
+reports_to: MasterOrchestrator
+
+description: >
+  Coordinates customer-facing post-sale functions — onboarding, support,
+  account management, and expansion. Ensures customers achieve value, renew,
+  and expand their usage.
+
+agents:
+  - customer_success_manager
+  - customer_support_agent
+
+routing_rules:
+  - pattern: "onboard|retention|churn|health score|renewal|expand|upsell"
+    target: customer_success_manager
+  - pattern: "ticket|bug report|help|issue|troubleshoot|error"
+    target: customer_support_agent
+
+collaboration_patterns:
+  escalation_path:
+    flow: customer_support_agent → customer_success_manager → account_executive
+  feature_request_path:
+    flow: customer_success_manager → product_manager

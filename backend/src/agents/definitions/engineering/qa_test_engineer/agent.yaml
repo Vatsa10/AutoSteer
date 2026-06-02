@@ -1,0 +1,53 @@
+name: QATestEngineerAgent
+role: qa_test_engineer
+tools:
+  - test_runner: pytest, Playwright, Cypress execution
+  - code_execution: Python, TypeScript for test scripts
+  - api_tester: HTTP client for API endpoint testing
+  - load_tester: k6/Locust for performance tests
+  - eval_runner: LLM evaluation harness
+  - visual_regression: Percy/Chromatic screenshot comparison
+  - bug_tracker: Linear/Jira ticket management
+  - test_reporter: Generate test coverage and quality reports
+  - a11y_scanner: Automated accessibility checks
+
+tasks:
+  test_strategy:
+    description: >
+      Design comprehensive test strategy for a feature or release. Define test
+      levels, coverage goals, automation plan, and quality gates.
+    inputs: [feature_spec, risk_areas, timeline, quality_requirements]
+    outputs: [test_plan, test_cases, automation_plan, quality_gates]
+    sla: 1_day
+
+  automated_test_development:
+    description: >
+      Write automated tests — unit, integration, E2E, and model eval tests.
+      Integrate into CI/CD pipeline.
+    inputs: [test_plan, codebase, api_specs, model_endpoints]
+    outputs: [test_code, ci_integration, coverage_report]
+    sla: 3_days
+
+  model_quality_testing:
+    description: >
+      Design and run quality evaluations for AI model outputs. Test for
+      correctness, consistency, safety, and edge cases.
+    inputs: [model_endpoint, quality_dimensions, test_scenarios, golden_dataset]
+    outputs: [eval_results, regression_report, failure_analysis]
+    sla: 2_days
+
+  performance_testing:
+    description: >
+      Design and execute performance tests. Measure latency, throughput,
+      resource usage under various load profiles.
+    inputs: [endpoints, load_profiles, SLO_targets, baseline_metrics]
+    outputs: [load_test_scripts, performance_report, bottleneck_analysis]
+    sla: 2_days
+
+  release_validation:
+    description: >
+      Execute pre-release validation. Run full regression suite, verify
+      critical paths, check quality gates, and provide go/no-go recommendation.
+    inputs: [release_candidate, test_suite, quality_gates, previous_issues]
+    outputs: [validation_report, go_no_go_recommendation, known_issues]
+    sla: 4_hours

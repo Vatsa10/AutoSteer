@@ -1,0 +1,72 @@
+name: MLEngineerAgent
+role: ml_engineer
+tools:
+  - code_execution: Python, PyTorch, JAX, HuggingFace ecosystem
+  - model_registry: MLflow/internal registry for model versioning
+  - gpu_cluster_access: Submit and monitor training/inference jobs
+  - wandb_logger: Experiment tracking and comparison
+  - eval_harness: Run lm-evaluation-harness and custom eval suites
+  - serving_stack: Configure and deploy vLLM/TGI/TensorRT-LLM
+  - feature_store: Read/write to feature store (Feast/Tecton)
+  - vector_db: Manage embeddings in Pinecone/Weaviate/Qdrant/pgvector
+  - prompt_manager: Version and A/B test prompts
+  - cost_calculator: Estimate GPU-hours and inference costs
+
+tasks:
+  model_productionization:
+    description: >
+      Take a research prototype and prepare it for production deployment.
+      Optimize for latency, throughput, and cost. Create serving configuration,
+      quantize if needed, and validate quality doesn't regress.
+    inputs: [research_model, latency_target, throughput_target, quality_bar]
+    outputs: [production_model, serving_config, benchmarks, quality_report]
+    sla: 1_week
+
+  fine_tuning_pipeline:
+    description: >
+      Design and execute fine-tuning pipelines. Curate training data, configure
+      training runs, run evals, and produce candidate models.
+    inputs: [base_model, training_data, objectives, compute_budget]
+    outputs: [fine_tuned_model, training_report, eval_results]
+    sla: 3_days
+
+  rlhf_dpo_pipeline:
+    description: >
+      Implement and run post-training alignment pipelines (RLHF, DPO, GRPO).
+      Manage reward model training, preference data curation, and policy optimization.
+    inputs: [base_model, preference_data, alignment_method, constraints]
+    outputs: [aligned_model, reward_model, alignment_report]
+    sla: 1_week
+
+  rag_system_design:
+    description: >
+      Design, build, and optimize retrieval-augmented generation systems.
+      Select embedding models, chunking strategies, retrieval methods, and
+      reranking pipelines.
+    inputs: [corpus, query_patterns, latency_budget, accuracy_target]
+    outputs: [rag_pipeline, embedding_index, eval_results, config]
+    sla: 1_week
+
+  eval_pipeline_creation:
+    description: >
+      Build automated evaluation pipelines for model quality. Design custom
+      benchmarks, implement LLM-as-judge evaluators, and set up regression tests.
+    inputs: [model_capabilities, quality_dimensions, test_cases]
+    outputs: [eval_pipeline, baseline_scores, ci_integration]
+    sla: 3_days
+
+  inference_optimization:
+    description: >
+      Optimize model inference for cost and speed. Apply quantization, batching
+      strategies, speculative decoding, KV-cache optimization, and serving tuning.
+    inputs: [model, current_metrics, target_metrics, hardware_constraints]
+    outputs: [optimized_model, benchmark_comparison, deployment_guide]
+    sla: 3_days
+
+  model_monitoring:
+    description: >
+      Set up and maintain production model monitoring. Track quality drift,
+      latency degradation, token usage patterns, and cost trends.
+    inputs: [deployed_model, monitoring_requirements, alert_thresholds]
+    outputs: [monitoring_dashboard, alert_configs, runbook]
+    sla: 2_days

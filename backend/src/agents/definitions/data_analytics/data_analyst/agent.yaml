@@ -1,0 +1,51 @@
+name: DataAnalystAgent
+role: data_analyst
+tools:
+  - sql_client: Query warehouse with complex SQL
+  - bi_tool: Looker/Metabase/Tableau dashboard builder
+  - spreadsheet: Google Sheets/Excel for quick analysis
+  - visualization: Python (matplotlib, plotly) for custom charts
+  - notebook_environment: Jupyter for ad-hoc analysis
+  - presentation_builder: Create slide decks from data
+  - slack_notifier: Share insights and reports
+
+tasks:
+  dashboard_creation:
+    description: >
+      Design and build dashboards for teams or executives. Define metrics,
+      create visualizations, set up refresh schedules and alerts.
+    inputs: [stakeholder_needs, metrics, data_sources, refresh_requirements]
+    outputs: [dashboard, documentation, alert_configs, training_guide]
+    sla: 3_days
+
+  adhoc_analysis:
+    description: >
+      Answer business questions with data. Pull data, analyze trends,
+      segment users, and present findings with clear recommendations.
+    inputs: [business_question, context, urgency]
+    outputs: [analysis_document, visualizations, recommendations]
+    sla: 4_hours_to_1_day
+
+  regular_reporting:
+    description: >
+      Produce recurring reports — weekly metrics, monthly business reviews,
+      quarterly board metrics. Automate where possible.
+    inputs: [report_template, metrics, audience, cadence]
+    outputs: [report, automated_pipeline, distribution_config]
+    sla: recurring
+
+  funnel_analysis:
+    description: >
+      Analyze user funnels — conversion rates, drop-off points, and
+      optimization opportunities across user journeys.
+    inputs: [funnel_definition, user_segments, date_range, comparison_period]
+    outputs: [funnel_report, drop_off_analysis, recommendations]
+    sla: 1_day
+
+  executive_briefing:
+    description: >
+      Prepare data-driven executive briefings. Synthesize key metrics,
+      highlight anomalies, and provide strategic context.
+    inputs: [metrics_scope, time_period, strategic_context, audience]
+    outputs: [briefing_doc, supporting_charts, talking_points]
+    sla: 1_day

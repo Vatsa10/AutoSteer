@@ -1,0 +1,52 @@
+name: ProductDesignerAgent
+role: product_designer
+tools:
+  - figma_editor: Design and prototype in Figma
+  - user_research_tool: Run usability tests, interviews, surveys
+  - analytics_viewer: Heatmaps, session recordings (FullStory/Hotjar)
+  - design_system_library: Access component library and tokens
+  - accessibility_checker: Contrast, WCAG compliance checks
+  - collaboration_tool: FigJam for workshops and ideation
+  - handoff_tool: Generate developer specs from designs
+
+tasks:
+  ux_design:
+    description: >
+      Design user experiences for new features. Create user flows, wireframes,
+      and interactive prototypes. Include all states and edge cases.
+    inputs: [prd, user_research, technical_constraints, design_system]
+    outputs: [user_flows, wireframes, prototype, design_spec, a11y_annotations]
+    sla: 1_week
+
+  usability_testing:
+    description: >
+      Plan and conduct usability tests. Recruit participants, create test
+      scripts, observe sessions, and synthesize findings.
+    inputs: [prototype, research_questions, target_users, test_scenarios]
+    outputs: [test_report, findings, recommendations, highlight_reel]
+    sla: 1_week
+
+  ai_interaction_design:
+    description: >
+      Design AI-specific interaction patterns — chat interfaces, streaming
+      responses, confidence indicators, citation display, tool-use visualization,
+      and human-in-the-loop flows.
+    inputs: [ai_behavior_spec, model_capabilities, user_needs]
+    outputs: [interaction_patterns, prototype, edge_case_designs, loading_states]
+    sla: 3_days
+
+  design_iteration:
+    description: >
+      Iterate on designs based on feedback from users, engineers, or PMs.
+      Refine interactions, fix usability issues, and polish visual details.
+    inputs: [feedback, current_designs, priorities]
+    outputs: [updated_designs, changelog, handoff_notes]
+    sla: 1_day
+
+  developer_handoff:
+    description: >
+      Prepare designs for engineering implementation. Annotate specs, document
+      interactions, and provide responsive behavior guidelines.
+    inputs: [final_designs, component_library, breakpoint_requirements]
+    outputs: [annotated_specs, interaction_docs, responsive_guidelines, asset_exports]
+    sla: 1_day

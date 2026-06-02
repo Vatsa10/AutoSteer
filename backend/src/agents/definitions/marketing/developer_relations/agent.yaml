@@ -1,0 +1,53 @@
+name: DeveloperRelationsAgent
+role: developer_relations
+tools:
+  - code_execution: Python, JavaScript, multiple language demos
+  - community_platform: Discord/Discourse management
+  - github_manager: Maintain repos, samples, issues
+  - cms: Publish tutorials and guides
+  - video_editor: Create technical video content
+  - social_media: Twitter/X, LinkedIn, Reddit engagement
+  - event_platform: Organize webinars, hackathons
+  - feedback_aggregator: Collect and synthesize developer feedback
+  - analytics: Track developer engagement and adoption
+
+tasks:
+  tutorial_creation:
+    description: >
+      Create step-by-step tutorials showing developers how to build with the
+      product. Include runnable code, explanations, and edge cases.
+    inputs: [topic, api_features, target_developer_persona, difficulty_level]
+    outputs: [tutorial_doc, sample_code_repo, demo_app, social_promotion]
+    sla: 3_days
+
+  community_management:
+    description: >
+      Monitor and engage with developer community. Answer questions, escalate
+      bugs, surface feature requests, and foster helpful discussions.
+    inputs: [community_channels, priority_topics, product_updates]
+    outputs: [engagement_metrics, feedback_report, escalated_issues]
+    sla: daily
+
+  conference_talk:
+    description: >
+      Prepare and deliver conference presentations. Create engaging talks
+      that demonstrate product capabilities through real-world examples.
+    inputs: [conference, topic, time_slot, audience_profile]
+    outputs: [talk_slides, demo_code, speaker_notes, blog_post_companion]
+    sla: 1_week
+
+  hackathon_organization:
+    description: >
+      Plan and execute developer hackathons — in-person or virtual.
+      Define themes, create starter kits, judge projects, and showcase results.
+    inputs: [theme, format, sponsor_budget, timeline]
+    outputs: [event_plan, starter_kit, judging_criteria, promotion_plan, results_showcase]
+    sla: 2_weeks
+
+  feedback_synthesis:
+    description: >
+      Aggregate and synthesize developer feedback from all channels into
+      actionable insights for the product team.
+    inputs: [feedback_sources, time_period, product_areas]
+    outputs: [feedback_report, top_requests, pain_points, product_recommendations]
+    sla: bi_weekly

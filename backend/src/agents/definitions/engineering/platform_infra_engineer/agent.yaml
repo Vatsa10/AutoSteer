@@ -1,0 +1,52 @@
+name: PlatformInfraEngineerAgent
+role: platform_infra_engineer
+tools:
+  - cloud_console: AWS/GCP/Azure management and configuration
+  - terraform_runner: Infrastructure-as-code execution
+  - gpu_scheduler: SLURM/Ray cluster management
+  - cost_analyzer: Cloud cost analysis and forecasting
+  - network_tools: DNS, VPN, firewall configuration
+  - capacity_planner: Compute demand forecasting
+  - compliance_scanner: Infrastructure compliance checks
+  - backstage_admin: Internal developer platform management
+
+tasks:
+  gpu_cluster_management:
+    description: >
+      Provision, configure, and manage GPU compute clusters. Optimize scheduling,
+      handle multi-tenancy, and manage costs across cloud GPU providers.
+    inputs: [compute_requirements, budget, priority_queues, tenant_quotas]
+    outputs: [cluster_config, scheduling_policy, cost_projections, monitoring]
+    sla: 1_day
+
+  capacity_planning:
+    description: >
+      Forecast compute, storage, and network capacity needs. Create procurement
+      plans and scaling strategies for the next quarter.
+    inputs: [growth_projections, current_utilization, upcoming_projects]
+    outputs: [capacity_plan, procurement_recommendations, cost_forecast]
+    sla: 1_week
+
+  cloud_architecture:
+    description: >
+      Design and implement cloud architecture for new services or major changes.
+      Consider security, reliability, cost, and compliance.
+    inputs: [requirements, compliance_needs, scale_targets, budget]
+    outputs: [architecture_diagram, terraform_configs, security_review, cost_model]
+    sla: 3_days
+
+  developer_platform:
+    description: >
+      Build and maintain internal developer platform capabilities — self-service
+      environment provisioning, CI/CD templates, observability, and documentation.
+    inputs: [developer_needs, current_pain_points, platform_roadmap]
+    outputs: [platform_features, documentation, adoption_metrics]
+    sla: 1_week
+
+  cost_optimization:
+    description: >
+      Comprehensive infrastructure cost analysis and optimization. Negotiate
+      reserved instances, implement spot strategies, right-size resources.
+    inputs: [cost_reports, utilization_data, contract_terms]
+    outputs: [savings_plan, implementation_roadmap, projected_ROI]
+    sla: 1_week

@@ -1,0 +1,62 @@
+name: BackendEngineerAgent
+role: backend_engineer
+tools:
+  - code_execution: Python, Go, TypeScript/Node.js, Rust
+  - database_client: PostgreSQL, Redis, DynamoDB query tools
+  - api_testing: Postman/httpie/curl for API testing
+  - git_operations: Branch, commit, PR management
+  - docker_compose: Local multi-service development
+  - load_tester: k6/Locust for performance testing
+  - schema_manager: Prisma/Alembic for migrations
+  - log_viewer: Query structured logs (Datadog, CloudWatch)
+  - openapi_generator: Generate API specs and client SDKs
+
+tasks:
+  api_design:
+    description: >
+      Design API endpoints for a new feature. Produce OpenAPI spec, define
+      request/response schemas, error codes, rate limits, and auth requirements.
+    inputs: [feature_requirements, user_personas, existing_api_surface]
+    outputs: [openapi_spec, schema_definitions, integration_guide]
+    sla: 1_day
+
+  service_implementation:
+    description: >
+      Implement a backend service or feature. Write production-quality code with
+      tests, error handling, logging, and monitoring.
+    inputs: [api_spec, data_model, business_logic, dependencies]
+    outputs: [implementation, tests, migration_scripts, documentation]
+    sla: 3_days
+
+  database_design:
+    description: >
+      Design database schemas, indexes, and query patterns for a feature.
+      Consider read/write patterns, scaling needs, and consistency requirements.
+    inputs: [data_requirements, access_patterns, scale_estimates]
+    outputs: [schema_design, migration_scripts, query_examples, index_strategy]
+    sla: 1_day
+
+  streaming_llm_integration:
+    description: >
+      Build streaming response infrastructure for LLM outputs. Implement SSE
+      or WebSocket connections with proper backpressure, error recovery, and
+      token counting.
+    inputs: [model_endpoint, response_format, client_requirements]
+    outputs: [streaming_service, client_sdk_update, load_test_results]
+    sla: 2_days
+
+  performance_optimization:
+    description: >
+      Profile and optimize backend performance. Identify bottlenecks, optimize
+      queries, implement caching, and reduce latency.
+    inputs: [performance_metrics, bottleneck_areas, target_metrics]
+    outputs: [optimization_changes, benchmark_results, monitoring_updates]
+    sla: 2_days
+
+  integration_development:
+    description: >
+      Build integrations with third-party services (payment processors, CRMs,
+      auth providers, cloud services). Handle webhooks, retries, and error cases.
+    inputs: [integration_target, api_docs, data_mapping, reliability_requirements]
+    outputs: [integration_code, webhook_handlers, test_suite, runbook]
+    sla: 3_days

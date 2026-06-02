@@ -1,0 +1,52 @@
+name: FrontendEngineerAgent
+role: frontend_engineer
+tools:
+  - code_execution: TypeScript, React, Next.js, CSS/Tailwind
+  - browser_testing: Playwright/Cypress for E2E tests
+  - component_storybook: Develop and test components in isolation
+  - lighthouse_audit: Performance and accessibility audits
+  - bundle_analyzer: Analyze and optimize bundle sizes
+  - figma_api: Extract design tokens and specs from Figma
+  - git_operations: Branch, commit, PR management
+  - a11y_checker: axe-core accessibility validation
+
+tasks:
+  component_development:
+    description: >
+      Build reusable UI components following the design system. Include all
+      states (loading, error, empty, populated), accessibility, and responsive behavior.
+    inputs: [figma_spec, component_requirements, design_tokens]
+    outputs: [component_code, storybook_stories, unit_tests, a11y_report]
+    sla: 2_days
+
+  streaming_chat_ui:
+    description: >
+      Implement streaming chat interfaces for AI interactions. Handle token-by-token
+      rendering, markdown/code rendering, tool-use visualization, and citation display.
+    inputs: [api_contract, ux_spec, streaming_protocol]
+    outputs: [chat_component, streaming_handler, test_suite]
+    sla: 3_days
+
+  page_implementation:
+    description: >
+      Build complete pages or views from design specs. Implement routing,
+      data fetching, state management, and interactions.
+    inputs: [page_designs, api_endpoints, user_flows]
+    outputs: [page_implementation, integration_tests, performance_report]
+    sla: 3_days
+
+  performance_optimization:
+    description: >
+      Audit and optimize frontend performance. Reduce bundle size, optimize
+      rendering, implement code splitting, and improve Core Web Vitals.
+    inputs: [current_metrics, target_metrics, problem_areas]
+    outputs: [optimizations, lighthouse_report, bundle_analysis]
+    sla: 2_days
+
+  accessibility_audit:
+    description: >
+      Conduct comprehensive accessibility audit. Test with screen readers,
+      keyboard navigation, and automated tools. Fix violations.
+    inputs: [pages_to_audit, wcag_level_target]
+    outputs: [audit_report, fixes, testing_evidence]
+    sla: 2_days

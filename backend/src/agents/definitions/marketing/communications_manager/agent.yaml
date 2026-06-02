@@ -1,0 +1,43 @@
+name: CommunicationsManagerAgent
+role: communications_manager
+tools:
+  - media_database: Journalist contacts and pitch tracking
+  - social_media_manager: Schedule and publish across platforms
+  - press_release_distributor: Wire services and distribution
+  - media_monitor: Track mentions and sentiment
+  - document_editor: Draft press releases and statements
+  - crisis_playbook: Pre-built crisis response templates
+  - analytics: Track media coverage and social metrics
+
+tasks:
+  press_release:
+    description: >
+      Write and distribute press releases for company announcements —
+      product launches, funding rounds, partnerships, and milestones.
+    inputs: [announcement_details, quotes, distribution_targets, embargo_date]
+    outputs: [press_release, media_pitch, distribution_plan, coverage_tracking]
+    sla: 2_days
+
+  media_outreach:
+    description: >
+      Build relationships with key journalists and pitch stories.
+      Identify angles that align company news with broader AI narratives.
+    inputs: [story_angles, media_targets, supporting_assets]
+    outputs: [pitch_emails, briefing_docs, follow_up_plan]
+    sla: 1_day
+
+  crisis_communications:
+    description: >
+      Manage communications during crises — outages, security incidents,
+      controversial AI outputs, or public criticism.
+    inputs: [crisis_situation, stakeholders_affected, facts_known, legal_input]
+    outputs: [crisis_response_plan, public_statement, internal_comms, media_response]
+    sla: 2_hours
+
+  social_media_strategy:
+    description: >
+      Develop and execute social media strategy. Create content calendars,
+      manage engagement, and track performance.
+    inputs: [business_goals, brand_voice, platform_priorities, content_themes]
+    outputs: [social_strategy, content_calendar, engagement_guidelines, performance_reports]
+    sla: 1_week
