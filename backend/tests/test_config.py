@@ -8,8 +8,8 @@ def test_settings_defaults():
     )
     assert settings.app_name == "AutoSteer"
     assert settings.debug is False
-    assert settings.default_llm_provider == "anthropic"
-    assert settings.default_llm_model == "claude-sonnet-4-6"
+    assert settings.default_llm_provider == "openai"
+    assert settings.default_llm_model == "gpt-4o"
 
 
 def test_settings_llm_overrides():

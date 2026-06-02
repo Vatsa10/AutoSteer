@@ -7,6 +7,7 @@ router = APIRouter(tags=["chat"])
 class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
+    target_agent: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -32,5 +33,6 @@ async def chat(request: Request, body: ChatRequest):
     result = await engine.process_message(
         user_message=body.message,
         conversation_id=body.conversation_id,
+        target_agent=body.target_agent,
     )
     return ChatResponse(**result)

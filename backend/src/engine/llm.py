@@ -1,3 +1,5 @@
+import os
+
 from dataclasses import dataclass, field
 
 from litellm import acompletion
@@ -17,8 +19,30 @@ class LLMResponse:
 
 
 class LLMProvider:
-    def __init__(self, default_model: str = "claude-sonnet-4-6"):
+    def __init__(
+        self,
+        default_model: str = "claude-sonnet-4-6",
+        anthropic_api_key: str = "",
+        openai_api_key: str = "",
+    ):
         self.default_model = default_model
+        self.provider = self._detect_provider(default_model)
+
+        # Set API keys in environment for LiteLLM
+        if anthropic_api_key:
+            os.environ.setdefault("ANTHROPIC_API_KEY", anthropic_api_key)
+        if openai_api_key:
+            os.environ.setdefault("OPENAI_API_KEY", openai_api_key)
+
+    @staticmethod
+    def _detect_provider(model: str) -> str:
+        if model.startswith("claude"):
+            return "anthropic"
+        if model.startswith("gpt") or model.startswith("o1") or model.startswith("o3"):
+            return "openai"
+        if model.startswith("ollama"):
+            return "ollama"
+        return "unknown"
 
     async def complete(
         self,

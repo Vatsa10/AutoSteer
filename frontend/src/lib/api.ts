@@ -46,11 +46,16 @@ export interface ConversationMessage {
 export async function sendMessage(
   message: string,
   conversationId?: string,
+  targetAgent?: string,
 ): Promise<ChatResponse> {
   const res = await fetch(`${API_URL}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message, conversation_id: conversationId }),
+    body: JSON.stringify({
+      message,
+      conversation_id: conversationId,
+      target_agent: targetAgent || null,
+    }),
   });
   if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
   return res.json();

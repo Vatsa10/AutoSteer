@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     redis_url: str
 
     # LLM
-    default_llm_provider: str = "anthropic"
-    default_llm_model: str = "claude-sonnet-4-6"
+    default_llm_provider: str = "openai"
+    default_llm_model: str = "gpt-4o"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 

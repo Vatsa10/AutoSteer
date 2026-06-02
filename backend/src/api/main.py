@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import agents, chat, conversations, websocket
+from src.config import get_settings
 from src.engine.llm import LLMProvider
 from src.engine.orchestrator import OrchestrationEngine
 
@@ -11,7 +12,12 @@ from src.engine.orchestrator import OrchestrationEngine
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup: initialize engine
-    llm = LLMProvider()
+    settings = get_settings()
+    llm = LLMProvider(
+        default_model=settings.default_llm_model,
+        anthropic_api_key=settings.anthropic_api_key,
+        openai_api_key=settings.openai_api_key,
+    )
     try:
         engine = OrchestrationEngine(
             definitions_dir="src/agents/definitions",

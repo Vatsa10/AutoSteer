@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Send, Network, Loader2 } from "lucide-react";
 import { sendMessage, type ChatResponse } from "@/lib/api";
 import { RoutingPath } from "@/components/routing-path";
+import { AgentSelector } from "@/components/agent-selector";
 
 interface Message {
   role: "user" | "assistant";
@@ -24,6 +25,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   const [isLoading, setIsLoading] = useState(false);
   const [conversationId, setConversationId] = useState<string | undefined>(initialId);
   const [routingStage, setRoutingStage] = useState<string>("");
+  const [targetAgent, setTargetAgent] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -38,30 +40,40 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
     }
   }, [initialId]);
 
-  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
     const userMessage = input.trim();
+    const agent = targetAgent;
+    const convId = conversationId;
+
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
 
-    // Simulate routing stages for visual feedback
-    setRoutingStage("classifying");
+    // Simulate routing stages for visual feedback (skip for direct agent)
+    if (agent) {
+      setRoutingStage("processing");
+    } else {
+      setRoutingStage("classifying");
+    }
     const classifyTimer = setTimeout(() => setRoutingStage("routing"), 600);
     const routeTimer = setTimeout(() => setRoutingStage("processing"), 1200);
 
     try {
-      const response: ChatResponse = await sendMessage(userMessage, conversationId);
+      const response: ChatResponse = await sendMessage(
+        userMessage,
+        convId,
+        agent ?? undefined,
+      );
       clearTimeout(classifyTimer);
       clearTimeout(routeTimer);
       setRoutingStage("");
 
-      const newId = response.conversation_id;
-      if (!conversationId && newId) {
-        setConversationId(newId);
-        onConversationChange?.(newId);
+      if (!convId && response.conversation_id) {
+        setConversationId(response.conversation_id);
+        onConversationChange?.(response.conversation_id);
       }
 
       setMessages((prev) => [
@@ -89,13 +101,13 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
       setIsLoading(false);
       inputRef.current?.focus();
     }
-  }, [input, isLoading, conversationId, onConversationChange]);
+  }
 
-  const handleNewConversation = useCallback(() => {
+  function handleNewConversation() {
     setMessages([]);
     setConversationId(undefined);
     onConversationChange?.("");
-  }, [onConversationChange]);
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -218,23 +230,37 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
         onSubmit={handleSubmit}
         className="shrink-0 border-t border-warm-800/60 p-4"
       >
-        <div className="max-w-3xl mx-auto flex gap-2.5">
-          <input
-            ref={inputRef}
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Send a message to the orchestration system…"
-            className="flex-1 bg-warm-800/60 border border-warm-700/60 rounded-xl px-4 py-2.5 text-sm text-warm-100 placeholder-warm-500 focus:outline-none focus:border-amber-700/70 focus:ring-1 focus:ring-amber-800/50 transition-all"
-            autoFocus
-          />
-          <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
-            className="bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:hover:bg-amber-600 text-warm-950 rounded-xl px-4 py-2.5 transition-all duration-150 flex items-center gap-2 font-medium text-sm"
-          >
-            <Send className="w-4 h-4" />
-          </button>
+        <div className="max-w-3xl mx-auto space-y-2">
+          <div className="flex items-center gap-2">
+            <AgentSelector value={targetAgent} onChange={setTargetAgent} />
+            {targetAgent && (
+              <span className="text-[11px] text-amber-400/70">
+                Sending directly to selected agent — routing bypassed
+              </span>
+            )}
+          </div>
+          <div className="flex gap-2.5">
+            <input
+              ref={inputRef}
+              type="text"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              placeholder={
+                targetAgent
+                  ? `Send a message directly to this agent…`
+                  : "Send a message to the orchestration system…"
+              }
+              className="flex-1 bg-warm-800/60 border border-warm-700/60 rounded-xl px-4 py-2.5 text-sm text-warm-100 placeholder-warm-500 focus:outline-none focus:border-amber-700/70 focus:ring-1 focus:ring-amber-800/50 transition-all"
+              autoFocus
+            />
+            <button
+              type="submit"
+              disabled={isLoading || !input.trim()}
+              className="bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:hover:bg-amber-600 text-warm-950 rounded-xl px-4 py-2.5 transition-all duration-150 flex items-center gap-2 font-medium text-sm"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </form>
 

@@ -34,7 +34,7 @@ routing_rules:
   - pattern: "design|wireframe|prototype|UI|UX|brand"
     target: design_orchestrator
     confidence_threshold: 0.7
-  - pattern: "sell|deal|pipeline|prospect|demo|close"
+  - pattern: "sell|deal|pipeline|prospect|demo|close|proposal|negotiate|contract"
     target: sales_orchestrator
     confidence_threshold: 0.7
   - pattern: "campaign|content|SEO|social|launch|awareness"
