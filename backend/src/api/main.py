@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import agents, chat, conversations, tools, websocket
+from src.api.routes import agents, billing, chat, conversations, custom_agents, files, integrations, prompts, tools, websocket
 from src.auth import setup_auth
 from src.config import get_settings
 from src.database import get_engine, init_db
@@ -82,6 +82,11 @@ def create_app() -> FastAPI:
     app.include_router(agents.router, prefix="/api")
     app.include_router(conversations.router, prefix="/api")
     app.include_router(tools.router, prefix="/api")
+    app.include_router(integrations.router, prefix="/api")
+    app.include_router(files.router, prefix="/api")
+    app.include_router(prompts.router, prefix="/api")
+    app.include_router(custom_agents.router, prefix="/api")
+    app.include_router(billing.router, prefix="/api")
     app.include_router(websocket.router)
 
     # Setup auth (no-op if AUTOSTEER_API_KEY is not set)

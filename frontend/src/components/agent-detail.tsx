@@ -80,6 +80,34 @@ export function AgentDetail({ agent, onClose }: AgentDetailProps) {
           <div>
             <div className="flex items-center gap-2 text-xs text-slate-500 mb-1.5">
               <Wrench className="w-3.5 h-3.5" />
+              Tools
+            </div>
+            {agent.tools && agent.tools.length > 0 ? (
+              <div className="space-y-1.5">
+                {agent.tools.map((tool) => (
+                  <div key={tool.yaml_name} className="flex items-center gap-2 text-sm">
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        tool.status === "live"
+                          ? "bg-green-500"
+                          : tool.status === "beta"
+                            ? "bg-amber-500"
+                            : "bg-slate-300"
+                      }`}
+                    />
+                    <span className="text-slate-700">{tool.yaml_name.replace(/_/g, " ")}</span>
+                    <span className="text-xs text-slate-400 font-mono">→ {tool.canonical}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No tools configured</p>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2 text-xs text-slate-500 mb-1.5">
+              <Wrench className="w-3.5 h-3.5" />
               Capabilities
             </div>
             <div className="space-y-1.5">

@@ -89,7 +89,7 @@ curl -X POST http://localhost:8000/api/chat \
 │  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
 │  │ LLM      │  │ Tool Exec    │  │ State          │   │
 │  │ LiteLLM  │  │              │  │               │   │
-│  │          │  │ 5 built-in   │  │ Postgres 16   │   │
+│  │          │  │ 17+ tools +  │  │ Postgres 16   │   │
 │  │ Stream   │  │ tools +      │  │ Redis 7       │   │
 │  │ Claude   │  │ extensible   │  │               │   │
 │  │ OpenAI   │  │ registry     │  │               │   │
@@ -326,15 +326,30 @@ AutoSteer supports real-time streaming at every layer:
 
 Agents can call tools during processing. The system includes an extensible tool registry.
 
-**Built-in tools (5):**
+**Built-in & integration tools (17 registered, Phase A/B):**
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `web_search` | Search the web (stub) | `query`, `max_results` |
-| `calculator` | Safe math evaluation | `expression` |
-| `datetime` | Current UTC time | `format_str` (iso/unix/readable) |
-| `json_parse` | Parse + pretty-print JSON | `text` |
-| `text_stats` | Text statistics | `text` |
+| Tool | Tier | Description | Parameters |
+|------|------|-------------|------------|
+| `web_search` | Live | Tavily web search | `query`, `max_results` |
+| `url_fetch` | Live | Extract text from URLs | `url`, `max_chars` |
+| `notion_export` | Live | Create Notion pages | `title`, `content`, `parent_page_id` |
+| `gdocs_export` | Beta | Google Docs (requires creds) | `title`, `content` |
+| `slack_post` | Live | Post Slack messages | `channel`, `text` |
+| `slack_read` | Live | Read Slack channel history | `channel`, `limit` |
+| `github_read` | Live | GitHub issues/PRs/files | `action`, `repo`, `query`, `path` |
+| `github_issue_create` | Live | Create GitHub issues | `repo`, `title`, `body` |
+| `email_draft` | Live | Structured email draft (no send) | `to`, `subject`, `body` |
+| `file_upload_read` | Live | Read uploaded files | `file_id` |
+| `linear_read` | Live | List Linear issues | `team_id`, `query_filter` |
+| `linear_create` | Live | Create Linear issues | `team_id`, `title`, `description` |
+| `api_tester` | Live | HTTP request tester | `url`, `method`, `headers`, `body` |
+| `spreadsheet_export` | Beta | CSV/Sheets export | `filename`, `rows`, `format` |
+| `calculator` | Live | Safe math evaluation | `expression` |
+| `datetime` | Live | Current UTC time | `format_str` |
+| `json_parse` | Live | Parse + pretty-print JSON | `text` |
+| `text_stats` | Live | Text statistics | `text` |
+
+YAML tool names (e.g. `slack_notifier`, `document_editor`, `project_tracker`) resolve to canonical tools via alias map. See [docs/integrations.md](docs/integrations.md).
 
 **How agents use tools:**
 
@@ -570,7 +585,8 @@ autosteer/
 │   │   │   ├── router.py            # Regex routing with confidence scoring
 │   │   │   ├── orchestrator.py      # OrchestrationEngine (process_message + process_message_stream)
 │   │   │   ├── workflow_executor.py # Multi-department parallel workflow execution
-│   │   │   └── tool_executor.py     # Tool registry + 5 built-in tools
+│   │   │   └── tool_executor.py     # Tool registry + aliases + integrations
+│   │   ├── integrations/            # Slack, GitHub, Notion, Linear, Tavily
 │   │   ├── messaging/               # Redis pub/sub message bus
 │   │   ├── models/                  # SQLAlchemy models (6 tables)
 │   │   ├── agents/definitions/      # 97 YAML files (42 agents, 12 dept orchs, 1 master)
@@ -667,7 +683,8 @@ pytest -v
 - [x] Persistent conversation memory in PostgreSQL (6 models, async SQLAlchemy)
 - [x] Agent-to-agent handoffs with context transfer (Redis bus + DB persistence)
 - [x] Streaming token-by-token via WebSocket (routing events + tokens + metadata)
-- [x] Tool execution engine (5 built-in tools, extensible registry)
+- [x] Tool execution engine (17+ tools, YAML alias map, per-agent allowlist)
+- [x] Integration platform (encrypted workspace tokens, hub UI, connect/test API)
 - [x] API key authentication (optional, X-API-Key header)
 - [x] TanStack Query v5 + Zustand state management
 - [x] Toast notification system

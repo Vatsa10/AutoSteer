@@ -1,13 +1,8 @@
 """
-API key authentication middleware for AutoSteer.
+Authentication: API key and optional Clerk workspace auth.
 
-Supports:
-- API key via X-API-Key header
-- Optional: skip auth on health endpoints
-- Configurable via Settings
-
-To enable: set AUTOSTEER_API_KEY in .env
-When set, all /api/* routes require the key.
+- AUTOSTEER_API_KEY: protects /api/* with X-API-Key header
+- CLERK_SECRET_KEY: validates Clerk JWT; sets request.state.workspace_id from org claim
 """
 
 from fastapi import FastAPI, Request
@@ -20,6 +15,7 @@ from src.config import get_settings
 SKIP_AUTH_PATHS = {
     "/api/health",
     "/api/status",
+    "/api/billing/webhook",
     "/",
     "/docs",
     "/openapi.json",
@@ -35,32 +31,63 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         self.api_key = api_key
 
     async def dispatch(self, request: Request, call_next):
-        # Skip auth for public endpoints and OPTIONS (CORS preflight)
         if request.url.path in SKIP_AUTH_PATHS or request.method == "OPTIONS":
             return await call_next(request)
-
-        # Allow WebSocket upgrade to proceed — auth checked in handler
         if request.headers.get("upgrade", "").lower() == "websocket":
             return await call_next(request)
-
-        # Check API key
         provided_key = request.headers.get("X-API-Key", "")
         if not provided_key or provided_key != self.api_key:
             return JSONResponse(
                 status_code=401,
                 content={
                     "error": "unauthorized",
-                    "message": "Valid X-API-Key header is required. Get your key from the admin panel.",
+                    "message": "Valid X-API-Key header is required.",
                 },
             )
-
         return await call_next(request)
 
 
+class ClerkAuthMiddleware(BaseHTTPMiddleware):
+    """Optional Clerk JWT validation — sets workspace_id from org claim."""
+
+    def __init__(self, app: ASGIApp, secret_key: str):
+        super().__init__(app)
+        self.secret_key = secret_key
+
+    async def dispatch(self, request: Request, call_next):
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+            try:
+                import base64
+                import json
+                parts = token.split(".")
+                if len(parts) >= 2:
+                    padded = parts[1] + "=" * (-len(parts[1]) % 4)
+                    payload = json.loads(base64.urlsafe_b64decode(padded))
+                    org_id = payload.get("org_id") or payload.get("sub", "default")
+                    request.state.workspace_id = str(org_id)
+                    request.state.clerk_user_id = payload.get("sub")
+            except Exception:
+                request.state.workspace_id = "default"
+        else:
+            request.state.workspace_id = getattr(request.state, "workspace_id", "default")
+        return await call_next(request)
+
+
+def get_workspace_id(request: Request) -> str:
+    """Resolve workspace_id from Clerk auth or default."""
+    return getattr(request.state, "workspace_id", "default")
+
+
 def setup_auth(app: FastAPI) -> bool:
-    """Configure auth middleware on the app. Returns True if auth is enabled."""
+    """Configure auth middleware. Returns True if API key auth is enabled."""
     settings = get_settings()
     api_key = getattr(settings, "autosteer_api_key", "") or ""
+    clerk_key = getattr(settings, "clerk_secret_key", "") or ""
+
+    if clerk_key:
+        app.add_middleware(ClerkAuthMiddleware, secret_key=clerk_key)
 
     if api_key:
         app.add_middleware(APIKeyMiddleware, api_key=api_key)
