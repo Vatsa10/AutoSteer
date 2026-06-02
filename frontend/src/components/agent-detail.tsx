@@ -47,22 +47,22 @@ export function AgentDetail({ agent, onClose }: AgentDetailProps) {
     <div
       ref={overlayRef}
       onClick={handleOverlayClick}
-      className="fixed inset-0 z-50 flex justify-end"
+      className="fixed inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-sm"
     >
-      <div className="w-full max-w-md bg-warm-900 border-l border-warm-700 h-full overflow-y-auto animate-slide-in">
-        <div className="sticky top-0 z-10 bg-warm-900/95 backdrop-blur-sm border-b border-warm-800 px-5 py-4 flex items-center justify-between">
+      <div className="w-full max-w-md bg-white border-l border-slate-200 h-full overflow-y-auto animate-slide-in shadow-xl">
+        <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm border-b border-slate-200 px-5 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-amber-950/50 border border-amber-800/50 flex items-center justify-center">
-              <Bot className="w-4.5 h-4.5 text-amber-400" />
+            <div className="w-9 h-9 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center">
+              <Bot className="w-4.5 h-4.5 text-blue-600" />
             </div>
             <div>
-              <h3 className="font-semibold text-warm-100">{agent.name}</h3>
-              <p className="text-xs text-warm-400 font-mono">{agent.role}</p>
+              <h3 className="font-semibold text-slate-900">{agent.name}</h3>
+              <p className="text-xs text-slate-500 font-mono">{agent.role}</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-warm-400 hover:text-warm-100 hover:bg-warm-800 transition-colors"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -70,22 +70,22 @@ export function AgentDetail({ agent, onClose }: AgentDetailProps) {
 
         <div className="p-5 space-y-5">
           <div>
-            <div className="flex items-center gap-2 text-xs text-warm-400 mb-1.5">
+            <div className="flex items-center gap-2 text-xs text-slate-500 mb-1.5">
               <Building2 className="w-3.5 h-3.5" />
               Department
             </div>
-            <p className="text-sm text-warm-200">{formatDept(agent.department)}</p>
+            <p className="text-sm text-slate-800">{formatDept(agent.department)}</p>
           </div>
 
           <div>
-            <div className="flex items-center gap-2 text-xs text-warm-400 mb-1.5">
+            <div className="flex items-center gap-2 text-xs text-slate-500 mb-1.5">
               <Wrench className="w-3.5 h-3.5" />
               Capabilities
             </div>
             <div className="space-y-1.5">
               {agent.tasks.map((task) => (
-                <div key={task} className="flex items-center gap-2 text-sm text-warm-300">
-                  <ChevronRight className="w-3 h-3 text-amber-600 shrink-0" />
+                <div key={task} className="flex items-center gap-2 text-sm text-slate-700">
+                  <ChevronRight className="w-3 h-3 text-blue-500 shrink-0" />
                   <span className="capitalize">{task.replace(/_/g, " ")}</span>
                 </div>
               ))}

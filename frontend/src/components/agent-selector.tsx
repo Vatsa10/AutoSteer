@@ -10,18 +10,18 @@ interface AgentSelectorProps {
 }
 
 const deptColors: Record<string, string> = {
-  engineering: "text-blue-400",
-  data_analytics: "text-teal-400",
-  product: "text-violet-400",
-  design: "text-pink-400",
-  sales: "text-green-400",
-  marketing: "text-orange-400",
-  customer_success: "text-cyan-400",
-  trust_safety: "text-red-400",
-  operations: "text-yellow-400",
-  people_talent: "text-purple-400",
-  finance_legal: "text-emerald-400",
-  executive: "text-amber-400",
+  engineering: "text-blue-600",
+  data_analytics: "text-teal-600",
+  product: "text-violet-600",
+  design: "text-pink-600",
+  sales: "text-green-600",
+  marketing: "text-orange-600",
+  customer_success: "text-cyan-600",
+  trust_safety: "text-red-600",
+  operations: "text-yellow-600",
+  people_talent: "text-purple-600",
+  finance_legal: "text-emerald-600",
+  executive: "text-amber-600",
 };
 
 const deptLabels: Record<string, string> = {
@@ -91,8 +91,8 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 border transition-all ${
           selectedAgent
-            ? "bg-amber-950/30 border-amber-800/50 text-amber-300"
-            : "bg-warm-800/60 border-warm-700/60 text-warm-400 hover:text-warm-300 hover:border-warm-600"
+            ? "bg-blue-50 border-blue-200 text-blue-700"
+            : "bg-slate-50 border-slate-200 text-slate-500 hover:text-slate-700 hover:border-slate-300"
         }`}
       >
         {selectedAgent ? (
@@ -116,23 +116,23 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
             e.stopPropagation();
             onChange(null);
           }}
-          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-warm-600 border border-warm-500 flex items-center justify-center text-warm-300 hover:bg-warm-500 transition-colors"
+          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-slate-300 border border-slate-400 flex items-center justify-center text-white hover:bg-slate-500 transition-colors"
         >
           <X className="w-2.5 h-2.5" />
         </button>
       )}
 
       {open && (
-        <div className="absolute bottom-full mb-1 left-0 w-72 bg-warm-900 border border-warm-700 rounded-xl shadow-xl z-50 overflow-hidden">
-          <div className="p-2 border-b border-warm-800">
+        <div className="absolute bottom-full mb-1 left-0 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+          <div className="p-2 border-b border-slate-200">
             <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-warm-500" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search agents…"
-                className="w-full bg-warm-800/60 border border-warm-700/60 rounded-lg pl-8 pr-3 py-1.5 text-xs text-warm-100 placeholder-warm-500 focus:outline-none focus:border-amber-700/70"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400"
                 autoFocus
               />
             </div>
@@ -147,14 +147,14 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
                 setOpen(false);
                 setSearch("");
               }}
-              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2.5 hover:bg-warm-800/40 transition-colors ${
-                !value ? "bg-amber-950/20 text-amber-300" : "text-warm-300"
+              className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2.5 hover:bg-slate-50 transition-colors ${
+                !value ? "bg-blue-50 text-blue-700" : "text-slate-700"
               }`}
             >
               <Network className="w-3.5 h-3.5" />
               <div>
                 <div className="font-medium">Auto (let system route)</div>
-                <div className="text-[10px] text-warm-500">
+                <div className="text-[10px] text-slate-500">
                   Master Orchestrator picks the best agent
                 </div>
               </div>
@@ -162,7 +162,7 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
 
             {Array.from(grouped.entries()).map(([dept, deptAgents]) => (
               <div key={dept}>
-                <div className="px-3 py-1.5 text-[10px] font-medium text-warm-500 uppercase tracking-wider border-t border-warm-800/60">
+                <div className="px-3 py-1.5 text-[10px] font-medium text-slate-500 uppercase tracking-wider border-t border-slate-100">
                   {formatDept(dept)}
                 </div>
                 {deptAgents.map((agent) => (
@@ -174,16 +174,16 @@ export function AgentSelector({ value, onChange }: AgentSelectorProps) {
                       setOpen(false);
                       setSearch("");
                     }}
-                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2.5 hover:bg-warm-800/40 transition-colors ${
+                    className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2.5 hover:bg-slate-50 transition-colors ${
                       value === agent.role
-                        ? "bg-amber-950/20 text-amber-300"
-                        : "text-warm-300"
+                        ? "bg-blue-50 text-blue-700"
+                        : "text-slate-700"
                     }`}
                   >
-                    <Bot className={`w-3.5 h-3.5 ${deptColors[dept] ?? "text-warm-400"}`} />
+                    <Bot className={`w-3.5 h-3.5 ${deptColors[dept] ?? "text-slate-400"}`} />
                     <div className="min-w-0">
                       <div className="font-medium truncate">{agent.name}</div>
-                      <div className="text-[10px] text-warm-500 truncate">{agent.role}</div>
+                      <div className="text-[10px] text-slate-500 truncate">{agent.role}</div>
                     </div>
                   </button>
                 ))}

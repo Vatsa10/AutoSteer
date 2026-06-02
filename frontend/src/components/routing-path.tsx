@@ -46,23 +46,23 @@ export function RoutingPath({ department, agent, compact = false }: RoutingPathP
 
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5 text-xs text-warm-400 flex-wrap">
+      <div className="flex items-center gap-1.5 text-xs text-slate-500 flex-wrap">
         <User className="w-3 h-3" />
-        <ChevronRight className="w-3 h-3 text-warm-600" />
-        <Network className="w-3 h-3 text-amber-500" />
-        <span className="text-amber-400">Master</span>
+        <ChevronRight className="w-3 h-3 text-slate-300" />
+        <Network className="w-3 h-3 text-blue-600" />
+        <span className="text-blue-600">Master</span>
         {department && (
           <>
-            <ChevronRight className="w-3 h-3 text-warm-600" />
-            <Building2 className="w-3 h-3 text-amber-500" />
-            <span className="text-amber-400">{formatDept(department)}</span>
+            <ChevronRight className="w-3 h-3 text-slate-300" />
+            <Building2 className="w-3 h-3 text-blue-600" />
+            <span className="text-blue-600">{formatDept(department)}</span>
           </>
         )}
         {agent && (
           <>
-            <ChevronRight className="w-3 h-3 text-warm-600" />
-            <Bot className="w-3 h-3 text-amber-500" />
-            <span className="text-amber-300">{formatAgent(agent)}</span>
+            <ChevronRight className="w-3 h-3 text-slate-300" />
+            <Bot className="w-3 h-3 text-blue-600" />
+            <span className="text-blue-700">{formatAgent(agent)}</span>
           </>
         )}
       </div>
@@ -71,22 +71,22 @@ export function RoutingPath({ department, agent, compact = false }: RoutingPathP
 
   return (
     <div className="flex items-center gap-2 flex-wrap animate-trace">
-      <div className={`${stepStyle} bg-warm-800/60 border-warm-700 text-warm-300`}>
+      <div className={`${stepStyle} bg-slate-100 border-slate-200 text-slate-700`}>
         <User className="w-3.5 h-3.5" />
         <span>You</span>
       </div>
 
-      <ChevronRight className="w-3.5 h-3.5 text-warm-600" />
+      <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
 
-      <div className={`${stepStyle} bg-amber-950/40 border-amber-800/60 text-amber-300`}>
+      <div className={`${stepStyle} bg-blue-50 border-blue-200 text-blue-700`}>
         <Network className="w-3.5 h-3.5" />
         <span>Master Orchestrator</span>
       </div>
 
       {department && (
         <>
-          <ChevronRight className="w-3.5 h-3.5 text-warm-600" />
-          <div className={`${stepStyle} bg-amber-950/40 border-amber-800/60 text-amber-300`}>
+          <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+          <div className={`${stepStyle} bg-blue-50 border-blue-200 text-blue-700`}>
             <Building2 className="w-3.5 h-3.5" />
             <span>{formatDept(department)}</span>
           </div>
@@ -95,8 +95,8 @@ export function RoutingPath({ department, agent, compact = false }: RoutingPathP
 
       {agent && (
         <>
-          <ChevronRight className="w-3.5 h-3.5 text-warm-600" />
-          <div className={`${stepStyle} bg-amber-900/50 border-amber-700/50 text-amber-200`}>
+          <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+          <div className={`${stepStyle} bg-blue-100 border-blue-300 text-blue-800`}>
             <Bot className="w-3.5 h-3.5" />
             <span>{formatAgent(agent)}</span>
           </div>

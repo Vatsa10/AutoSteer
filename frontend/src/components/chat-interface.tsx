@@ -112,17 +112,17 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="shrink-0 border-b border-warm-800/60 px-5 py-3 flex items-center justify-between">
+      <div className="shrink-0 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse-glow" />
-          <span className="text-sm font-medium text-warm-200">
+          <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse-glow" />
+          <span className="text-sm font-medium text-slate-800">
             {conversationId ? "Conversation" : "New Conversation"}
           </span>
         </div>
         {messages.length > 0 && (
           <button
             onClick={handleNewConversation}
-            className="text-xs text-warm-400 hover:text-amber-400 transition-colors"
+            className="text-xs text-slate-500 hover:text-blue-600 transition-colors"
           >
             New chat
           </button>
@@ -133,13 +133,13 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
       <div className="flex-1 overflow-y-auto">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <div className="w-16 h-16 rounded-2xl bg-amber-950/30 border border-amber-900/30 flex items-center justify-center mb-5">
-              <Network className="w-7 h-7 text-amber-500" />
+            <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-5">
+              <Network className="w-7 h-7 text-blue-600" />
             </div>
-            <h2 className="text-lg font-semibold text-warm-200 mb-2">
+            <h2 className="text-lg font-semibold text-slate-800 mb-2">
               AutoSteer
             </h2>
-            <p className="text-sm text-warm-400 max-w-md">
+            <p className="text-sm text-slate-500 max-w-md">
               Send a message and watch it route through the Master Orchestrator to the
               most qualified agent across 12 departments and 42 specialists.
             </p>
@@ -153,7 +153,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                 <button
                   key={suggestion}
                   onClick={() => setInput(suggestion)}
-                  className="text-left text-xs text-warm-400 hover:text-amber-300 bg-warm-800/40 hover:bg-warm-800/70 border border-warm-700/40 hover:border-amber-800/50 rounded-lg px-3 py-2 transition-all duration-150"
+                  className="text-left text-xs text-slate-500 hover:text-blue-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 rounded-lg px-3 py-2 transition-all duration-150"
                 >
                   {suggestion}
                 </button>
@@ -171,8 +171,8 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
               <div
                 className={`max-w-[85%] ${
                   msg.role === "user"
-                    ? "bg-amber-950/30 border border-amber-900/40 rounded-2xl rounded-br-md"
-                    : "bg-warm-800/40 border border-warm-700/50 rounded-2xl rounded-bl-md"
+                    ? "bg-blue-50 border border-blue-200 rounded-2xl rounded-br-md"
+                    : "bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-md"
                 } px-4 py-3`}
               >
                 {/* Routing path for assistant messages */}
@@ -186,12 +186,12 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                   </div>
                 )}
 
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-warm-100">
+                <p className="text-sm leading-relaxed whitespace-pre-wrap text-slate-900">
                   {msg.content}
                 </p>
 
                 {msg.role === "assistant" && msg.model && (
-                  <p className="text-[10px] text-warm-600 mt-2">
+                  <p className="text-[10px] text-slate-400 mt-2">
                     via {msg.model}
                   </p>
                 )}
@@ -202,19 +202,19 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
           {/* Loading indicator with routing stage */}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="bg-warm-800/40 border border-warm-700/50 rounded-2xl rounded-bl-md px-4 py-3">
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-md px-4 py-3">
                 <div className="flex items-center gap-2.5 mb-2">
-                  <Loader2 className="w-4 h-4 text-amber-500 animate-spin" />
-                  <span className="text-xs text-amber-400 font-medium">
+                  <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                  <span className="text-xs text-blue-600 font-medium">
                     {routingStage === "classifying" && "Classifying intent…"}
                     {routingStage === "routing" && "Routing to department…"}
                     {routingStage === "processing" && "Agent processing…"}
                     {!routingStage && "Working…"}
                   </span>
                 </div>
-                <div className="w-48 h-1 bg-warm-800 rounded-full overflow-hidden">
+                <div className="w-48 h-1 bg-slate-200 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-amber-800 via-amber-500 to-amber-400 rounded-full animate-load"
+                    className="h-full bg-gradient-to-r from-blue-700 via-blue-500 to-blue-400 rounded-full animate-load"
                   />
                 </div>
               </div>
@@ -228,13 +228,13 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
       {/* Input */}
       <form
         onSubmit={handleSubmit}
-        className="shrink-0 border-t border-warm-800/60 p-4"
+        className="shrink-0 border-t border-slate-200 p-4"
       >
         <div className="max-w-3xl mx-auto space-y-2">
           <div className="flex items-center gap-2">
             <AgentSelector value={targetAgent} onChange={setTargetAgent} />
             {targetAgent && (
-              <span className="text-[11px] text-amber-400/70">
+              <span className="text-[11px] text-blue-500/70">
                 Sending directly to selected agent — routing bypassed
               </span>
             )}
@@ -250,13 +250,13 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                   ? `Send a message directly to this agent…`
                   : "Send a message to the orchestration system…"
               }
-              className="flex-1 bg-warm-800/60 border border-warm-700/60 rounded-xl px-4 py-2.5 text-sm text-warm-100 placeholder-warm-500 focus:outline-none focus:border-amber-700/70 focus:ring-1 focus:ring-amber-800/50 transition-all"
+              className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300 transition-all"
               autoFocus
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="bg-amber-600 hover:bg-amber-500 disabled:opacity-40 disabled:hover:bg-amber-600 text-warm-950 rounded-xl px-4 py-2.5 transition-all duration-150 flex items-center gap-2 font-medium text-sm"
+              className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-2.5 transition-all duration-150 flex items-center gap-2 font-medium text-sm"
             >
               <Send className="w-4 h-4" />
             </button>

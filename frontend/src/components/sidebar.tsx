@@ -56,10 +56,10 @@ export function Sidebar({
 
   if (collapsed) {
     return (
-      <aside className="w-14 border-r border-warm-800/60 bg-warm-900/80 flex flex-col items-center py-3 gap-1 shrink-0">
+      <aside className="w-14 border-r border-slate-200 bg-slate-50 flex flex-col items-center py-3 gap-1 shrink-0">
         <button
           onClick={() => setCollapsed(false)}
-          className="p-2 rounded-lg text-warm-400 hover:text-amber-400 hover:bg-warm-800/60 transition-colors mb-2"
+          className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors mb-2"
           aria-label="Expand sidebar"
         >
           <PanelLeft className="w-4 h-4" />
@@ -73,8 +73,8 @@ export function Sidebar({
               href={item.href}
               className={`p-2 rounded-lg transition-colors ${
                 isActive
-                  ? "bg-amber-950/30 text-amber-400 border border-amber-900/40"
-                  : "text-warm-400 hover:text-warm-200 hover:bg-warm-800/40 border border-transparent"
+                  ? "bg-blue-50 text-blue-600 border border-blue-200"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-100 border border-transparent"
               }`}
               title={item.label}
             >
@@ -87,23 +87,23 @@ export function Sidebar({
   }
 
   return (
-    <aside className="w-64 border-r border-warm-800/60 bg-warm-900/80 flex flex-col shrink-0">
+    <aside className="w-64 border-r border-slate-200 bg-slate-50 flex flex-col shrink-0">
       {/* Brand */}
-      <div className="px-4 py-3.5 border-b border-warm-800/60">
+      <div className="px-4 py-3.5 border-b border-slate-200">
         <div className="flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-amber-950/40 border border-amber-800/40 flex items-center justify-center">
-              <Network className="w-4 h-4 text-amber-500" />
+            <div className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center">
+              <Network className="w-4 h-4 text-blue-600" />
             </div>
             <div>
-              <h1 className="text-sm font-bold text-warm-100 leading-tight">
+              <h1 className="text-sm font-bold text-slate-900 leading-tight">
                 AutoSteer
               </h1>
             </div>
           </Link>
           <button
             onClick={() => setCollapsed(true)}
-            className="p-1.5 rounded-md text-warm-500 hover:text-warm-300 hover:bg-warm-800/60 transition-colors"
+            className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
             aria-label="Collapse sidebar"
           >
             <PanelLeftClose className="w-3.5 h-3.5" />
@@ -112,7 +112,7 @@ export function Sidebar({
       </div>
 
       {/* Nav */}
-      <nav className="px-2 py-2 space-y-0.5 border-b border-warm-800/60">
+      <nav className="px-2 py-2 space-y-0.5 border-b border-slate-200">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = pathname === item.href;
@@ -122,8 +122,8 @@ export function Sidebar({
               href={item.href}
               className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
                 isActive
-                  ? "bg-amber-950/30 text-amber-200 border border-amber-900/40"
-                  : "text-warm-400 hover:text-warm-200 hover:bg-warm-800/40 border border-transparent"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200"
+                  : "text-slate-600 hover:text-slate-800 hover:bg-slate-100 border border-transparent"
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -146,8 +146,8 @@ export function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="px-3 py-2 border-t border-warm-800/60">
-        <div className="flex items-center gap-2 text-xs text-warm-500">
+      <div className="px-3 py-2 border-t border-slate-200">
+        <div className="flex items-center gap-2 text-xs text-slate-500">
           <div className="w-1.5 h-1.5 rounded-full bg-green-600" />
           42 agents across 12 departments
         </div>

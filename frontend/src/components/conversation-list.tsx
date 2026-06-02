@@ -36,12 +36,12 @@ export function ConversationList({
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium text-warm-400 uppercase tracking-wider">
+        <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
           Conversations
         </span>
         <button
           onClick={onNew}
-          className="p-1 rounded-md text-warm-400 hover:text-amber-400 hover:bg-warm-800/60 transition-colors"
+          className="p-1 rounded-md text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
           aria-label="New conversation"
         >
           <Plus className="w-4 h-4" />
@@ -50,7 +50,7 @@ export function ConversationList({
 
       <div className="flex-1 overflow-y-auto px-2 space-y-0.5">
         {conversations.length === 0 && (
-          <p className="text-xs text-warm-500 px-3 py-4 text-center">
+          <p className="text-xs text-slate-400 px-3 py-4 text-center">
             No conversations yet. Send a message to start.
           </p>
         )}
@@ -60,17 +60,17 @@ export function ConversationList({
             onClick={() => onSelect(conv.id)}
             className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2.5 group ${
               activeId === conv.id
-                ? "bg-amber-950/30 text-amber-200 border border-amber-900/40"
-                : "text-warm-300 hover:text-warm-100 hover:bg-warm-800/40 border border-transparent"
+                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-transparent"
             }`}
           >
             <MessageSquare
               className={`w-3.5 h-3.5 shrink-0 ${
-                activeId === conv.id ? "text-amber-500" : "text-warm-500"
+                activeId === conv.id ? "text-blue-600" : "text-slate-400"
               }`}
             />
             <span className="truncate flex-1">{conv.title}</span>
-            <span className="text-[10px] text-warm-500 shrink-0">
+            <span className="text-[10px] text-slate-400 shrink-0">
               {timeAgo(conv.updated_at)}
             </span>
           </button>
