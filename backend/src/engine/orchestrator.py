@@ -11,7 +11,7 @@ from src.engine.loader import AgentLoader, LoadedAgent
 from src.engine.router import OrchestratorRouter, RoutingResult
 from src.engine.schemas import OrchestratorConfig, RoutingRule
 from src.engine.workflow_executor import WorkflowExecutor
-from src.engine.tool_executor import get_tool_registry
+from src.engine.tool_executor import get_tool_registry, set_tool_context
 from src.messaging.bus import MessageBus
 from src.messaging.schemas import AgentMessage, MessageType, Priority
 from src.models.conversation import Conversation
@@ -37,7 +37,9 @@ class OrchestrationEngine:
         # Build agent runtimes indexed by role
         tool_registry = get_tool_registry()
         self.agents: dict[str, AgentRuntime] = {}
+        self._loaded_agent_map: dict[str, LoadedAgent] = {}
         for loaded in self.loaded_agents:
+            self._loaded_agent_map[loaded.config.role] = loaded
             runtime = AgentRuntime(
                 soul=loaded.soul,
                 config=loaded.config,
@@ -87,6 +89,29 @@ class OrchestrationEngine:
 
     def _normalize_department(self, name: str) -> str:
         return name.lower().replace(" & ", "_").replace(" ", "_")
+
+    async def _route_department(self, user_message: str) -> RoutingResult | None:
+        """Route to department: LLM-first when regex confidence < 0.5."""
+        regex_result = self.master_router.route(user_message)
+        if regex_result is None or regex_result.confidence < 0.5:
+            dept_name = await self._llm_classify_department(user_message)
+            if dept_name:
+                return RoutingResult(
+                    target=dept_name, confidence=0.75, matched_pattern="llm_primary"
+                )
+        return regex_result
+
+    async def _route_agent(self, user_message: str, dept_key: str) -> RoutingResult | None:
+        """Route to agent within department: LLM-first when regex confidence < 0.5."""
+        dept_router = self.department_routers.get(dept_key)
+        regex_result = dept_router.route(user_message) if dept_router else None
+        if regex_result is None or regex_result.confidence < 0.5:
+            agent_role = await self._llm_classify_agent(user_message, dept_key)
+            if agent_role:
+                return RoutingResult(
+                    target=agent_role, confidence=0.75, matched_pattern="llm_primary"
+                )
+        return regex_result
 
     async def _llm_classify_department(self, user_message: str) -> str | None:
         """Fallback: use LLM to classify which department handles this request."""
@@ -220,16 +245,9 @@ User request: {user_message}"""
                     break
         else:
             # Step 1: Master orchestrator routes to department
-            dept_result = self.master_router.route(user_message)
+            dept_result = await self._route_department(user_message)
             if not dept_result:
-                # LLM fallback for department classification
-                dept_name = await self._llm_classify_department(user_message)
-                if dept_name:
-                    dept_result = RoutingResult(
-                        target=dept_name, confidence=0.6, matched_pattern="llm_fallback"
-                    )
-                else:
-                    return {
+                return {
                         "conversation_id": conversation_id,
                         "response": "I'm not sure which department can help with that. Could you clarify your request?",
                         "routed_to": None,
@@ -266,19 +284,10 @@ User request: {user_message}"""
             dept_key = _orch_to_dept.get(target_normalized, department)
             department = _dept_to_dir.get(dept_key, dept_key)
             dept_router = self.department_routers.get(dept_key) or self.department_routers.get(department)
-            agent_result = None
-            if dept_router:
-                agent_result = dept_router.route(user_message)
+            agent_result = await self._route_agent(user_message, dept_key)
 
             if not agent_result:
-                # LLM fallback for agent classification
-                agent_role_llm = await self._llm_classify_agent(user_message, dept_key)
-                if agent_role_llm:
-                    agent_result = RoutingResult(
-                        target=agent_role_llm, confidence=0.6, matched_pattern="llm_fallback"
-                    )
-                else:
-                    return {
+                return {
                         "conversation_id": conversation_id,
                         "response": f"Routed to {department} department, but no specific agent matched. Please provide more details.",
                         "routed_to": department,
@@ -296,6 +305,7 @@ User request: {user_message}"""
                 "agent": agent_role,
             }
 
+        set_tool_context(session=session, workspace_id="default")
         response = await agent_runtime.process(user_message)
 
         # HANDOFF: Check if agent requested a handoff to another agent
@@ -474,15 +484,18 @@ User request: {user_message}"""
         }
 
     def list_agents(self) -> list[dict]:
-        return [
-            {
+        result = []
+        for loaded in self.loaded_agents:
+            runtime = self.agents.get(loaded.config.role)
+            entry = {
                 "role": loaded.config.role,
                 "name": loaded.soul.name,
                 "department": loaded.department,
                 "tasks": list(loaded.config.tasks.keys()),
+                "tools": runtime.tool_status if runtime else [],
             }
-            for loaded in self.loaded_agents
-        ]
+            result.append(entry)
+        return result
 
     def list_departments(self) -> list[dict]:
         return [
@@ -519,17 +532,11 @@ User request: {user_message}"""
                     break
             yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
         else:
-            dept_result = self.master_router.route(user_message)
+            dept_result = await self._route_department(user_message)
             if not dept_result:
-                dept_name = await self._llm_classify_department(user_message)
-                if dept_name:
-                    dept_result = RoutingResult(
-                        target=dept_name, confidence=0.6, matched_pattern="llm_fallback"
-                    )
-                else:
-                    yield {"type": "error", "message": "Could not classify your request. Please clarify."}
-                    yield {"type": "done"}
-                    return
+                yield {"type": "error", "message": "Could not classify your request. Please clarify."}
+                yield {"type": "done"}
+                return
             department = dept_result.target
             yield {"type": "routing", "stage": "department", "department": department}
 
@@ -539,20 +546,11 @@ User request: {user_message}"""
             _dept_to_dir = getattr(self, "_dept_to_dir", {})
             dept_key = _orch_to_dept.get(target_normalized, department)
             department = _dept_to_dir.get(dept_key, dept_key)
-            dept_router = self.department_routers.get(dept_key) or self.department_routers.get(department)
-            agent_result = None
-            if dept_router:
-                agent_result = dept_router.route(user_message)
+            agent_result = await self._route_agent(user_message, dept_key)
             if not agent_result:
-                agent_role_llm = await self._llm_classify_agent(user_message, dept_key)
-                if agent_role_llm:
-                    agent_result = RoutingResult(
-                        target=agent_role_llm, confidence=0.6, matched_pattern="llm_fallback"
-                    )
-                else:
-                    yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
-                    yield {"type": "done"}
-                    return
+                yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
+                yield {"type": "done"}
+                return
             agent_role = agent_result.target
             yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
 
@@ -565,6 +563,7 @@ User request: {user_message}"""
 
         yield {"type": "routing", "stage": "processing"}
 
+        set_tool_context(session=session, workspace_id="default")
         full_content = ""
         model_name = ""
         usage = {}

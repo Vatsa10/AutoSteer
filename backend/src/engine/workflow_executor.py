@@ -92,6 +92,10 @@ class WorkflowExecutor:
         context: dict[str, Any] = {"original_request": user_message, "step_results": {}}
 
         for step_idx, dept_group in enumerate(steps):
+            from src.config import get_settings
+            settings = get_settings()
+            if len(dept_group) > settings.max_parallel:
+                dept_group = dept_group[: settings.max_parallel]
             tasks = [
                 self._run_department(dept, context, conversation_id, session)
                 for dept in dept_group

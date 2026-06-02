@@ -33,11 +33,20 @@ export interface ChatResponse {
   usage: Record<string, number> | null;
 }
 
+export interface AgentToolStatus {
+  yaml_name: string;
+  canonical: string;
+  tier: string;
+  status: "live" | "beta" | "planned";
+  callable: boolean;
+}
+
 export interface AgentInfo {
   role: string;
   name: string;
   department: string;
   tasks: string[];
+  tools?: AgentToolStatus[];
 }
 
 export interface DepartmentInfo {
@@ -117,5 +126,76 @@ export interface SystemStatus {
 
 export async function getSystemStatus(): Promise<SystemStatus> {
   const res = await apiFetch("/api/status");
+  return res.json();
+}
+
+// Integrations
+export interface IntegrationProvider {
+  id: string;
+  name: string;
+  description: string;
+  scopes: string[];
+  connect_type: string;
+  env_var: string;
+  connected: boolean;
+  connection_source: string | null;
+}
+
+export async function getIntegrations(): Promise<{
+  providers: IntegrationProvider[];
+  workspace_id: string;
+}> {
+  const res = await apiFetch("/api/integrations");
+  return res.json();
+}
+
+export async function connectIntegration(
+  provider: string,
+  token: string,
+  metadata?: Record<string, string>,
+): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/integrations/${provider}/connect`, {
+    method: "POST",
+    body: JSON.stringify({ token, metadata }),
+  });
+  return res.json();
+}
+
+export async function testIntegration(
+  provider: string,
+): Promise<{ ok: boolean; error?: string; message?: string }> {
+  const res = await apiFetch(`/api/integrations/${provider}/test`, { method: "POST" });
+  return res.json();
+}
+
+export async function disconnectIntegration(provider: string): Promise<{ ok: boolean }> {
+  const res = await apiFetch(`/api/integrations/${provider}/disconnect`, { method: "DELETE" });
+  return res.json();
+}
+
+export interface ToolInfo {
+  name: string;
+  description: string;
+  tier: string;
+  status: string;
+  provider: string | null;
+}
+
+export async function getTools(): Promise<{ tools: ToolInfo[]; count: number }> {
+  const res = await apiFetch("/api/tools");
+  return res.json();
+}
+
+export interface PricingPlan {
+  id: string;
+  name: string;
+  price_usd: number;
+  interval: string;
+  features: string[];
+  checkout_url: string | null;
+}
+
+export async function getPricing(): Promise<{ plans: PricingPlan[]; self_host: { price_usd: number } }> {
+  const res = await apiFetch("/api/billing/pricing");
   return res.json();
 }

@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from src.engine.llm import LLMMessage, LLMProvider, LLMResponse, LLMStreamChunk
 from src.engine.schemas import AgentConfig, SoulConfig
 from src.engine.tool_executor import ToolRegistry, execute_tool
+from src.engine.tool_aliases import resolve_tool_name
 
 
 @dataclass
@@ -38,7 +39,13 @@ class AgentRuntime:
         self.config = config
         self.llm = llm
         self.model_override = model_override
-        self.tool_registry = tool_registry
+        self._full_registry = tool_registry
+        self.tool_status: list[dict] = []
+        if tool_registry and config.tools:
+            allowed, self.tool_status = tool_registry.resolve_agent_tools(config.tools)
+            self.tool_registry = tool_registry.create_filtered_view(allowed)
+        else:
+            self.tool_registry = tool_registry
         self.conversation_history: list[LLMMessage] = []
         self._system_prompt = self._build_system_prompt()
 
@@ -68,16 +75,31 @@ class AgentRuntime:
             tool_descs = []
             for t in registered:
                 schema = self.tool_registry.get_schema(t)
+                tier = self.tool_registry.get_tier(t).value
                 if schema:
-                    tool_descs.append(f"- **{t}**: {schema.get('description', 'No description')}")
+                    tool_descs.append(
+                        f"- **{t}** [{tier}]: {schema.get('description', 'No description')}"
+                    )
                 else:
-                    tool_descs.append(f"- **{t}**")
+                    tool_descs.append(f"- **{t}** [{tier}]")
             tool_list_str = "\n".join(tool_descs) if tool_descs else tools_str
+
+        planned_tools = [
+            s["yaml_name"]
+            for s in self.tool_status
+            if not s.get("callable")
+        ]
+        planned_note = ""
+        if planned_tools:
+            planned_note = (
+                f"\n\n**Planned tools (NOT callable — do not emit TOOL_CALL for these):** "
+                f"{', '.join(planned_tools)}"
+            )
 
         return f"""{base_prompt}
 
 ## Available Tools
-{tool_list_str}
+{tool_list_str}{planned_note}
 
 ## Tasks You Can Perform
 {tasks_str}
@@ -189,6 +211,14 @@ class AgentRuntime:
                 tc = json.loads(tc_json)
                 tool_name = tc.get("tool", "")
                 arguments = tc.get("arguments", {})
+                # Block TOOL_CALL for tools not in this agent's allowlist
+                if self.tool_registry and not self.tool_registry.is_registered(tool_name):
+                    canonical = resolve_tool_name(tool_name)
+                    tool_results.append(
+                        f"Tool [{tool_name}] blocked: not in agent allowlist "
+                        f"(canonical: {canonical}). Use only listed tools."
+                    )
+                    continue
                 result = await execute_tool(self.tool_registry, tool_name, arguments)
                 tool_results.append(
                     f"Tool [{tool_name}] result ({'success' if result.success else 'failed'}): {result.output or result.error}"
