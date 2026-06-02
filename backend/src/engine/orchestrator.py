@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -10,6 +11,7 @@ from src.engine.loader import AgentLoader, LoadedAgent
 from src.engine.router import OrchestratorRouter, RoutingResult
 from src.engine.schemas import OrchestratorConfig, RoutingRule
 from src.engine.workflow_executor import WorkflowExecutor
+from src.engine.tool_executor import get_tool_registry
 from src.messaging.bus import MessageBus
 from src.messaging.schemas import AgentMessage, MessageType, Priority
 from src.models.conversation import Conversation
@@ -33,12 +35,14 @@ class OrchestrationEngine:
         self.master_config = self.loader.load_master_orchestrator()
 
         # Build agent runtimes indexed by role
+        tool_registry = get_tool_registry()
         self.agents: dict[str, AgentRuntime] = {}
         for loaded in self.loaded_agents:
             runtime = AgentRuntime(
                 soul=loaded.soul,
                 config=loaded.config,
                 llm=self.llm,
+                tool_registry=tool_registry,
             )
             self.agents[loaded.config.role] = runtime
 
@@ -489,3 +493,151 @@ User request: {user_message}"""
             }
             for config in self.orchestrator_configs
         ]
+
+    async def process_message_stream(
+        self,
+        user_message: str,
+        conversation_id: str | None = None,
+        target_agent: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Streaming version of process_message. Yields routing events + tokens."""
+        conversation_id = conversation_id or str(uuid.uuid4())
+
+        department: str | None = None
+        agent_role: str | None = None
+
+        # Phase 1: Routing
+        yield {"type": "routing", "stage": "classifying"}
+
+        if target_agent:
+            agent_role = target_agent
+            for dept_name, agent_list in self.department_agents.items():
+                if target_agent in agent_list:
+                    _dept_to_dir = getattr(self, "_dept_to_dir", {})
+                    department = _dept_to_dir.get(dept_name, dept_name)
+                    break
+            yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+        else:
+            dept_result = self.master_router.route(user_message)
+            if not dept_result:
+                dept_name = await self._llm_classify_department(user_message)
+                if dept_name:
+                    dept_result = RoutingResult(
+                        target=dept_name, confidence=0.6, matched_pattern="llm_fallback"
+                    )
+                else:
+                    yield {"type": "error", "message": "Could not classify your request. Please clarify."}
+                    yield {"type": "done"}
+                    return
+            department = dept_result.target
+            yield {"type": "routing", "stage": "department", "department": department}
+
+            # Resolve department key
+            target_normalized = department.replace("_", "")
+            _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
+            _dept_to_dir = getattr(self, "_dept_to_dir", {})
+            dept_key = _orch_to_dept.get(target_normalized, department)
+            department = _dept_to_dir.get(dept_key, dept_key)
+            dept_router = self.department_routers.get(dept_key) or self.department_routers.get(department)
+            agent_result = None
+            if dept_router:
+                agent_result = dept_router.route(user_message)
+            if not agent_result:
+                agent_role_llm = await self._llm_classify_agent(user_message, dept_key)
+                if agent_role_llm:
+                    agent_result = RoutingResult(
+                        target=agent_role_llm, confidence=0.6, matched_pattern="llm_fallback"
+                    )
+                else:
+                    yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
+                    yield {"type": "done"}
+                    return
+            agent_role = agent_result.target
+            yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+
+        # Phase 2: Agent processes with streaming
+        agent_runtime = self.agents.get(agent_role) if agent_role else None
+        if not agent_runtime:
+            yield {"type": "error", "message": f"Agent '{agent_role}' is not available."}
+            yield {"type": "done"}
+            return
+
+        yield {"type": "routing", "stage": "processing"}
+
+        full_content = ""
+        model_name = ""
+        usage = {}
+        handoff_data = None
+
+        async for event in agent_runtime.process_stream(user_message):
+            if event["type"] == "token":
+                full_content += event["content"]
+                yield {"type": "token", "content": event["content"]}
+            elif event["type"] == "metadata":
+                model_name = event.get("model", "")
+                usage = event.get("usage", {})
+                handoff_data = event.get("handoff")
+                full_content = event.get("display_content", full_content)
+            elif event["type"] == "done":
+                pass
+
+        # Phase 3: Persist to DB (non-blocking for stream)
+        content = full_content
+        if session is not None:
+            try:
+                from sqlalchemy import select as sa_select
+                now = datetime.now(timezone.utc)
+
+                result = await session.execute(
+                    sa_select(Conversation).where(Conversation.id == conversation_id)
+                )
+                conv = result.scalar_one_or_none()
+                if conv is None:
+                    conv = Conversation(
+                        id=conversation_id,
+                        title=user_message[:500],
+                        status="active",
+                        created_at=now,
+                        updated_at=now,
+                    )
+                    session.add(conv)
+                else:
+                    conv.updated_at = now
+
+                session.add(MessageModel(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conversation_id,
+                    from_agent="user",
+                    to_agent=agent_role or "unknown",
+                    message_type=MessageType.REQUEST,
+                    priority=Priority.P2,
+                    content=user_message,
+                    thread_id=conversation_id,
+                    created_at=now,
+                ))
+                session.add(MessageModel(
+                    id=str(uuid.uuid4()),
+                    conversation_id=conversation_id,
+                    from_agent=agent_role or "unknown",
+                    to_agent="user",
+                    message_type=MessageType.RESPONSE,
+                    priority=Priority.P2,
+                    content=content,
+                    thread_id=conversation_id,
+                    created_at=now,
+                ))
+                await session.commit()
+            except Exception:
+                pass  # Don't break the stream for DB errors
+
+        # Phase 4: Final metadata
+        yield {
+            "type": "metadata",
+            "conversation_id": conversation_id,
+            "agent": agent_role,
+            "department": department,
+            "model": model_name,
+            "usage": usage,
+        }
+        yield {"type": "done"}

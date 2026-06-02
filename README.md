@@ -20,10 +20,10 @@ You: "Design a new onboarding flow for enterprise customers"
 ```
 
 1. **You send a message** — natural language, any domain
-2. **Master Orchestrator classifies intent** — regex pattern matching with confidence scoring, routes to the right department
-3. **Department Orchestrator selects the agent** — picks the most qualified specialist
+2. **Master Orchestrator classifies intent** — regex pattern matching with confidence scoring, falls back to LLM-based classification for unmatched patterns, routes to the right department
+3. **Department Orchestrator selects the agent** — picks the most qualified specialist (regex + LLM fallback)
 4. **Agent processes with full context** — personality, expertise, tools, tasks, and decision boundaries injected as system prompt
-5. **Response returns with routing metadata** — see which department and agent handled it, model used, token usage
+5. **Response streams back in real-time** — routing events (classifying → department → agent → processing), token-by-token streaming, metadata with model + usage. WebSocket with REST fallback.
 
 ---
 
@@ -67,35 +67,46 @@ curl -X POST http://localhost:8000/api/chat \
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│                 Next.js Frontend                  │
-│   Chat + Routing Viz │ Agent Browser │ History   │
-└──────────────────────┬───────────────────────────┘
-                       │ REST + WebSocket
-┌──────────────────────┴───────────────────────────┐
-│                  FastAPI Backend                   │
-│                                                    │
-│  ┌──────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │ API      │  │ Orchestration│  │ Message Bus │ │
-│  │ REST/WS  │  │ Engine       │  │ (Redis)     │ │
-│  │          │  │              │  │             │ │
-│  │ /chat    │  │ Master Router│  │ pub/sub     │ │
-│  │ /agents  │  │ Dept Routers │  │ channels    │ │
-│  │ /ws/chat │  │ Agent Runtime│  │             │ │
-│  └──────────┘  └──────────────┘  └─────────────┘ │
-│                                                    │
-│  ┌──────────┐  ┌──────────────┐  ┌─────────────┐ │
-│  │ LLM      │  │ YAML Loader  │  │ State        │ │
-│  │ LiteLLM  │  │              │  │              │ │
-│  │          │  │ 97 files     │  │ Postgres     │ │
-│  │ Claude   │  │ 42 agents    │  │ Redis        │ │
-│  │ OpenAI   │  │ 12 dept orch │  │              │ │
-│  │ Ollama   │  │ 1 master     │  │              │ │
-│  └──────────┘  └──────────────┘  └─────────────┘ │
-└────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│                   Next.js Frontend                    │
+│  Chat + Streaming │ Agent Browser │ History + Search │
+│  TanStack Query · Zustand · Tailwind v4 · Radix UI   │
+└──────────────────────┬───────────────────────────────┘
+                       │ REST + WebSocket (streaming)
+┌──────────────────────┴───────────────────────────────┐
+│                    FastAPI Backend                     │
+│                                                        │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
+│  │ API      │  │ Orchestration│  │ Message Bus   │   │
+│  │ REST/WS  │  │ Engine       │  │ (Redis)       │   │
+│  │          │  │              │  │               │   │
+│  │ /chat    │  │ Master Router│  │ pub/sub       │   │
+│  │ /agents  │  │ Dept Routers │  │ channels      │   │
+│  │ /tools   │  │ Agent Runtime│  │               │   │
+│  │ /ws/chat │  │ Workflow Exec│  │               │   │
+│  └──────────┘  └──────────────┘  └───────────────┘   │
+│                                                        │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
+│  │ LLM      │  │ Tool Exec    │  │ State          │   │
+│  │ LiteLLM  │  │              │  │               │   │
+│  │          │  │ 5 built-in   │  │ Postgres 16   │   │
+│  │ Stream   │  │ tools +      │  │ Redis 7       │   │
+│  │ Claude   │  │ extensible   │  │               │   │
+│  │ OpenAI   │  │ registry     │  │               │   │
+│  │ Ollama   │  │              │  │               │   │
+│  └──────────┘  └──────────────┘  └───────────────┘   │
+│                                                        │
+│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
+│  │ YAML     │  │ Auth         │  │ DB Layer      │   │
+│  │ Loader   │  │              │  │               │   │
+│  │          │  │ X-API-Key    │  │ SQLAlchemy    │   │
+│  │ 97 files │  │ middleware   │  │ 2.0 async     │   │
+│  │ 42 agents│  │ (optional)   │  │               │   │
+│  └──────────┘  └──────────────┘  └───────────────┘   │
+└────────────────────────────────────────────────────────┘
 ```
 
-**Key decisions:** Config-driven agents (YAML, not code). Multi-provider LLM via LiteLLM. 3-level hierarchical regex routing with confidence scoring. Each agent has a distinct personality, communication style, values, and decision boundaries.
+**Key decisions:** Config-driven agents (YAML, not code). Multi-provider LLM via LiteLLM with streaming. 3-level hierarchical routing (regex + LLM fallback). Each agent has a distinct personality, communication style, values, and decision boundaries. Real-time streaming via WebSocket with REST fallback. Tools executed through an extensible registry. White + blue UI theme.
 
 ---
 
@@ -211,7 +222,11 @@ curl -X POST http://localhost:8000/api/chat \
 
 ```json
 // Request
-{ "message": "Your request", "conversation_id": "optional-uuid" }
+{
+  "message": "Your request",
+  "conversation_id": "optional-uuid",
+  "target_agent": "optional-agent-role"
+}
 
 // Response
 {
@@ -224,6 +239,8 @@ curl -X POST http://localhost:8000/api/chat \
 }
 ```
 
+Using `target_agent` bypasses routing and sends directly to a specific agent. The frontend AgentSelector dropdown lists all 42 agents grouped by department.
+
 ### `GET /api/agents`
 
 Returns all 42 agents with roles, departments, and task lists.
@@ -234,23 +251,121 @@ Returns 12 departments with orchestrator names and agent rosters.
 
 ### `GET /api/conversations`
 
-Returns conversation history with titles and status.
+Returns conversation history with titles and status, newest first.
 
 ### `GET /api/conversations/{id}/messages`
 
-Returns all messages for a conversation thread.
+Returns all messages for a conversation thread, oldest first. Includes message type (request/response/escalation/notification/handoff), priority (P0-P4), and agent routing metadata. Used by the frontend to restore conversation history when clicking a past conversation.
+
+### `GET /api/tools`
+
+Lists all available tools with descriptions and parameter schemas.
+
+### `POST /api/tools/{tool_name}/execute`
+
+Execute a tool with arguments. Returns success/failure with output.
+
+```json
+// Request
+{ "arguments": { "expression": "2 + 2 * 2" } }
+
+// Response
+{ "success": true, "output": "6", "error": null }
+```
 
 ### `GET /api/health`
 
 Health check. Returns agent/department counts and version.
 
+### `GET /api/status`
+
+System status: total agents/departments, LLM provider, uptime.
+
 ### WebSocket `ws://localhost:8000/ws/chat`
 
-Real-time chat. Send JSON `{ "message": "...", "conversation_id": null }`, receive full response with routing metadata.
+Real-time streaming chat with routing events and token-by-token output:
+
+```json
+// Send
+{ "message": "...", "conversation_id": "optional", "target_agent": "optional" }
+
+// Receive (streamed events)
+{ "type": "routing", "stage": "classifying" }
+{ "type": "routing", "stage": "department", "department": "engineering" }
+{ "type": "routing", "stage": "agent", "department": "engineering", "agent": "ai_research_scientist" }
+{ "type": "routing", "stage": "processing" }
+{ "type": "token", "content": "I'll" }
+{ "type": "token", "content": " research" }
+{ "type": "token", "content": " transformer" }
+...
+{ "type": "metadata", "conversation_id": "uuid", "agent": "ai_research_scientist", "model": "gpt-4o", "usage": {...} }
+{ "type": "done" }
+```
+
+Frontend auto-falls back to REST if WebSocket connection fails.
 
 ### WebSocket `ws://localhost:8000/ws/events`
 
-Live agent activity feed. Connect to receive system-wide agent broadcasts.
+Live agent activity feed. Supports broadcasting messages to all connected clients.
+
+---
+
+## Streaming
+
+AutoSteer supports real-time streaming at every layer:
+
+1. **LLM streaming** — `LLMProvider.complete_stream()` yields tokens via LiteLLM's async stream mode
+2. **Agent streaming** — `AgentRuntime.process_stream()` yields token + metadata events with handoff parsing
+3. **Orchestrator streaming** — `OrchestrationEngine.process_message_stream()` yields routing events (classifying → department → agent → processing), then tokens, then metadata
+4. **WebSocket transport** — `/ws/chat` relays streaming events to the frontend
+5. **Frontend rendering** — Tokens appear in real-time with a blinking cursor. Routing events render as animated breadcrumbs with real department/agent names. REST fallback if WebSocket is unavailable.
+
+---
+
+## Tool Execution Engine
+
+Agents can call tools during processing. The system includes an extensible tool registry.
+
+**Built-in tools (5):**
+
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `web_search` | Search the web (stub) | `query`, `max_results` |
+| `calculator` | Safe math evaluation | `expression` |
+| `datetime` | Current UTC time | `format_str` (iso/unix/readable) |
+| `json_parse` | Parse + pretty-print JSON | `text` |
+| `text_stats` | Text statistics | `text` |
+
+**How agents use tools:**
+
+Agents receive tool-calling instructions in their system prompt. They emit `TOOL_CALL_START{"tool":"<name>","arguments":{...}}TOOL_CALL_END` markers. The runtime parses these, executes the tool (with timeout), feeds results back to the LLM for final synthesis.
+
+**Adding a tool:**
+
+```python
+from src.engine.tool_executor import get_tool_registry
+
+async def tool_my_api(endpoint: str) -> str:
+    # Your implementation
+    return result
+
+registry = get_tool_registry()
+registry.register("my_api", tool_my_api, {
+    "name": "my_api",
+    "description": "Call my external API",
+    "parameters": {"endpoint": {"type": "string", "description": "API endpoint"}},
+})
+```
+
+---
+
+## Auth
+
+Optional API key authentication via `X-API-Key` header.
+
+**Enable:** Set `AUTOSTEER_API_KEY` in `.env`. All `/api/*` routes require the header (except `/api/health` and `/api/status`). WebSocket connections are allowed — auth is checked on the upgrade handshake.
+
+**Frontend:** Set `NEXT_PUBLIC_API_KEY` in the frontend environment. The API client includes it in all requests automatically.
 
 ---
 
@@ -258,14 +373,15 @@ Live agent activity feed. Connect to receive system-wide agent broadcasts.
 
 | Variable                       | Default                    | Description                              |
 | ------------------------------ | -------------------------- | ---------------------------------------- |
-| `DATABASE_URL`               | *(required)*             | PostgreSQL connection string             |
+| `DATABASE_URL`               | *(required)*             | PostgreSQL connection string (default port: 5433) |
 | `REDIS_URL`                  | *(required)*             | Redis connection string                  |
 | `ANTHROPIC_API_KEY`          | `""`                     | Anthropic API key                        |
 | `OPENAI_API_KEY`             | `""`                     | OpenAI API key                           |
-| `DEFAULT_LLM_PROVIDER`       | `anthropic`              | `anthropic`, `openai`, or `ollama` |
-| `DEFAULT_LLM_MODEL`          | `claude-sonnet-4-6`      | Default model                            |
+| `DEFAULT_LLM_PROVIDER`       | `openai`                 | `anthropic`, `openai`, or `ollama`       |
+| `DEFAULT_LLM_MODEL`          | `gpt-4o`                 | Default model                            |
 | `AGENTS_DIR`                 | `src/agents/definitions` | Path to YAML definitions                 |
 | `MAX_CONCURRENT_DEPARTMENTS` | `5`                      | Max parallel departments                 |
+| `AUTOSTEER_API_KEY`          | `""`                     | API key for auth (empty = no auth)       |
 | `DEBUG`                      | `false`                  | Enable debug logging                     |
 
 **Provider examples:**
@@ -362,9 +478,9 @@ workflows:
 
 ## How Routing Works
 
-3-level hierarchical pattern matching:
+3-level hierarchical pattern matching with LLM fallback:
 
-1. **Master Orchestrator** — regex patterns map to departments
+1. **Master Orchestrator** — regex patterns map to departments. Unmatched patterns fall back to LLM-based classification (temperature 0.0, JSON output).
 
    ```yaml
    routing_rules:
@@ -372,7 +488,7 @@ workflows:
        target: engineering_orchestrator
        confidence_threshold: 0.7
    ```
-2. **Department Orchestrator** — regex patterns map to agents
+2. **Department Orchestrator** — regex patterns map to agents. Same LLM fallback at department scope.
 
    ```yaml
    routing_rules:
@@ -380,9 +496,9 @@ workflows:
        target: ai_research_scientist
        confidence_threshold: 0.7
    ```
-3. **Agent Runtime** — matched agent processes with full personality + context as system prompt
+3. **Agent Runtime** — matched agent processes with full personality + context as system prompt. Can call tools via `TOOL_CALL_START/END` markers and request handoffs via `HANDOFF_JSON_START/END`.
 
-**Confidence scoring:** Multiple pattern matches resolved by `matches × 0.3 + confidence_threshold` (capped at 1.0).
+**Confidence scoring:** Multiple pattern matches resolved by `matches × 0.3 + confidence_threshold` (capped at 1.0). LLM fallback uses confidence 0.6.
 
 ---
 
@@ -411,6 +527,30 @@ AgentMessage(
 | P3       | Low      | Documentation, minor improvements |
 | P4       | Backlog  | Nice-to-haves, tech debt          |
 
+## Agent Handoffs
+
+When an agent determines a request is outside its decision boundaries, it emits a handoff marker. The orchestrator:
+
+1. Routes the request to the target agent with full context (reason, current state, expected outcome)
+2. Publishes a HANDOFF message on the Redis bus for audit/logging
+3. Persists the handoff as a Message row in PostgreSQL
+
+Handoffs are transparent to the user — the final response comes from the best-qualified agent in the chain.
+
+## Multi-Department Workflows
+
+5 predefined workflows in `master_orchestrator.yaml`:
+
+| Workflow | Trigger Keywords | Departments Involved |
+|----------|-----------------|---------------------|
+| `product_launch` | launch, go to market, ship | product → engineering/design → marketing/sales |
+| `incident_response` | incident, outage, p0, emergency | engineering → operations → trust_safety |
+| `quarterly_planning` | quarterly planning, Q1-Q4 | executive → product → engineering → finance_legal |
+| `new_hire_onboarding` | onboard, new hire, joining | people_talent → engineering → operations |
+| `fundraise` | fundraise, series a/b, investor | executive → finance_legal → operations |
+
+Workflows execute departments in sequence with parallel phases via `asyncio.gather`. Each department runs its best-matching agent. Results are synthesized by LLM for multi-department outputs.
+
 ---
 
 ## Project Structure
@@ -421,17 +561,20 @@ autosteer/
 │   ├── src/
 │   │   ├── api/                     # FastAPI (REST + WebSocket)
 │   │   │   ├── main.py
-│   │   │   └── routes/              # chat, agents, conversations, websocket
+│   │   │   └── routes/              # chat, agents, conversations, tools, websocket
 │   │   ├── engine/                  # Core orchestration
 │   │   │   ├── schemas.py           # Pydantic models
 │   │   │   ├── loader.py            # YAML loader
-│   │   │   ├── llm.py               # LiteLLM provider abstraction
-│   │   │   ├── agent_runtime.py     # Agent execution
+│   │   │   ├── llm.py               # LiteLLM provider (streaming + non-streaming)
+│   │   │   ├── agent_runtime.py     # Agent execution (process + process_stream)
 │   │   │   ├── router.py            # Regex routing with confidence scoring
-│   │   │   └── orchestrator.py      # OrchestrationEngine
+│   │   │   ├── orchestrator.py      # OrchestrationEngine (process_message + process_message_stream)
+│   │   │   ├── workflow_executor.py # Multi-department parallel workflow execution
+│   │   │   └── tool_executor.py     # Tool registry + 5 built-in tools
 │   │   ├── messaging/               # Redis pub/sub message bus
-│   │   ├── models/                  # SQLAlchemy models
+│   │   ├── models/                  # SQLAlchemy models (6 tables)
 │   │   ├── agents/definitions/      # 97 YAML files (42 agents, 12 dept orchs, 1 master)
+│   │   ├── auth.py                  # X-API-Key middleware (optional)
 │   │   ├── config.py
 │   │   └── database.py
 │   ├── tests/
@@ -439,18 +582,26 @@ autosteer/
 ├── frontend/
 │   ├── src/
 │   │   ├── app/
-│   │   │   ├── page.tsx             # Chat with routing visualization
+│   │   │   ├── page.tsx             # Chat with streaming routing visualization
 │   │   │   ├── agents/page.tsx      # Agent browser grouped by department
-│   │   │   └── conversations/page.tsx  # Conversation history
+│   │   │   ├── conversations/page.tsx  # Conversation history with search
+│   │   │   └── globals.css          # White + blue theme, animations
 │   │   ├── components/
-│   │   │   ├── chat-interface.tsx   # Chat UI with routing breadcrumbs
+│   │   │   ├── chat-interface.tsx   # Chat UI with streaming, history loading, WS↔REST
 │   │   │   ├── routing-path.tsx     # Visual route trace (You → Master → Dept → Agent)
-│   │   │   ├── sidebar.tsx          # Nav + conversation list
+│   │   │   ├── sidebar.tsx          # Nav + auto-refreshing conversation list
 │   │   │   ├── agent-card.tsx       # Agent card with task chips
 │   │   │   ├── agent-detail.tsx     # Slide-in agent detail panel
+│   │   │   ├── agent-selector.tsx   # Searchable agent dropdown grouped by department
 │   │   │   ├── department-group.tsx # Collapsible department accordion
-│   │   │   └── conversation-list.tsx # Sidebar conversation list
-│   │   └── lib/api.ts              # Backend API client
+│   │   │   ├── conversation-list.tsx # Sidebar conversation list with time-ago
+│   │   │   └── toast.tsx            # Toast notification system
+│   │   └── lib/
+│   │       ├── api.ts               # Backend API client (with auth headers)
+│   │       ├── hooks.ts             # TanStack Query hooks (useAgents, useConversations, etc.)
+│   │       ├── query-provider.tsx   # TanStack QueryClientProvider
+│   │       ├── store.ts             # Zustand stores (chat state, toast state)
+│   │       └── websocket.ts         # WebSocket client with event streaming
 │   └── package.json
 ├── docker-compose.yml               # PostgreSQL 16 + Redis 7
 └── docs/plans/
@@ -471,8 +622,27 @@ autosteer/
 | Frontend        | Next.js 16 + React 19                            |
 | Styling         | Tailwind CSS v4                                  |
 | UI              | Radix UI + Lucide icons                          |
-| State           | Zustand + TanStack Query                         |
+| State           | Zustand + TanStack Query v5                      |
 | Infra           | Docker Compose                                   |
+
+---
+
+## UI Theme
+
+White background with blue accent colors and black text.
+
+| Element | Color |
+|---------|-------|
+| Background | White (`#ffffff`) |
+| Surface cards | Slate-50/100 |
+| Borders | Slate-200/300 |
+| Primary text | Slate-900 (near black) |
+| Secondary text | Slate-600/700 |
+| Muted text | Slate-400/500 |
+| Accent (buttons, icons) | Blue-500/600 |
+| Accent hover | Blue-400/500 |
+| Accent backgrounds | Blue-50/100 |
+| Dark accent | Blue-700/800 |
 
 ---
 
@@ -483,19 +653,36 @@ cd backend
 pytest -v
 ```
 
-Covers config, schemas, loader, LLM, agent runtime, router, messaging, orchestrator, API endpoints, and full integration flow.
+29 tests covering config, schemas, loader, LLM, agent runtime, router, messaging, orchestrator, API endpoints, and full integration flow.
 
 ---
 
 ## Roadmap
 
-- [ ] Real tool integrations (Slack, Jira, GitHub APIs)
-- [ ] LLM-based intent classification fallback for unmatched regex patterns
-- [ ] Multi-department workflow execution
-- [ ] Persistent conversation memory in PostgreSQL
-- [ ] Agent-to-agent handoffs with context transfer
+### Done ✓
+
+- [x] Regex routing with confidence scoring (3-level: Master → Dept → Agent)
+- [x] LLM-based intent classification fallback for unmatched regex patterns
+- [x] Multi-department workflow execution (5 workflows, parallel phases)
+- [x] Persistent conversation memory in PostgreSQL (6 models, async SQLAlchemy)
+- [x] Agent-to-agent handoffs with context transfer (Redis bus + DB persistence)
+- [x] Streaming token-by-token via WebSocket (routing events + tokens + metadata)
+- [x] Tool execution engine (5 built-in tools, extensible registry)
+- [x] API key authentication (optional, X-API-Key header)
+- [x] TanStack Query v5 + Zustand state management
+- [x] Toast notification system
+- [x] Conversation history loading + search
+- [x] Auto-refreshing sidebar
+- [x] White + blue UI theme
+
+### Next
+
+- [ ] Real tool integrations (Slack, Jira, GitHub APIs — stubs exist)
 - [ ] Alembic migrations
-- [ ] Multi-user authentication (API keys / OAuth)
-- [ ] Streaming token-by-token via WebSocket
 - [ ] Agent performance metrics dashboard
 - [ ] Custom agent creation UI
+- [ ] OAuth / multi-user support
+- [ ] Celery task queues for background agent work
+- [ ] LLM observability (LangSmith/LangFuse integration)
+- [ ] Docker production deployment (nginx, healthchecks, scaling)
+- [ ] CI/CD pipeline (GitHub Actions)

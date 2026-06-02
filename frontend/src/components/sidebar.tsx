@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useState } from "react";
 import {
   MessageSquare,
   Users,
@@ -10,9 +10,10 @@ import {
   Network,
   PanelLeftClose,
   PanelLeft,
+  Loader2,
 } from "lucide-react";
 import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
-import { getConversations } from "@/lib/api";
+import { useConversations } from "@/lib/hooks";
 
 const navItems = [
   { href: "/", label: "Chat", icon: MessageSquare },
@@ -33,26 +34,15 @@ export function Sidebar({
 }: SidebarProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
 
-  const refreshConversations = useCallback(async () => {
-    try {
-      const data = await getConversations();
-      setConversations(
-        data.map((c) => ({
-          id: c.id,
-          title: c.title,
-          updated_at: c.updated_at,
-        })),
-      );
-    } catch {
-      // Backend not available
-    }
-  }, []);
+  // TanStack Query: auto-refreshes every 15s, invalidates on new messages
+  const { data: conversations = [], isLoading } = useConversations();
 
-  useEffect(() => {
-    refreshConversations();
-  }, [refreshConversations]);
+  const summaries: ConversationSummary[] = conversations.map((c) => ({
+    id: c.id,
+    title: c.title,
+    updated_at: c.updated_at,
+  }));
 
   if (collapsed) {
     return (
@@ -135,14 +125,20 @@ export function Sidebar({
 
       {/* Conversations list */}
       <div className="flex-1 overflow-hidden">
-        <ConversationList
-          conversations={conversations}
-          activeId={activeConversationId}
-          onSelect={(id) => {
-            onSelectConversation?.(id);
-          }}
-          onNew={() => onNewConversation?.()}
-        />
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-4 h-4 text-slate-400 animate-spin" />
+          </div>
+        ) : (
+          <ConversationList
+            conversations={summaries}
+            activeId={activeConversationId}
+            onSelect={(id) => {
+              onSelectConversation?.(id);
+            }}
+            onNew={() => onNewConversation?.()}
+          />
+        )}
       </div>
 
       {/* Footer */}

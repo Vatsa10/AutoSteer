@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { Search, Users } from "lucide-react";
-import { getAgents, getDepartments, type AgentInfo, type DepartmentInfo } from "@/lib/api";
+import { useState, useMemo } from "react";
+import { Search, Users, Loader2, AlertCircle } from "lucide-react";
+import { useAgents, useDepartments } from "@/lib/hooks";
+import type { AgentInfo, DepartmentInfo } from "@/lib/api";
 import { DepartmentGroup } from "@/components/department-group";
 import { AgentDetail } from "@/components/agent-detail";
 
@@ -26,21 +27,11 @@ function formatDept(key: string): string {
 }
 
 export default function AgentsPage() {
-  const [agents, setAgents] = useState<AgentInfo[]>([]);
-  const [departments, setDepartments] = useState<DepartmentInfo[]>([]);
   const [search, setSearch] = useState("");
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    Promise.all([getAgents(), getDepartments()])
-      .then(([a, d]) => {
-        setAgents(a);
-        setDepartments(d);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: agents = [], isLoading: agentsLoading, error: agentsError } = useAgents();
+  const { data: departments = [] } = useDepartments();
 
   const filtered = useMemo(() => {
     if (!search.trim()) return agents;
@@ -70,7 +61,6 @@ export default function AgentsPage() {
     const seen = new Set<string>();
     const result: { key: string; label: string; agents: AgentInfo[] }[] = [];
 
-    // First, depts from the API (preserves order)
     for (const d of departments) {
       const key = d.department.toLowerCase().replace(/ & /g, "_").replace(/ /g, "_");
       const deptAgents = grouped.get(key);
@@ -80,7 +70,6 @@ export default function AgentsPage() {
       }
     }
 
-    // Then any remaining from agents
     for (const [key, deptAgents] of grouped) {
       if (!seen.has(key) && deptAgents.length > 0) {
         result.push({ key, label: formatDept(key), agents: deptAgents });
@@ -97,7 +86,7 @@ export default function AgentsPage() {
         <div className="flex items-center gap-2.5">
           <Users className="w-4 h-4 text-blue-600" />
           <h2 className="text-sm font-semibold text-slate-800">
-            {loading ? "Loading agents…" : `${agents.length} agents`}
+            {agentsLoading ? "Loading agents…" : `${agents.length} agents`}
           </h2>
         </div>
         <div className="relative flex-1 max-w-sm">
@@ -114,12 +103,25 @@ export default function AgentsPage() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {loading && (
-          <div className="text-center text-slate-500 py-12 text-sm">Loading agents…</div>
+        {agentsLoading && (
+          <div className="flex items-center justify-center py-16 gap-2 text-slate-500">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span className="text-sm">Loading agents…</span>
+          </div>
         )}
 
-        {!loading && orderedDepts.length === 0 && (
-          <div className="text-center text-slate-500 py-12">
+        {agentsError && (
+          <div className="flex flex-col items-center justify-center py-16 text-center gap-3">
+            <AlertCircle className="w-8 h-8 text-red-500" />
+            <div>
+              <p className="text-sm text-slate-700">Failed to load agents</p>
+              <p className="text-xs text-slate-400 mt-1">Check that the backend is running on port 8000.</p>
+            </div>
+          </div>
+        )}
+
+        {!agentsLoading && !agentsError && orderedDepts.length === 0 && (
+          <div className="text-center text-slate-500 py-16">
             <p className="text-sm">No agents found{search ? ` matching "${search}"` : ""}.</p>
           </div>
         )}

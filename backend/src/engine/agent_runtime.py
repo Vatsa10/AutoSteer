@@ -1,8 +1,11 @@
 import json
+import re
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
-from src.engine.llm import LLMMessage, LLMProvider, LLMResponse
+from src.engine.llm import LLMMessage, LLMProvider, LLMResponse, LLMStreamChunk
 from src.engine.schemas import AgentConfig, SoulConfig
+from src.engine.tool_executor import ToolRegistry, execute_tool
 
 
 @dataclass
@@ -29,11 +32,13 @@ class AgentRuntime:
         config: AgentConfig,
         llm: LLMProvider,
         model_override: str | None = None,
+        tool_registry: ToolRegistry | None = None,
     ):
         self.soul = soul
         self.config = config
         self.llm = llm
         self.model_override = model_override
+        self.tool_registry = tool_registry
         self.conversation_history: list[LLMMessage] = []
         self._system_prompt = self._build_system_prompt()
 
@@ -56,10 +61,23 @@ class AgentRuntime:
         tools_str = ", ".join(tools_parts) if tools_parts else "None"
 
         base_prompt = self.soul.to_system_prompt()
+
+        tool_list_str = tools_str
+        if self.tool_registry:
+            registered = self.tool_registry.list_tools()
+            tool_descs = []
+            for t in registered:
+                schema = self.tool_registry.get_schema(t)
+                if schema:
+                    tool_descs.append(f"- **{t}**: {schema.get('description', 'No description')}")
+                else:
+                    tool_descs.append(f"- **{t}**")
+            tool_list_str = "\n".join(tool_descs) if tool_descs else tools_str
+
         return f"""{base_prompt}
 
 ## Available Tools
-{tools_str}
+{tool_list_str}
 
 ## Tasks You Can Perform
 {tasks_str}
@@ -69,6 +87,13 @@ class AgentRuntime:
 - If the request falls outside your tasks or decision boundaries, escalate it.
 - Always respond in a way consistent with your personality and values.
 - Be concise and actionable in your responses.
+
+## Tool Calling Protocol
+- To use a tool, include a tool call block on its own line:
+  TOOL_CALL_START{{"tool":"<tool_name>","arguments":{{"arg1":"value1",...}}}}TOOL_CALL_END
+- You may call multiple tools in one response — each on its own line.
+- After receiving the tool result, incorporate it into your final response.
+- Available tools are listed above — use exact names as shown.
 
 ## Handoff Protocol
 - You can decide on: {self._fmt_boundary(self.soul.decision_boundaries.get("can_decide", []))}
@@ -99,9 +124,14 @@ class AgentRuntime:
         )
 
         content = response.content
-        handoff = None
+        model = response.model
+        usage = response.usage
+
+        # Execute tools if agent requested them
+        content, model, usage = await self._execute_tool_calls(content, model, usage)
 
         # Parse handoff marker
+        handoff = None
         start_marker = "HANDOFF_JSON_START"
         end_marker = "HANDOFF_JSON_END"
         start_idx = content.find(start_marker)
@@ -118,15 +148,14 @@ class AgentRuntime:
                     current_state=handoff_data.get("current_state", ""),
                     expected_outcome=handoff_data.get("expected_outcome", ""),
                 )
-                # Strip handoff marker from visible content
                 content = content[:start_idx].rstrip()
             except (json.JSONDecodeError, KeyError):
                 pass
 
         agent_result = AgentResult(
             content=content,
-            model=response.model,
-            usage=response.usage,
+            model=model,
+            usage=usage,
             handoff=handoff,
         )
 
@@ -135,5 +164,116 @@ class AgentRuntime:
         )
         return agent_result
 
+    _TOOL_CALL_RE = re.compile(
+        r"TOOL_CALL_START\s*(\{.*?\})\s*TOOL_CALL_END", re.DOTALL
+    )
+
+    async def _execute_tool_calls(
+        self, content: str, model: str, usage: dict
+    ) -> tuple[str, str, dict]:
+        """Parse TOOL_CALL markers in content, execute tools, feed results back to LLM."""
+        if not self.tool_registry:
+            return content, model, usage
+
+        tool_calls = self._TOOL_CALL_RE.findall(content)
+        if not tool_calls:
+            return content, model, usage
+
+        # Strip tool call markers from visible content
+        clean_content = self._TOOL_CALL_RE.sub("", content).strip()
+
+        # Execute each tool
+        tool_results: list[str] = []
+        for tc_json in tool_calls:
+            try:
+                tc = json.loads(tc_json)
+                tool_name = tc.get("tool", "")
+                arguments = tc.get("arguments", {})
+                result = await execute_tool(self.tool_registry, tool_name, arguments)
+                tool_results.append(
+                    f"Tool [{tool_name}] result ({'success' if result.success else 'failed'}): {result.output or result.error}"
+                )
+            except (json.JSONDecodeError, TypeError) as exc:
+                tool_results.append(f"Tool call parse error: {exc}")
+
+        if not tool_results:
+            return clean_content, model, usage
+
+        # Feed tool results back to LLM for final synthesis
+        tool_output = "\n".join(tool_results)
+        follow_up_msg = (
+            f"I used the following tools based on your request:\n{tool_output}\n\n"
+            f"Please synthesize these results into a helpful response for the user. "
+            f"Original request was: {self.conversation_history[-1].content}"
+        )
+
+        self.conversation_history.append(LLMMessage(role="assistant", content=follow_up_msg))
+        follow_up = await self.llm.complete(
+            messages=self.conversation_history,
+            system_prompt=self._system_prompt,
+            model=self.model_override,
+        )
+
+        return follow_up.content, follow_up.model, follow_up.usage
+
     def reset_history(self):
         self.conversation_history.clear()
+
+    async def process_stream(self, user_message: str) -> AsyncGenerator[dict, None]:
+        """Stream agent response, yielding event dicts: {type, content?, model?, usage?, handoff?}"""
+        self.conversation_history.append(LLMMessage(role="user", content=user_message))
+
+        full_content = ""
+        model_name = ""
+        usage = {}
+
+        async for chunk in self.llm.complete_stream(
+            messages=self.conversation_history,
+            system_prompt=self._system_prompt,
+            model=self.model_override,
+        ):
+            if chunk.content:
+                full_content += chunk.content
+                yield {"type": "token", "content": chunk.content}
+            if chunk.model:
+                model_name = chunk.model
+            if chunk.usage:
+                usage = chunk.usage
+            if chunk.is_done and not chunk.content:
+                pass  # done marker, no content
+
+        # Parse handoff from full content
+        handoff = None
+        display_content = full_content
+        start_marker = "HANDOFF_JSON_START"
+        end_marker = "HANDOFF_JSON_END"
+        start_idx = full_content.find(start_marker)
+        end_idx = full_content.find(end_marker)
+
+        if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+            json_str = full_content[start_idx + len(start_marker):end_idx]
+            try:
+                handoff_data = json.loads(json_str)
+                handoff = {
+                    "target_agent": handoff_data.get("target_agent", ""),
+                    "reason": handoff_data.get("reason", ""),
+                    "context_summary": handoff_data.get("context_summary", ""),
+                    "current_state": handoff_data.get("current_state", ""),
+                    "expected_outcome": handoff_data.get("expected_outcome", ""),
+                }
+                display_content = full_content[:start_idx].rstrip()
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+        self.conversation_history.append(
+            LLMMessage(role="assistant", content=display_content)
+        )
+
+        yield {
+            "type": "metadata",
+            "model": model_name,
+            "usage": usage,
+            "handoff": handoff,
+            "display_content": display_content,
+        }
+        yield {"type": "done"}

@@ -3,11 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import agents, chat, conversations, websocket
+from src.api.routes import agents, chat, conversations, tools, websocket
+from src.auth import setup_auth
 from src.config import get_settings
 from src.database import get_engine, init_db
 from src.engine.llm import LLMProvider
 from src.engine.orchestrator import OrchestrationEngine
+from src.engine.tool_executor import get_tool_registry
 from src.messaging.bus import MessageBus
 
 
@@ -47,6 +49,10 @@ async def lifespan(app: FastAPI):
         engine = None
     app.state.engine = engine
 
+    # 5. Initialize tool registry
+    tool_registry = get_tool_registry()
+    app.state.tool_registry = tool_registry
+
     yield
 
     # Shutdown
@@ -69,12 +75,18 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-API-Key"],
     )
 
     app.include_router(chat.router, prefix="/api")
     app.include_router(agents.router, prefix="/api")
     app.include_router(conversations.router, prefix="/api")
+    app.include_router(tools.router, prefix="/api")
     app.include_router(websocket.router)
+
+    # Setup auth (no-op if AUTOSTEER_API_KEY is not set)
+    auth_enabled = setup_auth(app)
+    app.state.auth_enabled = auth_enabled
 
     @app.get("/api/health")
     async def health():

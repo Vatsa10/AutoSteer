@@ -1,4 +1,28 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (API_KEY) {
+    headers["X-API-Key"] = API_KEY;
+  }
+  return headers;
+}
+
+async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      ...authHeaders(),
+      ...(options?.headers || {}),
+    },
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`API error (${res.status}): ${errText}`);
+  }
+  return res;
+}
 
 export interface ChatResponse {
   conversation_id: string;
@@ -48,44 +72,38 @@ export async function sendMessage(
   conversationId?: string,
   targetAgent?: string,
 ): Promise<ChatResponse> {
-  const res = await fetch(`${API_URL}/api/chat`, {
+  const res = await apiFetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       message,
       conversation_id: conversationId,
       target_agent: targetAgent || null,
     }),
   });
-  if (!res.ok) throw new Error(`Chat failed: ${res.status}`);
   return res.json();
 }
 
 // Agents
 export async function getAgents(): Promise<AgentInfo[]> {
-  const res = await fetch(`${API_URL}/api/agents`);
-  if (!res.ok) throw new Error(`Failed to fetch agents: ${res.status}`);
+  const res = await apiFetch("/api/agents");
   return res.json();
 }
 
 export async function getDepartments(): Promise<DepartmentInfo[]> {
-  const res = await fetch(`${API_URL}/api/departments`);
-  if (!res.ok) throw new Error(`Failed to fetch departments: ${res.status}`);
+  const res = await apiFetch("/api/departments");
   return res.json();
 }
 
 // Conversations
 export async function getConversations(): Promise<Conversation[]> {
-  const res = await fetch(`${API_URL}/api/conversations`);
-  if (!res.ok) throw new Error(`Failed to fetch conversations: ${res.status}`);
+  const res = await apiFetch("/api/conversations");
   return res.json();
 }
 
 export async function getConversationMessages(
   conversationId: string,
 ): Promise<ConversationMessage[]> {
-  const res = await fetch(`${API_URL}/api/conversations/${conversationId}/messages`);
-  if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`);
+  const res = await apiFetch(`/api/conversations/${conversationId}/messages`);
   return res.json();
 }
 
@@ -98,7 +116,6 @@ export interface SystemStatus {
 }
 
 export async function getSystemStatus(): Promise<SystemStatus> {
-  const res = await fetch(`${API_URL}/api/status`);
-  if (!res.ok) throw new Error(`Failed to fetch status: ${res.status}`);
+  const res = await apiFetch("/api/status");
   return res.json();
 }

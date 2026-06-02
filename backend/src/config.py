@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     agents_dir: str = "src/agents/definitions"
     max_concurrent_departments: int = 5
 
+    # Auth
+    autosteer_api_key: str = ""
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
