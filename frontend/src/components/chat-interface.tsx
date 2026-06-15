@@ -74,16 +74,32 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
   // ── Handle conversation switching ─────────────────────────────
   const prevIdRef = useRef<string | undefined>(undefined);
+  const internalChangeRef = useRef(false); // skip reset for internal (new message) changes
   useEffect(() => {
     const prevId = prevIdRef.current;
     prevIdRef.current = initialId;
 
-    // Reset store immediately on conversation change (prevents flash of old chat)
     if (initialId !== prevId) {
-      reset();
-      setConversationId(initialId);
+      if (internalChangeRef.current) {
+        // Internal change — just sync the store, don't reset messages
+        internalChangeRef.current = false;
+        setConversationId(initialId);
+      } else {
+        // User clicked a different conversation — full reset
+        reset();
+        setConversationId(initialId);
+      }
     }
   }, [initialId, reset, setConversationId]);
+
+  // Wrap onConversationChange to mark internal changes
+  const handleConversationChange = useCallback(
+    (id: string) => {
+      internalChangeRef.current = true;
+      onConversationChange?.(id);
+    },
+    [onConversationChange],
+  );
 
   // Populate messages from history when loaded
   useEffect(() => {
@@ -142,7 +158,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
             case "metadata":
               if (event.conversation_id && !convId) {
                 setConversationId(event.conversation_id);
-                onConversationChange?.(event.conversation_id);
+                handleConversationChange(event.conversation_id);
               }
               // Update last message with metadata
               break;
@@ -171,7 +187,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                 appendContent(data.response);
                 if (data.conversation_id && !convId) {
                   setConversationId(data.conversation_id);
-                  onConversationChange?.(data.conversation_id);
+                  handleConversationChange(data.conversation_id);
                 }
               },
             },
@@ -242,7 +258,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
             );
             if (data.conversation_id && !conversationId) {
               setConversationId(data.conversation_id);
-              onConversationChange?.(data.conversation_id);
+              handleConversationChange(data.conversation_id);
             }
           },
           onError: () => {
@@ -257,7 +273,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   function handleNewConversation() {
     reset();
     setInput("");
-    onConversationChange?.("");
+    handleConversationChange("");
   }
 
   return (
