@@ -110,7 +110,7 @@ class AgentRuntime:
         parts = []
         if self._document_memory:
             docs = "\n".join(
-                f"- **{d['filename']}** ({d['char_count']} chars): {d['preview'][:200]}"
+                f"- **{d['filename']}** ({d['char_count']} chars)"
                 for d in self._document_memory
             )
             parts.append(f"## Documents in Context\n{docs}")

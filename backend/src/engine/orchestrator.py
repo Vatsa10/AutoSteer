@@ -287,9 +287,8 @@ User request: {user_message}"""
             if file_context_parts:
                 print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
                 effective_message = (
-                    "The user attached the following files. Read their content and answer based on it:\n\n"
-                    + "\n\n".join(file_context_parts)
-                    + f"\n\n---\nUser message: {user_message}"
+                    "\n\n".join(file_context_parts)
+                    + f"\n\n---\n{user_message}"
                 )
             else:
                 print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
@@ -309,10 +308,9 @@ User request: {user_message}"""
             # Step 1: Master orchestrator routes to department
             dept_result = await self._route_department(user_message)
             if not dept_result:
-                # Last resort: answer directly with LLM without routing
                 try:
                     fallback = await self.llm.complete(
-                        messages=[LLMMessage(role="user", content=user_message)],
+                        messages=[LLMMessage(role="user", content=effective_message)],
                         system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
                         temperature=0.7,
                         max_tokens=1024,
@@ -651,9 +649,8 @@ User request: {user_message}"""
             if file_context_parts:
                 print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
                 effective_message = (
-                    "The user attached the following files. Read their content and answer based on it:\n\n"
-                    + "\n\n".join(file_context_parts)
-                    + f"\n\n---\nUser message: {user_message}"
+                    "\n\n".join(file_context_parts)
+                    + f"\n\n---\n{user_message}"
                 )
             else:
                 print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
@@ -675,10 +672,9 @@ User request: {user_message}"""
         else:
             dept_result = await self._route_department(user_message)
             if not dept_result:
-                # Last resort: answer directly with LLM without routing
                 try:
                     fallback = await self.llm.complete(
-                        messages=[LLMMessage(role="user", content=user_message)],
+                        messages=[LLMMessage(role="user", content=effective_message)],
                         system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
                         temperature=0.7,
                         max_tokens=1024,
