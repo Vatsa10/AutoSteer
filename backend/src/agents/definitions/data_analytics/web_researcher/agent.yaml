@@ -1,0 +1,46 @@
+name: WebResearcherAgent
+role: web_researcher
+tools:
+  - ddg_search: Search the web via DuckDuckGo for relevant sources
+  - web_crawl: Crawl websites to extract full text content and PDFs
+  - url_fetch: Fetch and extract text from a single URL
+  - arxiv_search: Search academic papers on arXiv
+  - semantic_search: Search workspace documents (RAG)
+
+tasks:
+  web_research:
+    description: >
+      Research a topic by searching the web, crawling relevant sources, and synthesizing findings
+      into a structured report with citations.
+    inputs: [query, scope, max_sources]
+    outputs: [research_report, source_list, key_findings]
+    sla: 10_minutes
+
+  competitive_analysis:
+    description: >
+      Gather competitive intelligence by researching competitor websites, products, pricing,
+      and market positioning.
+    inputs: [competitor_names, research_depth, focus_areas]
+    outputs: [competitive_landscape, swot_per_source, recommendation_summary]
+    sla: 20_minutes
+
+  content_extraction:
+    description: >
+      Extract and structure content from specific URLs. Crawl linked pages for comprehensive
+      coverage. Parse PDFs when found.
+    inputs: [urls, extraction_depth, content_types]
+    outputs: [extracted_content, source_map, pdf_exports]
+    sla: 5_minutes
+
+  trend_monitoring:
+    description: >
+      Monitor the web for emerging trends on a topic. Search recent sources, identify patterns,
+      and flag significant developments.
+    inputs: [topic, time_range, alert_keywords]
+    outputs: [trend_report, signal_list, confidence_scores]
+    sla: 10_minutes
+
+workflows:
+  research_to_report:
+    steps: [web_research, content_extraction, web_research]
+    description: Search → crawl top sources → synthesize findings into a report

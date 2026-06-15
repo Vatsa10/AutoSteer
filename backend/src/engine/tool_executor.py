@@ -23,6 +23,8 @@ from src.engine.tool_aliases import (
 from src.integrations.ai_ops import eval_runner, model_compare, prompt_playground, token_cost_estimate
 from src.integrations.apollo import apollo_search
 from src.integrations.arxiv import arxiv_search
+from src.integrations.crawler import web_crawl
+from src.integrations.ddg_search import ddg_search
 from src.integrations.api_tester import api_tester
 from src.integrations.docusign import docusign_draft
 from src.integrations.email import email_draft, email_send
@@ -443,6 +445,14 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
     registry.register("arxiv_search", arxiv_search, _schema(
         "arxiv_search", "Search arXiv for research papers.",
         {"query": {"type": "string"}, "max_results": {"type": "integer"}},
+    ))
+    registry.register("ddg_search", ddg_search, _schema(
+        "ddg_search", "Search the web via DuckDuckGo. No API key needed.",
+        {"query": {"type": "string"}, "max_results": {"type": "integer"}},
+    ))
+    registry.register("web_crawl", web_crawl, _schema(
+        "web_crawl", "Crawl a website, extract text from pages and PDFs.",
+        {"url": {"type": "string"}, "max_depth": {"type": "integer"}, "max_pages": {"type": "integer"}},
     ))
     registry.register("prompt_playground", _wrap_prompt_playground, _schema(
         "prompt_playground", "Save/list/run prompts.",

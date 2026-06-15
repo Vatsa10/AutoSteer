@@ -25,7 +25,7 @@ routing_rules:
   - pattern: "build|ship|deploy|code|model|train|infra"
     target: engineering_orchestrator
     confidence_threshold: 0.7
-  - pattern: "data|pipeline|metrics|dashboard|analytics"
+  - pattern: "data|pipeline|metrics|dashboard|analytics|research|scrape|crawl|internet|web search|look up|find information"
     target: data_analytics_orchestrator
     confidence_threshold: 0.7
   - pattern: "roadmap|feature|spec|prioritize|user story"
