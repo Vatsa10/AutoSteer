@@ -62,12 +62,25 @@ class TaskDefinition(BaseModel):
     sla: str
 
 
+class ResponseSection(BaseModel):
+    """A named section in a structured agent response."""
+    type: str  # key_takeaways, detailed_findings, sources, etc.
+    title: str
+    items: list[str]
+
+
+class ResponseSchema(BaseModel):
+    """Schema defining the structured output format an agent should produce."""
+    sections: list[ResponseSection]
+
+
 class AgentConfig(BaseModel):
     name: str
     role: str
     tools: list[str | dict[str, str]]
     tasks: dict[str, TaskDefinition]
     workflows: dict[str, Any] = {}
+    response_schema: ResponseSchema | None = None
 
 
 class RoutingRule(BaseModel):

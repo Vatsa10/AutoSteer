@@ -31,6 +31,32 @@ export interface ChatResponse {
   agent: string | null;
   model: string | null;
   usage: Record<string, number> | null;
+  structured?: {
+    sections: { type: string; title: string; items: string[] }[];
+  } | null;
+}
+
+// File upload
+export interface FileUploadResult {
+  ok: boolean;
+  file_id: string;
+  filename: string;
+  size_bytes: number;
+}
+
+export async function uploadFile(file: File): Promise<FileUploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/api/files/upload`, {
+    method: "POST",
+    headers: API_KEY ? { "X-API-Key": API_KEY } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Upload failed (${res.status}): ${errText}`);
+  }
+  return res.json();
 }
 
 export interface AgentToolStatus {

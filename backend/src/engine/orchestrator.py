@@ -250,8 +250,37 @@ User request: {user_message}"""
         conversation_id: str | None = None,
         target_agent: str | None = None,
         session: AsyncSession | None = None,
+        file_ids: list[str] | None = None,
     ) -> dict:
         conversation_id = conversation_id or str(uuid.uuid4())
+
+        # ── Load file content ───────────────────────────────────
+        effective_message = user_message
+        if file_ids:
+            file_context_parts = []
+            import json as _json
+            for fid in file_ids:
+                try:
+                    from src.integrations.files import file_upload_read
+                    raw = await file_upload_read(fid, max_chars=8000)
+                    data = _json.loads(raw)
+                    if "error" not in data:
+                        ftype = data.get("type", "file")
+                        fname = data.get("filename", fid)
+                        if ftype == "image" and data.get("image_base64"):
+                            file_context_parts.append(f"[Image: {fname}]")
+                        elif data.get("text"):
+                            file_context_parts.append(
+                                f"[File: {fname} ({ftype})]\n{data['text']}"
+                            )
+                except Exception:
+                    pass
+            if file_context_parts:
+                effective_message = (
+                    "The user attached the following files:\n\n"
+                    + "\n\n".join(file_context_parts)
+                    + f"\n\n---\nUser message: {user_message}"
+                )
 
         department: str | None = None
         agent_role: str | None = None
@@ -344,7 +373,7 @@ User request: {user_message}"""
             }
 
         set_tool_context(session=session, workspace_id="default")
-        response = await agent_runtime.process(user_message)
+        response = await agent_runtime.process(effective_message)
 
         # HANDOFF: Check if agent requested a handoff to another agent
         handoff_agent = None
@@ -519,6 +548,7 @@ User request: {user_message}"""
             "agent": agent_role,
             "model": response.model,
             "usage": response.usage,
+            "structured": response.structured,
         }
 
     def list_agents(self) -> list[dict]:

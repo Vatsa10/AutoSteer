@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: str | None = None
     target_agent: str | None = None
+    file_ids: list[str] | None = None
 
 
 class ChatResponse(BaseModel):
@@ -20,6 +21,7 @@ class ChatResponse(BaseModel):
     agent: str | None = None
     model: str | None = None
     usage: dict | None = None
+    structured: dict | None = None
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -42,5 +44,6 @@ async def chat(
         conversation_id=body.conversation_id,
         target_agent=body.target_agent,
         session=session,
+        file_ids=body.file_ids,
     )
     return ChatResponse(**result)

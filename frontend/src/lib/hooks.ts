@@ -56,6 +56,7 @@ interface SendMessageVars {
   message: string;
   conversationId?: string;
   targetAgent?: string;
+  fileIds?: string[];
 }
 
 export function useSendMessage() {
@@ -63,7 +64,7 @@ export function useSendMessage() {
   const addToast = useToastStore((s) => s.addToast);
 
   return useMutation({
-    mutationFn: async ({ message, conversationId, targetAgent }: SendMessageVars) => {
+    mutationFn: async ({ message, conversationId, targetAgent, fileIds }: SendMessageVars) => {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`,
         {
@@ -73,6 +74,7 @@ export function useSendMessage() {
             message,
             conversation_id: conversationId,
             target_agent: targetAgent || null,
+            file_ids: fileIds || null,
           }),
         },
       );

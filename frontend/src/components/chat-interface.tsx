@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Network, Loader2 } from "lucide-react";
+import { Send, Network, Loader2, Paperclip, X, FileText, Image } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { useQueryClient } from "@tanstack/react-query";
 import { RoutingPath } from "@/components/routing-path";
 import { AgentSelector } from "@/components/agent-selector";
@@ -9,6 +10,7 @@ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store"
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
 import { useToastStore } from "@/lib/store";
 import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
+import { uploadFile, type FileUploadResult } from "@/lib/api";
 
 interface ChatInterfaceProps {
   conversationId?: string;
@@ -38,10 +40,33 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   const reset = useChatStore((s) => s.reset);
 
   const [input, setInput] = useState("");
-  const [wsMode, setWsMode] = useState(true); // try WS first, fall back to REST
+  const [wsMode, setWsMode] = useState(true);
+  const [attachments, setAttachments] = useState<FileUploadResult[]>([]);
+  const [uploading, setUploading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── File upload handler ────────────────────────────────────
+  async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    try {
+      const result = await uploadFile(files[0]);
+      setAttachments((prev) => [...prev, result]);
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Upload failed", "error");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.file_id !== id));
+  }
 
   // ── Load conversation history ────────────────────────────────
   const { data: historyMessages, isLoading: isLoadingHistory } =
@@ -175,11 +200,16 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   // ── Submit handler ───────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!input.trim() || isStreaming || sendMessageMutation.isPending) return;
+    if ((!input.trim() && attachments.length === 0) || isStreaming || sendMessageMutation.isPending) return;
 
-    const userMessage = input.trim();
+    const userMessage = input.trim() || "Analyze the attached files.";
+    const fileIds = attachments.map((a) => a.file_id);
+    const attachLabel = attachments.length > 0
+      ? `\n[Attached: ${attachments.map((a) => a.filename).join(", ")}]`
+      : "";
     setInput("");
-    addMessage({ role: "user", content: userMessage });
+    setAttachments([]);
+    addMessage({ role: "user", content: userMessage + attachLabel });
 
     if (wsMode) {
       // Start assistant bubble as empty — tokens will append
@@ -331,12 +361,14 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                   </div>
                 )}
 
-                <p className="text-sm leading-relaxed whitespace-pre-wrap text-slate-900">
-                  {msg.content}
+                <div className="text-sm leading-relaxed text-slate-900 prose prose-sm prose-slate max-w-none">
+                  <ReactMarkdown>
+                    {msg.content}
+                  </ReactMarkdown>
                   {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
                     <span className="inline-block w-1.5 h-4 bg-blue-600 ml-0.5 animate-pulse align-middle" />
                   )}
-                </p>
+                </div>
 
                 {msg.role === "assistant" && msg.model && (
                   <p className="text-[10px] text-slate-400 mt-2">
@@ -392,7 +424,58 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
               </span>
             )}
           </div>
+          {/* Attachment chips */}
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {attachments.map((a) => (
+                <span
+                  key={a.file_id}
+                  className="inline-flex items-center gap-1 text-[11px] bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-1"
+                >
+                  {a.filename.endsWith(".pdf") || a.filename.endsWith(".docx") ? (
+                    <FileText className="w-3 h-3" />
+                  ) : (
+                    <Image className="w-3 h-3" />
+                  )}
+                  <span className="max-w-[120px] truncate">{a.filename}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(a.file_id)}
+                    className="hover:text-blue-900"
+                  >
+                    <X className="w-2.5 h-2.5" />
+                  </button>
+                </span>
+              ))}
+              {uploading && (
+                <span className="text-[11px] text-slate-400 flex items-center gap-1">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Uploading…
+                </span>
+              )}
+            </div>
+          )}
           <div className="flex gap-2.5">
+            {/* File upload button */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              onChange={handleFilePick}
+              className="hidden"
+              accept="image/*,.pdf,.docx,.txt,.md,.csv,.json"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              className="shrink-0 p-2.5 rounded-xl border border-slate-300 text-slate-400 hover:text-blue-600 hover:border-blue-400 transition-colors disabled:opacity-40"
+              title="Attach file"
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Paperclip className="w-4 h-4" />
+              )}
+            </button>
             <input
               ref={inputRef}
               type="text"

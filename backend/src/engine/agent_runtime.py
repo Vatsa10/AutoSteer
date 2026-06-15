@@ -24,6 +24,7 @@ class AgentResult:
     model: str
     usage: dict = field(default_factory=dict)
     handoff: HandoffInfo | None = None
+    structured: dict | None = None  # Parsed JSON when response_schema is used
 
 
 class AgentRuntime:
@@ -125,6 +126,31 @@ class AgentRuntime:
 - If the request falls outside your can_decide areas or within must_escalate areas, request a handoff.
 - When requesting a handoff, end your response with this exact JSON block on its own line:
   HANDOFF_JSON_START{{"target_agent":"<agent_role>","reason":"<why>","context_summary":"<summary of request>","current_state":"<what you have done so far>","expected_outcome":"<what the target agent should produce>"}}HANDOFF_JSON_END
+{self._format_response_schema()}
+"""
+
+    def _format_response_schema(self) -> str:
+        """Build structured output instructions from response_schema config."""
+        schema = self.config.response_schema
+        if not schema:
+            return ""
+
+        section_descs = []
+        for s in schema.sections:
+            section_descs.append(
+                f'    {{{{"type": "{s.type}", "title": "{s.title}", "items": ["...", "..."]}}}}'
+            )
+
+        sections_json = ",\n".join(section_descs)
+        return f"""
+## Response Format (REQUIRED)
+You MUST respond with a single JSON object. No markdown, no explanations outside the JSON.
+Format:
+{{
+  "sections": [
+{sections_json}
+  ]
+}}
 """
 
     @staticmethod
@@ -147,10 +173,12 @@ class AgentRuntime:
 
         self.conversation_history.append(LLMMessage(role="user", content=effective_message))
 
+        use_json = self.config.response_schema is not None
         response = await self.llm.complete(
             messages=self.conversation_history,
             system_prompt=self._system_prompt,
             model=self.model_override,
+            json_mode=use_json,
         )
 
         content = response.content
@@ -187,6 +215,7 @@ class AgentRuntime:
             model=model,
             usage=usage,
             handoff=handoff,
+            structured=response.structured,
         )
 
         self.conversation_history.append(

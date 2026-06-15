@@ -7,6 +7,18 @@ tools:
   - arxiv_search: Search academic papers on arXiv
   - semantic_search: Search workspace documents (RAG)
 
+response_schema:
+  sections:
+    - type: key_takeaways
+      title: Key Takeaways
+      items: []
+    - type: detailed_findings
+      title: Detailed Findings
+      items: []
+    - type: sources
+      title: Sources
+      items: []
+
 tasks:
   web_research:
     description: >
@@ -43,4 +55,4 @@ tasks:
 workflows:
   research_to_report:
     steps: [web_research, content_extraction, web_research]
-    description: Search → crawl top sources → synthesize findings into a report
+    description: Search -> crawl top sources -> synthesize findings into a report
