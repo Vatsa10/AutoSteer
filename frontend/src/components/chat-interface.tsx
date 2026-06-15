@@ -83,31 +83,28 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
     setAttachments((prev) => prev.filter((_, i) => i !== index));
   }
 
-  // ── Load conversation history ────────────────────────────────
+  // ── Load conversation history (use initialId directly, not store) ──
   const { data: historyMessages, isLoading: isLoadingHistory } =
-    useConversationMessages(conversationId);
+    useConversationMessages(initialId);
 
   // ── Handle conversation switching ─────────────────────────────
   const prevIdRef = useRef<string | undefined>(undefined);
-  const internalChangeRef = useRef(false); // skip reset for internal (new message) changes
+  const internalChangeRef = useRef(false);
   useEffect(() => {
     const prevId = prevIdRef.current;
     prevIdRef.current = initialId;
 
     if (initialId !== prevId) {
       if (internalChangeRef.current) {
-        // Internal change — just sync the store, don't reset messages
         internalChangeRef.current = false;
         setConversationId(initialId);
       } else {
-        // User clicked a different conversation — full reset
         reset();
         setConversationId(initialId);
       }
     }
   }, [initialId, reset, setConversationId]);
 
-  // Wrap onConversationChange to mark internal changes
   const handleConversationChange = useCallback(
     (id: string) => {
       internalChangeRef.current = true;
@@ -116,9 +113,9 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
     [onConversationChange],
   );
 
-  // Populate messages from history when loaded
+  // Populate messages from history
   useEffect(() => {
-    if (historyMessages && historyMessages.length > 0 && conversationId) {
+    if (historyMessages && historyMessages.length > 0) {
       const chatMsgs = historyMessages.map((m) => ({
         role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
         content: m.content,
@@ -128,7 +125,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
       }));
       setMessages(chatMsgs);
     }
-  }, [historyMessages, conversationId, setMessages]);
+  }, [historyMessages, setMessages]);
 
   // ── Scroll to bottom ─────────────────────────────────────────
   useEffect(() => {

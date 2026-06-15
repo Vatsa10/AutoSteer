@@ -254,13 +254,34 @@ User request: {user_message}"""
     ) -> dict:
         conversation_id = conversation_id or str(uuid.uuid4())
 
-        # ── Load file content ───────────────────────────────────
+        # ── Load file content + persisted document memory ─────────
         effective_message = user_message
+        all_file_context: list[str] = []
+
+        # Restore persisted file content from previous turns
+        if session is not None and conversation_id:
+            try:
+                from sqlalchemy import select as _sa_sel
+                from src.models.shared_state import SharedState as _SS
+                r = await session.execute(
+                    _sa_sel(_SS).where(_SS.key == f"conv:{conversation_id}:files")
+                )
+                prev = r.scalar_one_or_none()
+                if prev and prev.value:
+                    for fdata in prev.value.get("files", []):
+                        fname = fdata.get("filename", "unknown")
+                        ftext = fdata.get("text", "")
+                        ftype = fdata.get("type", "")
+                        if ftext:
+                            all_file_context.append(f"[File: {fname} ({ftype})]\n{ftext}")
+            except Exception:
+                pass
+
+        # Load new files from this request
         if file_ids:
             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
-            file_context_parts = []
+            new_files: list[dict] = []
             import json as _json2
-            from pathlib import Path as _Path
             for fid in file_ids:
                 try:
                     from src.integrations.files import file_upload_read, _uploads_dir
@@ -277,21 +298,54 @@ User request: {user_message}"""
                         ftype = data.get("type", "file")
                         fname = data.get("filename", fid)
                         if ftype == "image" and data.get("image_base64"):
-                            file_context_parts.append(f"[Image: {fname}]")
+                            all_file_context.append(f"[Image: {fname}]")
                         elif data.get("text"):
-                            file_context_parts.append(
+                            all_file_context.append(
                                 f"[File: {fname} ({ftype})]\n{data['text']}"
                             )
+                            new_files.append({"filename": fname, "text": data["text"], "type": ftype})
                 except Exception:
                     pass
-            if file_context_parts:
-                print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
-                effective_message = (
-                    "\n\n".join(file_context_parts)
-                    + f"\n\n---\n{user_message}"
-                )
-            else:
-                print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
+            # Persist new file content for future turns
+            if new_files and session is not None:
+                try:
+                    from src.models.shared_state import SharedState as _SS2
+                    existing = await session.execute(
+                        _sa_sel(_SS2).where(_SS2.key == f"conv:{conversation_id}:files")
+                    )
+                    prev_state = existing.scalar_one_or_none()
+                    all_saved = (prev_state.value.get("files", []) if prev_state else []) + new_files
+                    if prev_state:
+                        prev_state.value = {"files": all_saved}
+                        prev_state.updated_at = datetime.now(timezone.utc)
+                    else:
+                        session.add(_SS2(
+                            key=f"conv:{conversation_id}:files",
+                            value={"files": all_saved},
+                            owner="orchestrator",
+                            updated_at=datetime.now(timezone.utc),
+                        ))
+                    await session.commit()
+                except Exception:
+                    pass
+
+        if all_file_context:
+            print(f"[orchestrator] loaded {len(all_file_context)} file context(s)")
+            effective_message = (
+                "\n\n".join(all_file_context)
+                + f"\n\n---\n{user_message}"
+            )
+
+        # ── Agent coordination: detect multi-step tasks ──────────
+        # If document context exists and message asks to create/generate/make,
+        # route to content_marketer for document generation
+        create_triggers = ["create resume", "make resume", "generate resume", "craft resume",
+                          "create document", "make document", "generate document",
+                          "create report", "make report", "generate report",
+                          "create presentation", "make presentation", "create ppt"]
+        msg_lower = user_message.lower()
+        is_create_task = any(t in msg_lower for t in create_triggers)
+        has_context = bool(all_file_context)
 
         department: str | None = None
         agent_role: str | None = None
@@ -371,6 +425,36 @@ User request: {user_message}"""
                         "agent": None,
                     }
             agent_role = agent_result.target
+
+        # ── Multi-agent coordination: create tasks with context ────
+        if is_create_task and has_context and self.agents.get("content_marketer"):
+            # Phase 1: web_researcher searches for additional context
+            research_context = ""
+            web_researcher = self.agents.get("web_researcher")
+            if web_researcher:
+                try:
+                    search_query = user_message.replace("create resume", "").replace("make resume", "").replace("generate", "").replace("craft resume", "").strip() or "additional information"
+                    research_msg = (
+                        f"Search for additional professional information to enrich a document. "
+                        f"Query: {search_query}. Return key facts and achievements found."
+                    )
+                    rr = await web_researcher.process(research_msg)
+                    if rr.content and "error" not in rr.content.lower():
+                        research_context = f"\n\n[Web Research Results]\n{rr.content}"
+                except Exception:
+                    pass
+
+            # Phase 2: content_marketer creates the document
+            agent_role = "content_marketer"
+            department = "marketing"
+            effective_message = (
+                "Create a professional document using ALL the information below. "
+                "The file content is the primary source. Use the web research results "
+                "to enrich it. When done, generate the final document using the "
+                "create_docx tool.\n\n"
+                + effective_message
+                + research_context
+            )
 
         # Step 3: Agent processes the message
         agent_runtime = self.agents.get(agent_role) if agent_role else None
@@ -701,6 +785,35 @@ User request: {user_message}"""
                 return
             agent_role = agent_result.target
             yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+
+        # Multi-agent coordination for create tasks
+        create_kw = ["create resume", "make resume", "generate resume", "craft resume",
+                     "create document", "make document", "generate document",
+                     "create report", "make report", "create presentation", "make ppt"]
+        if any(k in user_message.lower() for k in create_kw) and file_context_parts:
+            if self.agents.get("content_marketer"):
+                # Phase 1: web search for enrichment
+                web_researcher = self.agents.get("web_researcher")
+                if web_researcher:
+                    try:
+                        sq = user_message
+                        for kw in create_kw:
+                            sq = sq.replace(kw, "")
+                        rctx = await web_researcher.process(
+                            f"Search for additional info to enrich a document. Query: {sq.strip() or 'more details'}. Return key facts."
+                        )
+                        if rctx.content:
+                            effective_message += f"\n\n[Web Research]\n{rctx.content}"
+                    except Exception:
+                        pass
+                agent_role = "content_marketer"
+                department = "marketing"
+                effective_message = (
+                    "Create a professional document using ALL the information below. "
+                    "Use the file content as primary source and web research to enrich. "
+                    "Generate the final document using create_docx tool.\n\n"
+                    + effective_message
+                )
 
         # Phase 2: Agent processes with streaming
         agent_runtime = self.agents.get(agent_role) if agent_role else None
