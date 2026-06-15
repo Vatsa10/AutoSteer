@@ -91,15 +91,23 @@ class OrchestrationEngine:
         return name.lower().replace(" & ", "_").replace(" ", "_")
 
     async def _route_department(self, user_message: str) -> RoutingResult | None:
-        """Route to department: LLM-first when regex confidence < 0.5."""
+        """Route to department: regex first, then LLM fallback, then direct answer."""
         regex_result = self.master_router.route(user_message)
-        if regex_result is None or regex_result.confidence < 0.5:
-            dept_name = await self._llm_classify_department(user_message)
-            if dept_name:
-                return RoutingResult(
-                    target=dept_name, confidence=0.75, matched_pattern="llm_primary"
-                )
-        return regex_result
+        if regex_result is not None and regex_result.confidence >= 0.5:
+            return regex_result
+
+        dept_name = await self._llm_classify_department(user_message)
+        if dept_name:
+            return RoutingResult(
+                target=dept_name, confidence=0.75, matched_pattern="llm_primary"
+            )
+
+        # Both regex and LLM classification failed. Return regex result even
+        # if low confidence — it's better than nothing.
+        if regex_result is not None:
+            return regex_result
+
+        return None
 
     async def _route_agent(self, user_message: str, dept_key: str) -> RoutingResult | None:
         """Route to agent within department: LLM-first when regex confidence < 0.5."""
@@ -159,6 +167,19 @@ User request: {user_message}"""
                 normalized = self._normalize_department(dept)
                 if normalized in self.department_routers:
                     return normalized
+                # Try resolving through orchestrator-to-dept mapping
+                # LLM returns target names like "data_analytics_orchestrator",
+                # which maps to normalized keys like "data_analytics"
+                target_no_underscores = dept.replace("_", "")
+                _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
+                resolved = _orch_to_dept.get(target_no_underscores)
+                if resolved and resolved in self.department_routers:
+                    return resolved
+                # Also try normalized version through mapping
+                if normalized != dept:
+                    resolved2 = _orch_to_dept.get(normalized.replace("_", ""))
+                    if resolved2 and resolved2 in self.department_routers:
+                        return resolved2
             return None
         except Exception:
             return None
@@ -247,9 +268,26 @@ User request: {user_message}"""
             # Step 1: Master orchestrator routes to department
             dept_result = await self._route_department(user_message)
             if not dept_result:
-                return {
+                # Last resort: answer directly with LLM without routing
+                try:
+                    fallback = await self.llm.complete(
+                        messages=[LLMMessage(role="user", content=user_message)],
+                        system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
+                        temperature=0.7,
+                        max_tokens=1024,
+                    )
+                    return {
                         "conversation_id": conversation_id,
-                        "response": "I'm not sure which department can help with that. Could you clarify your request?",
+                        "response": fallback.content,
+                        "routed_to": "direct",
+                        "agent": "fallback",
+                        "model": fallback.model,
+                        "usage": fallback.usage,
+                    }
+                except Exception:
+                    return {
+                        "conversation_id": conversation_id,
+                        "response": "I couldn't route your request to a specific department. Could you rephrase or provide more details about what you need?",
                         "routed_to": None,
                         "agent": None,
                     }
@@ -534,7 +572,18 @@ User request: {user_message}"""
         else:
             dept_result = await self._route_department(user_message)
             if not dept_result:
-                yield {"type": "error", "message": "Could not classify your request. Please clarify."}
+                # Last resort: answer directly with LLM without routing
+                try:
+                    fallback = await self.llm.complete(
+                        messages=[LLMMessage(role="user", content=user_message)],
+                        system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
+                        temperature=0.7,
+                        max_tokens=1024,
+                    )
+                    yield {"type": "token", "content": fallback.content}
+                    yield {"type": "metadata", "conversation_id": conversation_id, "agent": "fallback", "department": "direct", "model": fallback.model, "usage": fallback.usage}
+                except Exception:
+                    yield {"type": "error", "message": "Could not classify your request. Please rephrase or try again."}
                 yield {"type": "done"}
                 return
             department = dept_result.target
