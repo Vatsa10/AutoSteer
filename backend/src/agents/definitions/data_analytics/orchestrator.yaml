@@ -13,6 +13,7 @@ agents:
   - data_scientist
   - data_analyst
   - analytics_engineer
+  - web_researcher
   - annotation_ops_manager
 
 routing_rules:
@@ -22,6 +23,8 @@ routing_rules:
     target: data_analyst
   - pattern: "data model|warehouse|dbt|semantic layer|mart"
     target: analytics_engineer
+  - pattern: "research|scrape|crawl|web data|internet search|find information|look up|search for|gather intel|competitive intel|market research|web search"
+    target: web_researcher
   - pattern: "label|annotate|human eval|data quality|annotation"
     target: annotation_ops_manager
 
