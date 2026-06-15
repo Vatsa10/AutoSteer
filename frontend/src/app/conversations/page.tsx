@@ -20,8 +20,7 @@ export default function ConversationsPage() {
   }, [conversations, search]);
 
   function handleOpen(id: string) {
-    sessionStorage.setItem("activeConversationId", id);
-    router.push("/");
+    router.push(`/?c=${encodeURIComponent(id)}`);
   }
 
   return (

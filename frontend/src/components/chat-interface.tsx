@@ -47,15 +47,22 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   const { data: historyMessages, isLoading: isLoadingHistory } =
     useConversationMessages(conversationId);
 
+  // ── Handle conversation switching ─────────────────────────────
+  const prevIdRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (initialId) {
+    const prevId = prevIdRef.current;
+    prevIdRef.current = initialId;
+
+    // Reset store immediately on conversation change (prevents flash of old chat)
+    if (initialId !== prevId) {
+      reset();
       setConversationId(initialId);
     }
-  }, [initialId, setConversationId]);
+  }, [initialId, reset, setConversationId]);
 
   // Populate messages from history when loaded
   useEffect(() => {
-    if (historyMessages && historyMessages.length > 0 && messages.length === 0) {
+    if (historyMessages && historyMessages.length > 0 && conversationId) {
       const chatMsgs = historyMessages.map((m) => ({
         role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
         content: m.content,
@@ -65,7 +72,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
       }));
       setMessages(chatMsgs);
     }
-  }, [historyMessages, messages.length, setMessages]);
+  }, [historyMessages, conversationId, setMessages]);
 
   // ── Scroll to bottom ─────────────────────────────────────────
   useEffect(() => {

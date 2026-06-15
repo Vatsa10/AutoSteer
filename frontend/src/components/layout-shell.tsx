@@ -1,30 +1,27 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useState, useCallback } from "react";
+import { Suspense } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback } from "react";
 import { Sidebar } from "@/components/sidebar";
 
-export function LayoutShell({ children }: { children: React.ReactNode }) {
+function LayoutShellInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isBare = pathname.startsWith("/landing");
-
-  const [activeConversationId, setActiveConversationId] = useState<string>();
+  const searchParams = useSearchParams();
   const router = useRouter();
+  const isBare = pathname.startsWith("/landing");
+  const activeConversationId = pathname === "/" ? (searchParams.get("c") || undefined) : undefined;
 
   const handleSelectConversation = useCallback(
     (id: string) => {
-      setActiveConversationId(id);
-      sessionStorage.setItem("activeConversationId", id);
-      if (pathname !== "/") router.push("/");
+      router.replace(`/?c=${encodeURIComponent(id)}`, { scroll: false });
     },
-    [router, pathname],
+    [router],
   );
 
   const handleNewConversation = useCallback(() => {
-    setActiveConversationId(undefined);
-    sessionStorage.removeItem("activeConversationId");
-    if (pathname !== "/") router.push("/");
-  }, [router, pathname]);
+    router.replace("/", { scroll: false });
+  }, [router]);
 
   if (isBare) {
     return <>{children}</>;
@@ -39,5 +36,18 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       />
       <main className="flex-1 overflow-hidden">{children}</main>
     </div>
+  );
+}
+
+export function LayoutShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={
+      <div className="flex h-screen overflow-hidden">
+        <aside className="w-64 border-r border-slate-200 bg-slate-50 shrink-0" />
+        <main className="flex-1 overflow-hidden">{children}</main>
+      </div>
+    }>
+      <LayoutShellInner>{children}</LayoutShellInner>
+    </Suspense>
   );
 }
