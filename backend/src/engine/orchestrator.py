@@ -258,12 +258,20 @@ User request: {user_message}"""
         effective_message = user_message
         if file_ids:
             file_context_parts = []
-            import json as _json
+            import json as _json2
+            from pathlib import Path as _Path
             for fid in file_ids:
                 try:
-                    from src.integrations.files import file_upload_read
+                    from src.integrations.files import file_upload_read, _uploads_dir
                     raw = await file_upload_read(fid, max_chars=8000)
-                    data = _json.loads(raw)
+                    data = _json2.loads(raw)
+                    if "error" in data:
+                        uploads = _uploads_dir()
+                        for candidate in uploads.iterdir():
+                            if candidate.is_file() and fid.lower() in candidate.name.lower():
+                                raw = await file_upload_read(candidate.stem, max_chars=8000)
+                                data = _json2.loads(raw)
+                                break
                     if "error" not in data:
                         ftype = data.get("type", "file")
                         fname = data.get("filename", fid)
@@ -277,7 +285,7 @@ User request: {user_message}"""
                     pass
             if file_context_parts:
                 effective_message = (
-                    "The user attached the following files:\n\n"
+                    "The user attached the following files. Read their content and answer based on it:\n\n"
                     + "\n\n".join(file_context_parts)
                     + f"\n\n---\nUser message: {user_message}"
                 )
@@ -371,6 +379,26 @@ User request: {user_message}"""
                 "routed_to": department,
                 "agent": agent_role,
             }
+
+        # Restore conversation history from DB for memory continuity
+        if session is not None and conversation_id:
+            try:
+                from sqlalchemy import select as _sa_select
+                result = await session.execute(
+                    _sa_select(MessageModel)
+                    .where(MessageModel.conversation_id == conversation_id)
+                    .order_by(MessageModel.created_at.asc())
+                )
+                prior = result.scalars().all()
+                if prior:
+                    prior_dicts = [
+                        {"message_type": m.message_type.value if hasattr(m.message_type, "value") else str(m.message_type),
+                         "content": m.content}
+                        for m in prior
+                    ]
+                    agent_runtime.load_history(prior_dicts)
+            except Exception:
+                pass
 
         set_tool_context(session=session, workspace_id="default")
         response = await agent_runtime.process(effective_message)
@@ -581,9 +609,46 @@ User request: {user_message}"""
         conversation_id: str | None = None,
         target_agent: str | None = None,
         session: AsyncSession | None = None,
+        file_ids: list[str] | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Streaming version of process_message. Yields routing events + tokens."""
         conversation_id = conversation_id or str(uuid.uuid4())
+
+        # Load file content
+        effective_message = user_message
+        if file_ids:
+            file_context_parts = []
+            import json as _json2
+            from pathlib import Path as _Path
+            for fid in file_ids:
+                try:
+                    from src.integrations.files import file_upload_read, _uploads_dir
+                    raw = await file_upload_read(fid, max_chars=8000)
+                    data = _json2.loads(raw)
+                    if "error" in data:
+                        uploads = _uploads_dir()
+                        for candidate in uploads.iterdir():
+                            if candidate.is_file() and fid.lower() in candidate.name.lower():
+                                raw = await file_upload_read(candidate.stem, max_chars=8000)
+                                data = _json2.loads(raw)
+                                break
+                    if "error" not in data:
+                        ftype = data.get("type", "file")
+                        fname = data.get("filename", fid)
+                        if ftype == "image" and data.get("image_base64"):
+                            file_context_parts.append(f"[Image: {fname}]")
+                        elif data.get("text"):
+                            file_context_parts.append(
+                                f"[File: {fname} ({ftype})]\n{data['text']}"
+                            )
+                except Exception:
+                    pass
+            if file_context_parts:
+                effective_message = (
+                    "The user attached the following files. Read their content and answer based on it:\n\n"
+                    + "\n\n".join(file_context_parts)
+                    + f"\n\n---\nUser message: {user_message}"
+                )
 
         department: str | None = None
         agent_role: str | None = None
@@ -648,7 +713,19 @@ User request: {user_message}"""
         usage = {}
         handoff_data = None
 
-        async for event in agent_runtime.process_stream(user_message):
+        if session is not None and conversation_id:
+            try:
+                from sqlalchemy import select as _sa_s2
+                rr = await session.execute(
+                    _sa_s2(MessageModel).where(MessageModel.conversation_id == conversation_id).order_by(MessageModel.created_at.asc())
+                )
+                pp = rr.scalars().all()
+                if pp:
+                    agent_runtime.load_history([{"message_type": m.message_type.value if hasattr(m.message_type, "value") else str(m.message_type), "content": m.content} for m in pp])
+            except Exception:
+                pass
+
+        async for event in agent_runtime.process_stream(effective_message):
             if event["type"] == "token":
                 full_content += event["content"]
                 yield {"type": "token", "content": event["content"]}

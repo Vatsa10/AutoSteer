@@ -28,6 +28,10 @@ class AgentResult:
 
 
 class AgentRuntime:
+    # Memory tier limits
+    MAX_WORKING_MESSAGES = 12   # Keep last 12 in full text
+    SUMMARY_MAX_CHARS = 400     # Rolling summary of older messages
+
     def __init__(
         self,
         soul: SoulConfig,
@@ -48,7 +52,75 @@ class AgentRuntime:
         else:
             self.tool_registry = tool_registry
         self.conversation_history: list[LLMMessage] = []
+        self._rolling_summary: str = ""  # Compressed memory of older messages
+        self._document_memory: list[dict] = []  # [{filename, key_facts, extracted_at}]
         self._system_prompt = self._build_system_prompt()
+
+    # ── Memory management ──────────────────────────────────────
+
+    def load_history(self, messages: list[dict]):
+        """Restore conversation from DB message records."""
+        self.conversation_history.clear()
+        self._rolling_summary = ""
+        self._document_memory.clear()
+
+        for m in messages:
+            role = "assistant" if m.get("message_type") == "response" else "user"
+            content = m.get("content", "")
+            self.conversation_history.append(LLMMessage(role=role, content=content))
+
+        # Compress if over limit
+        if len(self.conversation_history) > self.MAX_WORKING_MESSAGES:
+            self._compress_history()
+
+    def _compress_history(self):
+        """Move oldest messages into rolling summary, keep recent ones in full."""
+        if len(self.conversation_history) <= self.MAX_WORKING_MESSAGES:
+            return
+        split_idx = len(self.conversation_history) - self.MAX_WORKING_MESSAGES
+        # Keep last N in full, summarize the rest into existing summary
+        old = self.conversation_history[:split_idx]
+        self.conversation_history = self.conversation_history[split_idx:]
+        # Build new summary from old messages
+        old_text = "\n".join(
+            f"[{m.role}]: {m.content[:300]}" for m in old
+        )
+        if self._rolling_summary:
+            self._rolling_summary = (
+                f"{self._rolling_summary}\n...\n{old_text}"
+            )[-self.SUMMARY_MAX_CHARS:]
+        else:
+            self._rolling_summary = old_text[-self.SUMMARY_MAX_CHARS:]
+
+    def add_document_memory(self, filename: str, content: str):
+        """Store key facts about an uploaded document."""
+        # Extract first 500 chars as working memory of the document
+        preview = content[:500].replace("\n", " ")
+        self._document_memory.append({
+            "filename": filename,
+            "preview": preview,
+            "char_count": len(content),
+        })
+        # Keep only last 5 documents in memory
+        if len(self._document_memory) > 5:
+            self._document_memory = self._document_memory[-5:]
+
+    def _build_memory_context(self) -> str:
+        """Build the memory-augmented system prompt prefix."""
+        parts = []
+        if self._document_memory:
+            docs = "\n".join(
+                f"- **{d['filename']}** ({d['char_count']} chars): {d['preview'][:200]}"
+                for d in self._document_memory
+            )
+            parts.append(f"## Documents in Context\n{docs}")
+        if self._rolling_summary:
+            parts.append(
+                f"## Previous Conversation Summary\n{self._rolling_summary}"
+            )
+        if parts:
+            self._system_prompt = self._build_system_prompt()
+        return "\n\n".join(parts)
 
     def _build_system_prompt(self) -> str:
         task_descriptions = []
@@ -171,12 +243,26 @@ Format:
         if search_context:
             effective_message = f"{user_message}\n\n[Pre-fetched search results — use these to answer, do not search again]\n{search_context}"
 
+        # Track document context from file content in message
+        if "[File:" in effective_message:
+            import re as _re
+            file_matches = _re.findall(r'\[File: ([^\]]+)\]', effective_message)
+            for fname in file_matches:
+                self.add_document_memory(fname, effective_message)
+
         self.conversation_history.append(LLMMessage(role="user", content=effective_message))
+
+        # Compress if over memory limit
+        self._compress_history()
+
+        # Build memory-augmented system prompt
+        memory_ctx = self._build_memory_context()
+        full_prompt = f"{self._system_prompt}\n\n{memory_ctx}" if memory_ctx else self._system_prompt
 
         use_json = self.config.response_schema is not None
         response = await self.llm.complete(
             messages=self.conversation_history,
-            system_prompt=self._system_prompt,
+            system_prompt=full_prompt,
             model=self.model_override,
             json_mode=use_json,
         )
@@ -275,9 +361,11 @@ Format:
         )
 
         self.conversation_history.append(LLMMessage(role="assistant", content=follow_up_msg))
+        memory_ctx2 = self._build_memory_context()
+        sp2 = f"{self._system_prompt}\n\n{memory_ctx2}" if memory_ctx2 else self._system_prompt
         follow_up = await self.llm.complete(
             messages=self.conversation_history,
-            system_prompt=self._system_prompt,
+            system_prompt=sp2,
             model=self.model_override,
         )
 
@@ -292,6 +380,10 @@ Format:
     async def _auto_search(self, user_message: str) -> str | None:
         """Pre-execute search tools for research-like queries. Returns context string or None."""
         if not self.tool_registry:
+            return None
+
+        # Skip auto-search when file content is already attached
+        if "[File:" in user_message or "[Image:" in user_message:
             return None
 
         # Check if message triggers search
@@ -357,13 +449,21 @@ Format:
 
     async def process_stream(self, user_message: str) -> AsyncGenerator[dict, None]:
         """Stream agent response, yielding event dicts: {type, content?, model?, usage?, handoff?}"""
-        # Auto-search for research-like queries
         search_context = await self._auto_search(user_message)
         effective_message = user_message
         if search_context:
             effective_message = f"{user_message}\n\n[Pre-fetched search results — use these to answer, do not search again]\n{search_context}"
 
+        if "[File:" in effective_message:
+            import re as _re
+            file_matches = _re.findall(r'\[File: ([^\]]+)\]', effective_message)
+            for fname in file_matches:
+                self.add_document_memory(fname, effective_message)
+
         self.conversation_history.append(LLMMessage(role="user", content=effective_message))
+        self._compress_history()
+        memory_ctx = self._build_memory_context()
+        full_prompt = f"{self._system_prompt}\n\n{memory_ctx}" if memory_ctx else self._system_prompt
 
         full_content = ""
         model_name = ""
@@ -371,7 +471,7 @@ Format:
 
         async for chunk in self.llm.complete_stream(
             messages=self.conversation_history,
-            system_prompt=self._system_prompt,
+            system_prompt=full_prompt,
             model=self.model_override,
         ):
             if chunk.content:

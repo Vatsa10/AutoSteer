@@ -137,7 +137,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
   // ── Send via WebSocket ───────────────────────────────────────
   const sendViaWebSocket = useCallback(
-    (message: string, convId?: string, tgtAgent?: string) => {
+    (message: string, fileIds: string[], convId?: string, tgtAgent?: string) => {
       clearRoutingEvents();
       setIsStreaming(true);
 
@@ -160,7 +160,6 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                 setConversationId(event.conversation_id);
                 handleConversationChange(event.conversation_id);
               }
-              // Update last message with metadata
               break;
             case "error":
               addToast(event.message, "error");
@@ -175,13 +174,11 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
           }
         },
         onError: () => {
-          // WS failed, fall back to REST
           setWsMode(false);
           setIsStreaming(false);
           setRoutingStage("");
-          // Re-send via REST
           sendMessageMutation.mutate(
-            { message, conversationId: convId, targetAgent: tgtAgent },
+            { message, conversationId: convId, targetAgent: tgtAgent, fileIds },
             {
               onSuccess: (data) => {
                 appendContent(data.response);
@@ -203,7 +200,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
       // Wait for connection then send
       ws.onopen = () => {
-        sendWSMessage(ws, message, convId, tgtAgent);
+        sendWSMessage(ws, message, convId, tgtAgent, fileIds);
       };
     },
     [
@@ -228,9 +225,8 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
     addMessage({ role: "user", content: userMessage + attachLabel });
 
     if (wsMode) {
-      // Start assistant bubble as empty — tokens will append
       addMessage({ role: "assistant", content: "", agent: targetAgent });
-      sendViaWebSocket(userMessage, conversationId, targetAgent ?? undefined);
+      sendViaWebSocket(userMessage, fileIds, conversationId, targetAgent ?? undefined);
     } else {
       setIsStreaming(true);
       setRoutingStage("classifying");
@@ -241,6 +237,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
           message: userMessage,
           conversationId,
           targetAgent: targetAgent ?? undefined,
+          fileIds,
         },
         {
           onSuccess: (data) => {

@@ -44,6 +44,7 @@ async def websocket_chat(websocket: WebSocket):
             message = payload.get("message", "")
             conversation_id = payload.get("conversation_id")
             target_agent = payload.get("target_agent")
+            file_ids = payload.get("file_ids")
 
             engine = websocket.app.state.engine
             if not engine:
@@ -57,6 +58,7 @@ async def websocket_chat(websocket: WebSocket):
                         conversation_id=conversation_id,
                         target_agent=target_agent,
                         session=session,
+                        file_ids=file_ids,
                     ):
                         await websocket.send_json(event)
             except Exception as e:
