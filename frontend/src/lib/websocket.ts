@@ -44,6 +44,7 @@ export function sendWSMessage(
   conversationId?: string,
   targetAgent?: string,
   fileIds?: string[],
+  files?: { filename: string; content: string; mime_type: string }[],
 ) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
   ws.send(
@@ -52,6 +53,7 @@ export function sendWSMessage(
       conversation_id: conversationId,
       target_agent: targetAgent || null,
       file_ids: fileIds || null,
+      files: files || null,
     }),
   );
 }

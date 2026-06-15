@@ -44,7 +44,19 @@ async def websocket_chat(websocket: WebSocket):
             message = payload.get("message", "")
             conversation_id = payload.get("conversation_id")
             target_agent = payload.get("target_agent")
-            file_ids = payload.get("file_ids")
+            file_ids = list(payload.get("file_ids") or [])
+            # Process inline files
+            inline_files = payload.get("files")
+            if inline_files:
+                import base64 as _b64
+                from src.integrations.files import save_upload
+                for f in inline_files:
+                    try:
+                        raw = _b64.b64decode(f["content"])
+                        meta = save_upload(f["filename"], raw)
+                        file_ids.append(meta["file_id"])
+                    except Exception:
+                        pass
 
             engine = websocket.app.state.engine
             if not engine:

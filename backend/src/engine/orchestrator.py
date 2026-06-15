@@ -257,6 +257,7 @@ User request: {user_message}"""
         # ── Load file content ───────────────────────────────────
         effective_message = user_message
         if file_ids:
+            print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
             file_context_parts = []
             import json as _json2
             from pathlib import Path as _Path
@@ -284,11 +285,14 @@ User request: {user_message}"""
                 except Exception:
                     pass
             if file_context_parts:
+                print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
                 effective_message = (
                     "The user attached the following files. Read their content and answer based on it:\n\n"
                     + "\n\n".join(file_context_parts)
                     + f"\n\n---\nUser message: {user_message}"
                 )
+            else:
+                print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
 
         department: str | None = None
         agent_role: str | None = None
@@ -617,6 +621,7 @@ User request: {user_message}"""
         # Load file content
         effective_message = user_message
         if file_ids:
+            print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
             file_context_parts = []
             import json as _json2
             from pathlib import Path as _Path
@@ -644,11 +649,14 @@ User request: {user_message}"""
                 except Exception:
                     pass
             if file_context_parts:
+                print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
                 effective_message = (
                     "The user attached the following files. Read their content and answer based on it:\n\n"
                     + "\n\n".join(file_context_parts)
                     + f"\n\n---\nUser message: {user_message}"
                 )
+            else:
+                print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
 
         department: str | None = None
         agent_role: str | None = None

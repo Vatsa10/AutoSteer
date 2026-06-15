@@ -52,11 +52,14 @@ export function useConversationMessages(conversationId: string | undefined) {
 
 // ── Chat mutation ────────────────────────────────────────────────
 
+interface FileAttachment { filename: string; content: string; mime_type: string; }
+
 interface SendMessageVars {
   message: string;
   conversationId?: string;
   targetAgent?: string;
   fileIds?: string[];
+  files?: FileAttachment[];
 }
 
 export function useSendMessage() {
@@ -64,7 +67,7 @@ export function useSendMessage() {
   const addToast = useToastStore((s) => s.addToast);
 
   return useMutation({
-    mutationFn: async ({ message, conversationId, targetAgent, fileIds }: SendMessageVars) => {
+    mutationFn: async ({ message, conversationId, targetAgent, fileIds, files }: SendMessageVars) => {
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`,
         {
@@ -75,6 +78,7 @@ export function useSendMessage() {
             conversation_id: conversationId,
             target_agent: targetAgent || null,
             file_ids: fileIds || null,
+            files: files || null,
           }),
         },
       );

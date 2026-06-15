@@ -10,7 +10,7 @@ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store"
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
 import { useToastStore } from "@/lib/store";
 import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
-import { uploadFile, type FileUploadResult } from "@/lib/api";
+interface FileAttachment { filename: string; content: string; mime_type: string; }
 
 interface ChatInterfaceProps {
   conversationId?: string;
@@ -41,31 +41,46 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
   const [input, setInput] = useState("");
   const [wsMode, setWsMode] = useState(true);
-  const [attachments, setAttachments] = useState<FileUploadResult[]>([]);
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ── File upload handler ────────────────────────────────────
+  // ── File picker (inline base64, no upload step) ─────────────
   async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     setUploading(true);
     try {
-      const result = await uploadFile(files[0]);
-      setAttachments((prev) => [...prev, result]);
+      const file = files[0];
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Strip data:...;base64, prefix
+          const comma = result.indexOf(",");
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+      setAttachments((prev) => [...prev, {
+        filename: file.name,
+        content: base64,
+        mime_type: file.type || "application/octet-stream",
+      }]);
     } catch (err) {
-      addToast(err instanceof Error ? err.message : "Upload failed", "error");
+      addToast(err instanceof Error ? err.message : "Failed to read file", "error");
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   }
 
-  function removeAttachment(id: string) {
-    setAttachments((prev) => prev.filter((a) => a.file_id !== id));
+  function removeAttachment(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index));
   }
 
   // ── Load conversation history ────────────────────────────────
@@ -137,7 +152,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
   // ── Send via WebSocket ───────────────────────────────────────
   const sendViaWebSocket = useCallback(
-    (message: string, fileIds: string[], convId?: string, tgtAgent?: string) => {
+    (message: string, fileIds: string[], convId?: string, tgtAgent?: string, files?: FileAttachment[]) => {
       clearRoutingEvents();
       setIsStreaming(true);
 
@@ -178,7 +193,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
           setIsStreaming(false);
           setRoutingStage("");
           sendMessageMutation.mutate(
-            { message, conversationId: convId, targetAgent: tgtAgent, fileIds },
+            { message, conversationId: convId, targetAgent: tgtAgent, fileIds, files },
             {
               onSuccess: (data) => {
                 appendContent(data.response);
@@ -200,7 +215,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
       // Wait for connection then send
       ws.onopen = () => {
-        sendWSMessage(ws, message, convId, tgtAgent, fileIds);
+        sendWSMessage(ws, message, convId, tgtAgent, fileIds, files);
       };
     },
     [
@@ -216,9 +231,9 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
     if ((!input.trim() && attachments.length === 0) || isStreaming || sendMessageMutation.isPending) return;
 
     const userMessage = input.trim() || "Analyze the attached files.";
-    const fileIds = attachments.map((a) => a.file_id);
-    const attachLabel = attachments.length > 0
-      ? `\n[Attached: ${attachments.map((a) => a.filename).join(", ")}]`
+    const currentAttachments = [...attachments];
+    const attachLabel = currentAttachments.length > 0
+      ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]`
       : "";
     setInput("");
     setAttachments([]);
@@ -226,7 +241,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
 
     if (wsMode) {
       addMessage({ role: "assistant", content: "", agent: targetAgent });
-      sendViaWebSocket(userMessage, fileIds, conversationId, targetAgent ?? undefined);
+      sendViaWebSocket(userMessage, [], conversationId, targetAgent ?? undefined, currentAttachments);
     } else {
       setIsStreaming(true);
       setRoutingStage("classifying");
@@ -237,7 +252,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
           message: userMessage,
           conversationId,
           targetAgent: targetAgent ?? undefined,
-          fileIds,
+          files: currentAttachments.length > 0 ? currentAttachments : undefined,
         },
         {
           onSuccess: (data) => {
@@ -440,9 +455,9 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
           {/* Attachment chips */}
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {attachments.map((a) => (
+              {attachments.map((a, i) => (
                 <span
-                  key={a.file_id}
+                  key={i}
                   className="inline-flex items-center gap-1 text-[11px] bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-1"
                 >
                   {a.filename.endsWith(".pdf") || a.filename.endsWith(".docx") ? (
@@ -453,7 +468,7 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
                   <span className="max-w-[120px] truncate">{a.filename}</span>
                   <button
                     type="button"
-                    onClick={() => removeAttachment(a.file_id)}
+                    onClick={() => removeAttachment(i)}
                     className="hover:text-blue-900"
                   >
                     <X className="w-2.5 h-2.5" />
