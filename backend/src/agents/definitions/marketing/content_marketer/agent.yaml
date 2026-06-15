@@ -8,6 +8,8 @@ tools:
   - social_scheduler: Buffer/Sprout Social for distribution
   - ai_writing_assistant: Draft and edit support
   - design_request: Request graphics from brand_designer
+  - create_docx: Generate polished Word documents
+  - create_pptx: Generate professional slide decks
 
 tasks:
   content_strategy:

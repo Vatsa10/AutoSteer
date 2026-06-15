@@ -135,6 +135,12 @@ TOOL_ALIASES: dict[str, str] = {
     "datetime": "datetime",
     "json_parse": "json_parse",
     "text_stats": "text_stats",
+    "document_generator": "create_docx",
+    "word_processor": "create_docx",
+    "presentation_builder": "create_pptx",
+    "slide_deck": "create_pptx",
+    "create_docx": "create_docx",
+    "create_pptx": "create_pptx",
 }
 
 # Canonical tool metadata (tier + human description)
@@ -201,6 +207,8 @@ TOOL_CATALOG: dict[str, dict] = {
     "ashby_read": {"tier": ToolTier.PLANNED, "provider": "ashby", "description": "Read Ashby ATS data"},
     "quickbooks_read": {"tier": ToolTier.PLANNED, "provider": "quickbooks", "description": "QuickBooks P&L read"},
     "carta_read": {"tier": ToolTier.PLANNED, "provider": "carta", "description": "Cap table summary"},
+    "create_docx": {"tier": ToolTier.LIVE, "provider": None, "description": "Generate professional Word documents from markdown"},
+    "create_pptx": {"tier": ToolTier.LIVE, "provider": None, "description": "Generate professional PowerPoint presentations"},
 }
 
 

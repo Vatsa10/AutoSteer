@@ -25,6 +25,7 @@ from src.integrations.apollo import apollo_search
 from src.integrations.arxiv import arxiv_search
 from src.integrations.crawler import web_crawl
 from src.integrations.ddg_search import ddg_search
+from src.integrations.document_gen import create_docx, create_pptx
 from src.integrations.api_tester import api_tester
 from src.integrations.docusign import docusign_draft
 from src.integrations.email import email_draft, email_send
@@ -502,6 +503,14 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
     registry.register("policy_doc_generate", _ctx_wrap(policy_doc_generate), _schema(
         "policy_doc_generate", "Generate policy document draft.",
         {"policy_type": {"type": "string"}, "sections": {"type": "string"}, "export_to_notion": {"type": "boolean"}},
+    ))
+    registry.register("create_docx", _ctx_wrap(create_docx), _schema(
+        "create_docx", "Generate a professional Word document (.docx) from markdown content.",
+        {"title": {"type": "string"}, "content": {"type": "string"}, "filename": {"type": "string"}},
+    ))
+    registry.register("create_pptx", _ctx_wrap(create_pptx), _schema(
+        "create_pptx", "Generate a professional PowerPoint presentation (.pptx).",
+        {"title": {"type": "string"}, "slides": {"type": "string"}, "filename": {"type": "string"}},
     ))
     return registry
 
