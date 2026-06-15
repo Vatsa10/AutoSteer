@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -59,3 +59,20 @@ async def get_conversation_messages(
         )
         for m in messages
     ]
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    """Delete a conversation and all its messages."""
+    await session.execute(
+        delete(Message).where(Message.conversation_id == conversation_id)
+    )
+    await session.execute(
+        delete(Conversation).where(Conversation.id == conversation_id)
+    )
+    await session.commit()
+    return {"ok": True, "deleted": conversation_id}

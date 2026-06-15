@@ -1,6 +1,11 @@
 "use client";
 
-import { MessageSquare, Plus } from "lucide-react";
+import { useState, useCallback } from "react";
+import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { deleteConversation } from "@/lib/api";
+import { useToastStore } from "@/lib/store";
+import { useRouter } from "next/navigation";
 
 export interface ConversationSummary {
   id: string;
@@ -33,6 +38,38 @@ export function ConversationList({
   onSelect,
   onNew,
 }: ConversationListProps) {
+  const queryClient = useQueryClient();
+  const addToast = useToastStore((s) => s.addToast);
+  const router = useRouter();
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  const handleDelete = useCallback(
+    async (e: React.MouseEvent, id: string) => {
+      e.stopPropagation();
+      if (confirmId !== id) {
+        setConfirmId(id);
+        return;
+      }
+      setDeleting(id);
+      try {
+        await deleteConversation(id);
+        queryClient.invalidateQueries({ queryKey: ["conversations"] });
+        queryClient.invalidateQueries({ queryKey: ["messages"] });
+        if (activeId === id) {
+          router.push("/");
+        }
+        addToast("Conversation deleted", "success");
+      } catch {
+        addToast("Failed to delete conversation", "error");
+      } finally {
+        setDeleting(null);
+        setConfirmId(null);
+      }
+    },
+    [confirmId, queryClient, activeId, router, addToast],
+  );
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2">
@@ -55,25 +92,44 @@ export function ConversationList({
           </p>
         )}
         {conversations.map((conv) => (
-          <button
+          <div
             key={conv.id}
-            onClick={() => onSelect(conv.id)}
-            className={`w-full text-left px-3 py-2 rounded-lg text-sm transition-colors flex items-center gap-2.5 group ${
+            className={`w-full text-left rounded-lg text-sm transition-colors flex items-center gap-2 group border ${
               activeId === conv.id
-                ? "bg-blue-50 text-blue-700 border border-blue-200"
-                : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 border border-transparent"
+                ? "bg-blue-50 text-blue-700 border-blue-200"
+                : "text-slate-700 hover:text-slate-900 hover:bg-slate-100 border-transparent"
             }`}
           >
-            <MessageSquare
-              className={`w-3.5 h-3.5 shrink-0 ${
-                activeId === conv.id ? "text-blue-600" : "text-slate-400"
+            <button
+              onClick={() => {
+                setConfirmId(null);
+                onSelect(conv.id);
+              }}
+              className="flex items-center gap-2.5 flex-1 min-w-0 px-3 py-2"
+            >
+              <MessageSquare
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  activeId === conv.id ? "text-blue-600" : "text-slate-400"
+                }`}
+              />
+              <span className="truncate flex-1">{conv.title}</span>
+              <span className="text-[10px] text-slate-400 shrink-0">
+                {timeAgo(conv.updated_at)}
+              </span>
+            </button>
+            <button
+              onClick={(e) => handleDelete(e, conv.id)}
+              disabled={deleting === conv.id}
+              className={`shrink-0 px-2 py-2 rounded-r-lg transition-all ${
+                confirmId === conv.id
+                  ? "text-red-600 bg-red-50 hover:bg-red-100"
+                  : "text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100"
               }`}
-            />
-            <span className="truncate flex-1">{conv.title}</span>
-            <span className="text-[10px] text-slate-400 shrink-0">
-              {timeAgo(conv.updated_at)}
-            </span>
-          </button>
+              title={confirmId === conv.id ? "Click again to confirm delete" : "Delete conversation"}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
         ))}
       </div>
     </div>

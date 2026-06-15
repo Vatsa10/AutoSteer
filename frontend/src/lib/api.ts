@@ -142,6 +142,10 @@ export async function getConversationMessages(
   return res.json();
 }
 
+export async function deleteConversation(conversationId: string): Promise<void> {
+  await apiFetch(`/api/conversations/${conversationId}`, { method: "DELETE" });
+}
+
 // Status
 export interface SystemStatus {
   total_agents: number;
