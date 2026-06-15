@@ -116,21 +116,34 @@ export function ChatInterface({ conversationId: initialId, onConversationChange 
   // Populate messages from history
   useEffect(() => {
     if (historyMessages && historyMessages.length > 0) {
-      const chatMsgs = historyMessages.map((m) => ({
-        role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
-        content: m.content,
-        agent: m.from_agent !== "user" ? m.from_agent : null,
-        department: null,
-        model: null,
-      }));
-      setMessages(chatMsgs);
+      setMessages(
+        historyMessages.map((m) => ({
+          role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
+          content: m.content,
+          agent: m.from_agent !== "user" ? m.from_agent : null,
+          department: null,
+          model: null,
+        }))
+      );
     }
   }, [historyMessages, setMessages]);
 
-  // ── Scroll to bottom ─────────────────────────────────────────
+  // ── Scroll to bottom (only for new messages, not history load) ──
+  const isHistoryLoad = useRef(false);
   useEffect(() => {
+    if (isLoadingHistory) {
+      isHistoryLoad.current = true;
+      return;
+    }
+    if (isHistoryLoad.current && !isLoadingHistory) {
+      // History just finished loading — scroll to bottom once
+      isHistoryLoad.current = false;
+      messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+      return;
+    }
+    // New message added — smooth scroll
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, routingEvents]);
+  }, [messages, routingEvents, isLoadingHistory]);
 
   // ── Focus input ──────────────────────────────────────────────
   useEffect(() => {
