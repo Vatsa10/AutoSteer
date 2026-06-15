@@ -1,29 +1,32 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChatInterface } from "@/components/chat-interface";
 
-export default function ChatPage() {
-  const [conversationId, setConversationId] = useState<string | undefined>();
-
-  useEffect(() => {
-    const stored = sessionStorage.getItem("activeConversationId");
-    if (stored) {
-      setConversationId(stored);
-      sessionStorage.removeItem("activeConversationId");
-    }
-  }, []);
-
-  const handleConversationChange = useCallback((id: string) => {
-    if (id) setConversationId(id);
-    else setConversationId(undefined);
-  }, []);
+function ChatPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const conversationId = searchParams.get("c") || undefined;
 
   return (
     <ChatInterface
-      key={conversationId ?? "new"}
       conversationId={conversationId}
-      onConversationChange={handleConversationChange}
+      onConversationChange={(id) => {
+        if (id) {
+          router.replace(`/?c=${encodeURIComponent(id)}`, { scroll: false });
+        } else {
+          router.replace("/", { scroll: false });
+        }
+      }}
     />
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full" />}>
+      <ChatPageInner />
+    </Suspense>
   );
 }

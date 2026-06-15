@@ -1,23 +1,22 @@
-"""DuckDuckGo web search integration. No API key needed."""
+"""DuckDuckGo web search via HTML scraping. No API key needed."""
 
 import asyncio
 import json
+import re
+
+import httpx
+
+_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+_DDG_HTML = "https://html.duckduckgo.com/html/"
 
 
 async def ddg_search(query: str, max_results: int = 10, **_) -> str:
-    """Search DuckDuckGo and return results with title, URL, snippet."""
-    try:
-        from duckduckgo_search import DDGS
-    except ImportError:
-        return json.dumps({
-            "error": "duckduckgo-search not installed. Run: pip install duckduckgo-search",
-            "query": query,
-            "results": [],
-        })
-
+    """Search DuckDuckGo HTML endpoint and return results."""
     loop = asyncio.get_running_loop()
     try:
-        results = await loop.run_in_executor(None, _run_ddg_search, query, max_results)
+        results = await loop.run_in_executor(
+            None, _run_ddg_search, query, min(max_results, 20)
+        )
     except Exception as exc:
         return json.dumps({
             "error": f"DuckDuckGo search failed: {exc}",
@@ -33,15 +32,39 @@ async def ddg_search(query: str, max_results: int = 10, **_) -> str:
 
 
 def _run_ddg_search(query: str, max_results: int) -> list[dict]:
-    """Synchronous DDG search — runs in executor thread."""
-    with DDGS() as ddgs:
-        raw = list(ddgs.text(query, max_results=min(max_results, 20)))
+    """Synchronous DDG HTML search."""
+    with httpx.Client(
+        timeout=15.0,
+        headers={"User-Agent": _USER_AGENT},
+        follow_redirects=True,
+    ) as client:
+        resp = client.post(_DDG_HTML, data={"q": query})
+        resp.raise_for_status()
+        html = resp.text
 
-    return [
-        {
-            "title": r.get("title", ""),
-            "url": r.get("href", ""),
-            "snippet": r.get("body", ""),
-        }
-        for r in raw
-    ]
+    results: list[dict] = []
+    # Parse DDG HTML results page
+    # Each result is in a div with class "result"
+    result_blocks = re.findall(
+        r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
+        html, re.DOTALL | re.IGNORECASE
+    )
+
+    for url, title_html in result_blocks[:max_results]:
+        title = re.sub(r"<[^>]+>", "", title_html).strip()
+        if title and url.startswith("http"):
+            # Try to find snippet near this result
+            snippet = ""
+            snippet_m = re.search(
+                r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
+                html, re.DOTALL | re.IGNORECASE
+            )
+            if snippet_m:
+                snippet = re.sub(r"<[^>]+>", "", snippet_m.group(1)).strip()
+            results.append({
+                "title": title,
+                "url": url,
+                "snippet": snippet,
+            })
+
+    return results

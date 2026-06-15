@@ -110,11 +110,13 @@ class AgentRuntime:
 - Always respond in a way consistent with your personality and values.
 - Be concise and actionable in your responses.
 
-## Tool Calling Protocol
-- To use a tool, include a tool call block on its own line:
+## Tool Calling Protocol (REQUIRED)
+- You MUST use tools when the request needs external data (search, crawl, fetch).
+- Do NOT say "I'll search for that" — actually call the tool instead.
+- To use a tool, include EXACTLY this block on its own line:
   TOOL_CALL_START{{"tool":"<tool_name>","arguments":{{"arg1":"value1",...}}}}TOOL_CALL_END
-- You may call multiple tools in one response — each on its own line.
-- After receiving the tool result, incorporate it into your final response.
+- Example: TOOL_CALL_START{{"tool":"ddg_search","arguments":{{"query":"Vatsa Joshi","max_results":5}}}}TOOL_CALL_END
+- Call tools FIRST, then incorporate results into your response.
 - Available tools are listed above — use exact names as shown.
 
 ## Handoff Protocol
@@ -137,7 +139,13 @@ class AgentRuntime:
         return ", ".join(result) if result else "None specified"
 
     async def process(self, user_message: str) -> AgentResult:
-        self.conversation_history.append(LLMMessage(role="user", content=user_message))
+        # Auto-search: pre-execute search tools for research-like queries
+        search_context = await self._auto_search(user_message)
+        effective_message = user_message
+        if search_context:
+            effective_message = f"{user_message}\n\n[Pre-fetched search results — use these to answer, do not search again]\n{search_context}"
+
+        self.conversation_history.append(LLMMessage(role="user", content=effective_message))
 
         response = await self.llm.complete(
             messages=self.conversation_history,
@@ -246,12 +254,87 @@ class AgentRuntime:
 
         return follow_up.content, follow_up.model, follow_up.usage
 
+    # ── Auto-search triggers ──────────────────────────────────────
+    _SEARCH_TRIGGERS = re.compile(
+        r"\b(who|what|where|when|why|how|research|find|search|look up|tell me about|information on|learn about|latest|news about)\b",
+        re.IGNORECASE,
+    )
+
+    async def _auto_search(self, user_message: str) -> str | None:
+        """Pre-execute search tools for research-like queries. Returns context string or None."""
+        if not self.tool_registry:
+            return None
+
+        # Check if message triggers search
+        if not self._SEARCH_TRIGGERS.search(user_message):
+            return None
+
+        # Find available search tool (check both filtered and global registries)
+        search_tool = None
+        for name in ("ddg_search", "web_search"):
+            if self.tool_registry.is_registered(name):
+                search_tool = name
+                break
+
+        # Fallback: try global registry if filtered view doesn't have it
+        if not search_tool:
+            try:
+                from src.engine.tool_executor import get_tool_registry
+                global_reg = get_tool_registry()
+                for name in ("ddg_search", "web_search"):
+                    if global_reg.is_registered(name):
+                        self.tool_registry = global_reg  # upgrade to full registry
+                        search_tool = name
+                        break
+            except Exception:
+                pass
+
+        if not search_tool:
+            return None
+
+        # Extract effective query from the message
+        query = user_message.strip()
+        for prefix in ("search for ", "find ", "look up ", "research ", "tell me about ",
+                       "who is ", "what is ", "where is ", "when ", "why ", "how "):
+            if query.lower().startswith(prefix):
+                query = query[len(prefix):]
+                break
+
+        try:
+            result = await execute_tool(
+                self.tool_registry, search_tool,
+                {"query": query, "max_results": 5},
+                timeout_seconds=15.0,
+            )
+            if result.success and result.output:
+                # Validate: output must contain actual results, not just an error
+                import json as _json
+                try:
+                    data = _json.loads(result.output)
+                    results = data.get("results", [])
+                    if results and len(results) > 0:
+                        return result.output
+                    # Has error or empty results — don't inject, let LLM try manual tool call
+                except _json.JSONDecodeError:
+                    # Non-JSON output — return it anyway (unlikely)
+                    return result.output
+        except Exception:
+            pass
+
+        return None
+
     def reset_history(self):
         self.conversation_history.clear()
 
     async def process_stream(self, user_message: str) -> AsyncGenerator[dict, None]:
         """Stream agent response, yielding event dicts: {type, content?, model?, usage?, handoff?}"""
-        self.conversation_history.append(LLMMessage(role="user", content=user_message))
+        # Auto-search for research-like queries
+        search_context = await self._auto_search(user_message)
+        effective_message = user_message
+        if search_context:
+            effective_message = f"{user_message}\n\n[Pre-fetched search results — use these to answer, do not search again]\n{search_context}"
+
+        self.conversation_history.append(LLMMessage(role="user", content=effective_message))
 
         full_content = ""
         model_name = ""
