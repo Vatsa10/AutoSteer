@@ -115,6 +115,13 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
         reader.readAsDataURL(file);
       });
       setAttachments((prev) => [...prev, { filename: file.name, content: base64, mime_type: file.type || "application/octet-stream" }]);
+      // Sync document to memory store
+      try {
+        const stored = localStorage.getItem("autosteer_memory");
+        const mem = stored ? JSON.parse(stored) : { facts: [], documents: [], summary: "" };
+        mem.documents.push({ filename: file.name, preview: "", char_count: file.size });
+        localStorage.setItem("autosteer_memory", JSON.stringify(mem));
+      } catch {}
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Failed to read file", "error");
     } finally {
@@ -198,7 +205,9 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   function handleNewConversation() { reset(); setInput(""); }
 
   return (
-    <div className="flex flex-col h-full">
+    <>
+      <Onboarding onComplete={() => {}} />
+      <div className="flex flex-col h-full">
       <div className="shrink-0 border-b border-slate-200 px-5 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className={`w-2 h-2 rounded-full ${isStreaming ? "bg-blue-600 animate-pulse-glow" : "bg-green-500"}`} />
@@ -213,7 +222,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
 
       <div className="flex-1 overflow-y-auto">
         {!isLoadingHistory && messages.length === 0 && !conversationId && (
-          <Onboarding onComplete={() => setShowOnboarding(false)} />
+          null
         )}
         {!isLoadingHistory && messages.length === 0 && conversationId && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
@@ -304,5 +313,6 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
 
       <style jsx>{`@keyframes load{0%{width:0%}40%{width:40%}70%{width:70%}90%{width:85%}100%{width:90%}}.animate-load{animation:load 3s cubic-bezier(0.16,1,0.3,1) forwards}`}</style>
     </div>
+    </>
   );
 }
