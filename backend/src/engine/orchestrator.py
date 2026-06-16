@@ -102,6 +102,16 @@ class OrchestrationEngine:
     def _normalize_department(self, name: str) -> str:
         return name.lower().replace(" & ", "_").replace(" ", "_")
 
+    _SIMPLE_MSGS = {"hey", "hi", "hello", "ok", "okay", "thanks", "thank you", "bye",
+                    "good morning", "good night", "yo", "heyy", "hii", "thx", "ty"}
+
+    def _is_simple_message(self, msg: str) -> str | None:
+        """Return canned response for trivial messages. None if not simple."""
+        clean = msg.strip().lower().rstrip("!.")
+        if clean in self._SIMPLE_MSGS or len(clean) <= 3:
+            return "Hey! How can I help you today?"
+        return None
+
     async def _llm_pick_agent(self, user_message: str, context: str = "") -> str | None:
         """Let LLM dynamically select the best agent for this request."""
         agent_list = "\n".join(
@@ -531,6 +541,14 @@ User request: {user_message}"""
         """Single processing implementation — used by both REST and WS."""
         conversation_id = conversation_id or str(uuid.uuid4())
 
+        # Skip LLM for trivial messages
+        simple = self._is_simple_message(user_message) if not file_ids else None
+        if simple:
+            yield {"type": "token", "content": simple}
+            yield {"type": "metadata", "conversation_id": conversation_id, "agent": "system", "department": "code", "model": "none"}
+            yield {"type": "done"}
+            return
+
         # Load file content + persisted document context
         effective_message = user_message
         file_context_parts = []
@@ -711,6 +729,13 @@ User request: {user_message}"""
                 pp = rr.scalars().all()
                 if pp:
                     agent_runtime.load_history([{"message_type": m.message_type.value if hasattr(m.message_type, "value") else str(m.message_type), "content": m.content} for m in pp])
+                # Restore document context from previous turns
+                from src.models.shared_state import SharedState as _SSx
+                r2 = await session.execute(_sa_s2(_SSx).where(_SSx.key == f"conv:{conversation_id}:files"))
+                ss = r2.scalar_one_or_none()
+                if ss and ss.value:
+                    for fd in ss.value.get("files", []):
+                        agent_runtime.add_document_memory(fd.get("filename", "unknown"), fd.get("text", ""))
             except Exception:
                 pass
 

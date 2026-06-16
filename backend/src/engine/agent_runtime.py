@@ -29,8 +29,9 @@ class AgentResult:
 
 class AgentRuntime:
     # Memory tier limits
-    MAX_WORKING_MESSAGES = 12    # Keep last 12 in full text
-    SUMMARY_MAX_CHARS = 1200     # Rolling summary of older messages
+    MAX_WORKING_MESSAGES = 8     # Keep last 8 in full text
+    SUMMARY_MAX_CHARS = 1500     # Rolling summary preserves meaning
+    MAX_CONTEXT_TOKENS = 5000    # Trigger compaction above this
 
     def __init__(
         self,
@@ -73,35 +74,44 @@ class AgentRuntime:
         if len(self.conversation_history) > self.MAX_WORKING_MESSAGES:
             self._compress_history()
 
+    def _token_estimate(self) -> int:
+        """Rough token count: ~4 chars per token."""
+        return (len(self._system_prompt) + sum(len(m.content) for m in self.conversation_history)) // 4
+
     def _compress_history(self):
-        """Move oldest messages into rolling summary, keep recent ones in full."""
+        """Compact: keep recent messages in full, summarize older meaningfully."""
         if len(self.conversation_history) <= self.MAX_WORKING_MESSAGES:
             return
         split_idx = len(self.conversation_history) - self.MAX_WORKING_MESSAGES
-        # Keep last N in full, summarize the rest into existing summary
         old = self.conversation_history[:split_idx]
         self.conversation_history = self.conversation_history[split_idx:]
-        # Build new summary from old messages
-        old_text = "\n".join(
-            f"[{m.role}]: {m.content[:300]}" for m in old
-        )
+        # Preserve full message meaning, not just first N chars
+        old_text = "\n".join(f"[{m.role}]: {m.content[:500]}" for m in old)
         if self._rolling_summary:
-            self._rolling_summary = (
-                f"{self._rolling_summary}\n...\n{old_text}"
-            )[-self.SUMMARY_MAX_CHARS:]
+            self._rolling_summary = (f"{self._rolling_summary}\n...\n{old_text}")[-self.SUMMARY_MAX_CHARS:]
         else:
             self._rolling_summary = old_text[-self.SUMMARY_MAX_CHARS:]
 
+    def _compact_if_needed(self):
+        """Proactive: compress before LLM call if context too large."""
+        self._compress_history()
+        if self._token_estimate() > self.MAX_CONTEXT_TOKENS and len(self.conversation_history) > 4:
+            keep = min(6, len(self.conversation_history))
+            old = self.conversation_history[:-keep]
+            self.conversation_history = self.conversation_history[-keep:]
+            if old:
+                extra = "\n".join(f"[{m.role}]: {m.content[:400]}" for m in old)
+                self._rolling_summary = (self._rolling_summary + "\n" + extra)[-self.SUMMARY_MAX_CHARS:]
+
     def add_document_memory(self, filename: str, content: str):
-        """Store key facts about an uploaded document."""
-        # Extract first 500 chars as working memory of the document
-        preview = content[:500].replace("\n", " ")
+        """Store document content as session context — survives compaction."""
+        # Extract meaningful preview (first 800 chars, clean)
+        clean = content[:800].replace("\n", " ").replace("\r", " ")
         self._document_memory.append({
             "filename": filename,
-            "preview": preview,
+            "preview": clean,
             "char_count": len(content),
         })
-        # Keep only last 5 documents in memory
         if len(self._document_memory) > 5:
             self._document_memory = self._document_memory[-5:]
 
@@ -110,10 +120,13 @@ class AgentRuntime:
         parts = []
         if self._document_memory:
             docs = "\n".join(
-                f"- **{d['filename']}** ({d['char_count']} chars)"
+                f"- **{d['filename']}** ({d['char_count']} chars): {d['preview'][:300]}"
                 for d in self._document_memory
             )
-            parts.append(f"## Documents in Context\n{docs}")
+            parts.append(
+                f"## Session Documents (these persist across the conversation)\n{docs}\n"
+                "The full text of these documents was provided earlier. Refer to them when asked."
+            )
         if self._rolling_summary:
             parts.append(
                 f"## Previous Conversation Summary\n{self._rolling_summary}"
@@ -254,10 +267,9 @@ Format:
 
         self.conversation_history.append(LLMMessage(role="user", content=effective_message))
 
-        # Compress if over memory limit
-        self._compress_history()
+        # Proactive token-aware compaction
+        self._compact_if_needed()
 
-        # Build memory-augmented system prompt
         memory_ctx = self._build_memory_context()
         full_prompt = f"{self._system_prompt}\n\n{memory_ctx}" if memory_ctx else self._system_prompt
 
@@ -370,22 +382,21 @@ Format:
         if not tool_results:
             return clean_content, model, usage
 
-        # Feed tool results back to LLM for final synthesis
+        # Feed tool results back to LLM for synthesis (gpt-4o-mini with context)
         tool_output = "\n".join(tool_results)
-        follow_up_msg = (
-            f"I used the following tools based on your request:\n{tool_output}\n\n"
-            f"Please synthesize these results into a helpful response for the user. "
-            f"Original request was: {self.conversation_history[-1].content}"
+        mem_ctx = self._build_memory_context()
+        sub_prompt = "Synthesize tool results into a helpful response."
+        if mem_ctx:
+            sub_prompt += f"\n\n{mem_ctx}"
+        synthesis_msg = (
+            f"Tool results:\n{tool_output}\n\n"
+            f"Synthesize these into a helpful response. Original request: {self.conversation_history[-1].content[:500]}"
         )
-
-        # Don't persist meta-instructions as assistant messages — skip appending
-        # self.conversation_history.append(LLMMessage(role="assistant", content=follow_up_msg))
-        memory_ctx2 = self._build_memory_context()
-        sp2 = f"{self._system_prompt}\n\n{memory_ctx2}" if memory_ctx2 else self._system_prompt
         follow_up = await self.llm.complete(
-            messages=self.conversation_history,
-            system_prompt=sp2,
-            model=self.model_override,
+            messages=[LLMMessage(role="user", content=synthesis_msg)],
+            system_prompt=sub_prompt,
+            model="gpt-4o-mini",
+            temperature=0.3, max_tokens=1024,
         )
 
         return follow_up.content, follow_up.model, follow_up.usage
@@ -479,7 +490,7 @@ Format:
                 self.add_document_memory(fname, effective_message)
 
         self.conversation_history.append(LLMMessage(role="user", content=effective_message))
-        self._compress_history()
+        self._compact_if_needed()
         memory_ctx = self._build_memory_context()
         full_prompt = f"{self._system_prompt}\n\n{memory_ctx}" if memory_ctx else self._system_prompt
 
