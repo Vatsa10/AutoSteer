@@ -1,5 +1,8 @@
+import asyncio
+import json as _json
 import uuid
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +19,15 @@ from src.messaging.bus import MessageBus
 from src.messaging.schemas import AgentMessage, MessageType, Priority
 from src.models.conversation import Conversation
 from src.models.message import Message as MessageModel
+
+
+@dataclass
+class Subtask:
+    id: str
+    agent: str
+    description: str
+    dependencies: list[str] = field(default_factory=list)
+    result: str = ""
 
 
 class OrchestrationEngine:
@@ -122,6 +134,144 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
         except Exception:
             return None
 
+    def _topological_levels(self, subtasks: list[Subtask]) -> list[list[str]]:
+        """Group subtasks into execution levels by dependency order."""
+        from collections import deque
+        in_degree: dict[str, int] = {t.id: len(t.dependencies) for t in subtasks}
+        children: dict[str, list[str]] = {t.id: [] for t in subtasks}
+        for t in subtasks:
+            for dep in t.dependencies:
+                children.setdefault(dep, []).append(t.id)
+
+        levels: list[list[str]] = []
+        queue = deque([tid for tid, deg in in_degree.items() if deg == 0])
+        while queue:
+            levels.append(list(queue))
+            next_queue = deque()
+            for tid in queue:
+                for child in children.get(tid, []):
+                    in_degree[child] -= 1
+                    if in_degree[child] == 0:
+                        next_queue.append(child)
+            queue = next_queue
+        return levels
+
+    async def _execute_dag(
+        self, subtasks: list[Subtask], context: str,
+        conversation_id: str, session
+    ) -> dict[str, str]:
+        """Execute subtasks in dependency order, parallel where possible."""
+        task_map = {t.id: t for t in subtasks}
+        levels = self._topological_levels(subtasks)
+        results: dict[str, str] = {}
+
+        for level in levels:
+            async def run_one(tid: str) -> tuple[str, str]:
+                t = task_map[tid]
+                # Gather context from dependencies
+                dep_context = "\n".join(
+                    f"[Subtask {d} result]: {results.get(d, '')}"
+                    for d in t.dependencies
+                )
+                full_ctx = f"{context}\n\n{dep_context}\n\nTask: {t.description}"
+                agent = self.agents.get(t.agent)
+                if not agent:
+                    return tid, f"Agent {t.agent} not available"
+                try:
+                    r = await agent.process(full_ctx)
+                    return tid, r.content
+                except Exception as exc:
+                    return tid, f"Error: {exc}"
+
+            level_results = await asyncio.gather(
+                *(run_one(tid) for tid in level), return_exceptions=True
+            )
+            for item in level_results:
+                if isinstance(item, tuple):
+                    tid, result = item
+                    results[tid] = result
+                    task_map[tid].result = result
+
+        return results
+
+    async def _decompose_and_execute(
+        self, user_message: str, has_context: bool,
+        conversation_id: str, session
+    ) -> dict | None:
+        """LLM decomposes complex task into subtask DAG, executes, synthesizes.
+        Returns None for simple tasks (fall through to normal routing)."""
+        if not has_context and len(user_message.split()) < 8:
+            return None  # too short to be multi-step
+
+        # Classify: is this a multi-step task?
+        prompt = f"""Classify this user request. Is it a multi-step task needing multiple agents?
+
+User: "{user_message[:500]}"
+File context: {"yes" if has_context else "no"}
+
+Respond with JSON only:
+{{"multi_step": true/false, "subtasks": [{{"agent":"<role>","description":"<task>","dependencies":[]}}]}}
+
+Available agents: {', '.join(list(self.agents.keys())[:20])}"""
+
+        try:
+            resp = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=prompt)],
+                system_prompt="Task decomposition classifier. Return JSON only.",
+                temperature=0.0, max_tokens=300, model="gpt-4o-mini",
+            )
+            plan = _json.loads(resp.content)
+            if not plan.get("multi_step") or not plan.get("subtasks"):
+                return None
+        except Exception:
+            return None
+
+        # Build Subtask DAG
+        subtasks = []
+        for i, st in enumerate(plan["subtasks"]):
+            agent = st.get("agent", "")
+            if agent not in self.agents:
+                continue
+            subtasks.append(Subtask(
+                id=f"sub_{i}",
+                agent=agent,
+                description=st.get("description", ""),
+                dependencies=st.get("dependencies", []),
+            ))
+        if len(subtasks) < 2:
+            return None
+
+        # Execute DAG
+        results = await self._execute_dag(
+            subtasks, user_message, conversation_id, session
+        )
+
+        # Synthesize
+        synthesis_prompt = (
+            f"User request: {user_message}\n\n"
+            + "\n\n".join(
+                f"Subtask {t.id} ({t.agent}): {t.description}\nResult: {t.result}"
+                for t in subtasks
+            )
+            + "\n\nSynthesize a coherent final response. Include any download links from results."
+        )
+        try:
+            final = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=synthesis_prompt)],
+                system_prompt="Synthesize multi-agent results into a single coherent response.",
+                temperature=0.3, max_tokens=2048,
+            )
+            return {
+                "conversation_id": conversation_id,
+                "response": final.content,
+                "routed_to": "multi-agent",
+                "agent": ",".join(t.agent for t in subtasks),
+                "model": final.model,
+                "usage": final.usage,
+            }
+        except Exception:
+            return None
+
     async def _route_department(self, user_message: str) -> RoutingResult | None:
         """Route to department: regex first, then LLM fallback, then direct answer."""
         regex_result = self.master_router.route(user_message)
@@ -188,7 +338,6 @@ User request: {user_message}"""
                 temperature=0.0,
                 max_tokens=200,
             )
-            import json as _json
             data = _json.loads(llm_response.content)
             dept = data.get("department")
             if dept:
@@ -247,7 +396,6 @@ User request: {user_message}"""
                 temperature=0.0,
                 max_tokens=200,
             )
-            import json as _json
             data = _json.loads(llm_response.content)
             agent = data.get("agent")
             if agent and agent in self.agents:
@@ -450,6 +598,13 @@ User request: {user_message}"""
                         "agent": None,
                     }
             agent_role = agent_result.target
+
+        # ── Dynamic task decomposition (before single-agent routing) ──
+        decomp_result = await self._decompose_and_execute(
+            effective_message, has_context, conversation_id, session
+        )
+        if decomp_result:
+            return decomp_result
 
         # ── Multi-agent coordination: dispatch based on LLM intent ──
         if intent and intent.get("action") == "create_document" and has_context:

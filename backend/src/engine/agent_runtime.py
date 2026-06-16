@@ -331,7 +331,11 @@ Format:
         tool_results: list[str] = []
         for tc_json in tool_calls:
             try:
-                tc = json.loads(tc_json)
+                # Sanitize: escape raw control chars that break JSON parsing
+                sanitized = re.sub(r'(?<!\\)\n', r'\\n', tc_json)
+                sanitized = re.sub(r'(?<!\\)\t', r'\\t', sanitized)
+                sanitized = re.sub(r'(?<!\\)\r', r'\\r', sanitized)
+                tc = json.loads(sanitized)
                 tool_name = tc.get("tool", "")
                 arguments = tc.get("arguments", {})
                 # Block TOOL_CALL for tools not in this agent's allowlist
@@ -343,8 +347,20 @@ Format:
                     )
                     continue
                 result = await execute_tool(self.tool_registry, tool_name, arguments)
+                result_text = result.output or result.error
+                # Inject download link for document generation tools
+                if result.success and tool_name in ("create_docx", "create_pptx"):
+                    try:
+                        meta = json.loads(result.output)
+                        fname = meta.get("filename", "download")
+                        result_text += (
+                            f"\n\n**Download link (include this in your response):** "
+                            f"[Download {fname}](/api/files/download/{fname})"
+                        )
+                    except Exception:
+                        pass
                 tool_results.append(
-                    f"Tool [{tool_name}] result ({'success' if result.success else 'failed'}): {result.output or result.error}"
+                    f"Tool [{tool_name}] result ({'success' if result.success else 'failed'}): {result_text}"
                 )
             except (json.JSONDecodeError, TypeError) as exc:
                 tool_results.append(f"Tool call parse error: {exc}")
