@@ -19,7 +19,7 @@ import { ConversationList, type ConversationSummary } from "@/components/convers
 import { useConversations } from "@/lib/hooks";
 
 const navItems = [
-  { href: "/", label: "Chat", icon: MessageSquare },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/templates", label: "Templates", icon: LayoutTemplate },
   { href: "/agents", label: "Agents", icon: Users },
   { href: "/conversations", label: "History", icon: History },

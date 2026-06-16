@@ -59,7 +59,7 @@ export function ConversationList({
         queryClient.invalidateQueries({ queryKey: ["messages"] });
         if (activeId === id) {
           reset();
-          router.push("/");
+          router.push("/chat");
         }
         addToast("Conversation deleted", "success");
       } catch {

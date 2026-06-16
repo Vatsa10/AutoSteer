@@ -37,7 +37,7 @@ export default function TemplatesPage() {
   function useTemplate(prompt: string) {
     setConversationId(undefined);
     sessionStorage.setItem("autosteer_template_prompt", prompt);
-    router.push("/");
+    router.push("/chat");
   }
 
   return (

@@ -23,7 +23,7 @@ export default function ConversationsPage() {
 
   function handleOpen(id: string) {
     setConversationId(id);
-    router.push("/");
+    router.push("/chat");
   }
 
   return (
