@@ -3,11 +3,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import agents, billing, chat, conversations, custom_agents, files, integrations, prompts, tools, websocket
+from src.api.routes import agents, billing, chat, conversations, custom_agents, files, integrations, memory, preferences, prompts, tools, websocket
 from src.auth import setup_auth
 from src.config import get_settings
 from src.database import get_engine, init_db
 from src.engine.llm import LLMProvider
+from src.engine.memory_manager import MemoryManager
 from src.engine.orchestrator import OrchestrationEngine
 from src.engine.tool_executor import get_tool_registry
 from src.messaging.bus import MessageBus
@@ -53,6 +54,9 @@ async def lifespan(app: FastAPI):
     tool_registry = get_tool_registry()
     app.state.tool_registry = tool_registry
 
+    # Initialize memory manager
+    app.state.memory_manager = MemoryManager(conversation_id="global")
+
     yield
 
     # Shutdown
@@ -71,7 +75,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
+        allow_origins=["http://localhost:3000", "https://*.vercel.app"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -87,6 +91,8 @@ def create_app() -> FastAPI:
     app.include_router(prompts.router, prefix="/api")
     app.include_router(custom_agents.router, prefix="/api")
     app.include_router(billing.router, prefix="/api")
+    app.include_router(preferences.router, prefix="/api")
+    app.include_router(memory.router, prefix="/api")
     app.include_router(websocket.router)
 
     # Setup auth (no-op if AUTOSTEER_API_KEY is not set)

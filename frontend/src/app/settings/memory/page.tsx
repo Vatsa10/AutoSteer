@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Trash2, Check, X, FileText, Upload, Brain, Clock, Loader2 } from "lucide-react";
+import { Search, Plus, Trash2, Check, X, FileText, Upload, Brain, Clock, Loader2, Download, UploadCloud, Activity } from "lucide-react";
 import { useToastStore } from "@/lib/store";
 
 interface MemoryFact {
@@ -119,6 +119,68 @@ export default function MemoryPage() {
         <h2 className="text-base font-semibold text-slate-800 mb-1">Memory & Context</h2>
         <p className="text-sm text-slate-500">What AutoSteer remembers about you and your conversations.</p>
       </div>
+
+      {/* Memory Health */}
+      <section className="grid grid-cols-3 gap-3">
+        {[
+          { label: "Facts stored", value: facts.length, icon: Brain, color: "blue" },
+          { label: "Documents", value: documents.length, icon: FileText, color: "amber" },
+          { label: "Health score", value: facts.length > 5 ? "Good" : facts.length > 0 ? "Building" : "New", icon: Activity, color: facts.length > 5 ? "green" : facts.length > 0 ? "amber" : "slate" },
+        ].map((stat) => {
+          const Icon = stat.icon;
+          const colors: Record<string, string> = { blue: "bg-blue-50 border-blue-200 text-blue-700", amber: "bg-amber-50 border-amber-200 text-amber-700", green: "bg-green-50 border-green-200 text-green-700", slate: "bg-slate-50 border-slate-200 text-slate-500" };
+          return (
+            <div key={stat.label} className={`p-4 rounded-xl border ${colors[stat.color]}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <Icon className="w-3.5 h-3.5" />
+                <span className="text-[11px] font-medium uppercase tracking-wider opacity-70">{stat.label}</span>
+              </div>
+              <div className="text-xl font-bold">{stat.value}</div>
+            </div>
+          );
+        })}
+      </section>
+
+      {/* Export / Import */}
+      <section className="flex items-center gap-3">
+        <button
+          onClick={() => {
+            const data = JSON.stringify({ facts, documents, summary, exported_at: new Date().toISOString() }, null, 2);
+            const blob = new Blob([data], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a"); a.href = url; a.download = "autosteer-memory.json"; a.click();
+            URL.revokeObjectURL(url);
+            addToast("Memory exported", "success");
+          }}
+          className="flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition-colors"
+        >
+          <Download className="w-3.5 h-3.5" /> Export memory
+        </button>
+        <label className="flex items-center gap-2 text-xs font-medium px-4 py-2 rounded-lg border border-slate-200 text-slate-600 hover:border-blue-300 hover:text-blue-700 hover:bg-blue-50 transition-colors cursor-pointer">
+          <UploadCloud className="w-3.5 h-3.5" /> Import memory
+          <input
+            type="file" accept=".json" className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]; if (!file) return;
+              const reader = new FileReader();
+              reader.onload = () => {
+                try {
+                  const imported = JSON.parse(reader.result as string);
+                  if (imported.facts && imported.documents) {
+                    localStorage.setItem("autosteer_memory", JSON.stringify({ facts: imported.facts, documents: imported.documents, summary: imported.summary || "" }));
+                    setFacts(imported.facts);
+                    setDocuments(imported.documents);
+                    setSummary(imported.summary || "");
+                    addToast("Memory imported successfully", "success");
+                  }
+                } catch { addToast("Invalid memory file", "error"); }
+              };
+              reader.readAsText(file);
+              if (e.target) e.target.value = "";
+            }}
+          />
+        </label>
+      </section>
 
       {/* Conversation Summary */}
       <section className="p-5 rounded-xl bg-amber-50/60 border border-amber-200/60">

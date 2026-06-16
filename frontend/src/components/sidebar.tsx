@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { UserButton } from "@clerk/nextjs";
 import {
   MessageSquare,
   Users,
@@ -12,12 +13,14 @@ import {
   PanelLeft,
   Loader2,
   Settings,
+  LayoutTemplate,
 } from "lucide-react";
 import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
 import { useConversations } from "@/lib/hooks";
 
 const navItems = [
   { href: "/", label: "Chat", icon: MessageSquare },
+  { href: "/templates", label: "Templates", icon: LayoutTemplate },
   { href: "/agents", label: "Agents", icon: Users },
   { href: "/conversations", label: "History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -144,11 +147,12 @@ export function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="px-3 py-2 border-t border-slate-200">
+      <div className="px-3 py-2 border-t border-slate-200 flex items-center justify-between">
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <div className="w-1.5 h-1.5 rounded-full bg-green-600" />
-          42 agents across 12 departments
+          43 agents
         </div>
+        <UserButton />
       </div>
     </aside>
   );

@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: autosteer-backend
+    runtime: python
+    buildCommand: pip install -e ".[dev]"
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: autosteer-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: autosteer-redis
+          type: redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DEFAULT_LLM_PROVIDER
+        value: openai
+      - key: DEFAULT_LLM_MODEL
+        value: gpt-4o
+
+databases:
+  - name: autosteer-db
+    databaseName: autosteer
+    user: autosteer
+    plan: free
+
+  - name: autosteer-redis
+    ipAllowList: []
+    plan: free

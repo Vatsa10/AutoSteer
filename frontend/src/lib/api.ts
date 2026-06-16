@@ -1,21 +1,24 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const API_KEY = process.env.NEXT_PUBLIC_API_KEY || "";
 
-function authHeaders(): Record<string, string> {
+async function authHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (API_KEY) {
     headers["X-API-Key"] = API_KEY;
   }
+  // Send Clerk session token for auth
+  try {
+    const token = await (window as any).Clerk?.session?.getToken();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  } catch {}
   return headers;
 }
 
 async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const headers = await authHeaders();
   const res = await fetch(`${API_URL}${path}`, {
     ...options,
-    headers: {
-      ...authHeaders(),
-      ...(options?.headers || {}),
-    },
+    headers: { ...headers, ...(options?.headers || {}) },
   });
   if (!res.ok) {
     const errText = await res.text();
@@ -144,6 +147,35 @@ export async function getConversationMessages(
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await apiFetch(`/api/conversations/${conversationId}`, { method: "DELETE" });
+}
+
+// Preferences
+export async function getPreferences(): Promise<{ about: string; responseStyle: string; defaultAgent: string }> {
+  const res = await apiFetch("/api/preferences");
+  return res.json();
+}
+
+export async function savePreferences(prefs: { about: string; responseStyle: string; defaultAgent: string }): Promise<void> {
+  await apiFetch("/api/preferences", { method: "PUT", body: JSON.stringify(prefs) });
+}
+
+// Memory
+export async function getMemory(): Promise<{ facts: { id: string; fact_type: string; key: string; value: string }[]; documents: { filename: string; preview: string; char_count: number }[]; summary: string }> {
+  const res = await apiFetch("/api/memory");
+  return res.json();
+}
+
+export async function addMemoryFact(fact: { fact_type: string; key: string; value: string }): Promise<{ ok: boolean; id: string }> {
+  const res = await apiFetch("/api/memory/facts", { method: "POST", body: JSON.stringify(fact) });
+  return res.json();
+}
+
+export async function deleteMemoryFact(id: string): Promise<void> {
+  await apiFetch(`/api/memory/facts/${id}`, { method: "DELETE" });
+}
+
+export async function saveMemoryDocuments(data: { documents: unknown[]; summary: string }): Promise<void> {
+  await apiFetch("/api/memory/documents", { method: "PUT", body: JSON.stringify(data) });
 }
 
 // Status

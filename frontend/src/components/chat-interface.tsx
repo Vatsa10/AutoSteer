@@ -10,6 +10,7 @@ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store"
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
 import { useToastStore } from "@/lib/store";
 import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
+import { Onboarding } from "@/components/onboarding";
 
 interface FileAttachment { filename: string; content: string; mime_type: string; }
 
@@ -42,19 +43,25 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const [wsMode, setWsMode] = useState(true);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadedOnce = useRef(false);
 
-  // ── Deep-link: load conversation on first mount only ────────
+  // ── Deep-link + template prompt ──────────────────────────────
   useEffect(() => {
     if (initialConversationId && !loadedOnce.current) {
       loadedOnce.current = true;
       setConversationId(initialConversationId);
     }
-  }, [initialConversationId, setConversationId]);
+    const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
+    if (templatePrompt) {
+      setInput(templatePrompt);
+      sessionStorage.removeItem("autosteer_template_prompt");
+    }
+  }, [initialConversationId, setConversationId, setInput]);
 
   // ── Clear messages when switching conversations ──────────────
   useEffect(() => {
@@ -205,7 +212,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {!isLoadingHistory && messages.length === 0 && (
+        {!isLoadingHistory && messages.length === 0 && !conversationId && (
+          <Onboarding onComplete={() => setShowOnboarding(false)} />
+        )}
+        {!isLoadingHistory && messages.length === 0 && conversationId && (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-5">
               <Network className="w-7 h-7 text-blue-600" />
