@@ -108,15 +108,15 @@ class OrchestrationEngine:
     def _is_simple_message(self, msg: str) -> str | None:
         """Return canned response for trivial messages. None if not simple."""
         clean = msg.strip().lower().rstrip("!.")
-        if clean in self._SIMPLE_MSGS or len(clean) <= 3:
+        if clean in self._SIMPLE_MSGS:
             return "Hey! How can I help you today?"
         return None
 
     async def _llm_pick_agent(self, user_message: str, context: str = "") -> str | None:
         """Let LLM dynamically select the best agent for this request."""
         agent_list = "\n".join(
-            f"- {role}: {runtime.config.tasks.keys() if hasattr(runtime.config, 'tasks') else 'general'}"
-            for role, runtime in list(self.agents.items())[:30]
+            f"- {role}: {', '.join(list(runtime.config.tasks.keys())[:3]) if hasattr(runtime.config, 'tasks') else 'general'}"
+            for role, runtime in self.agents.items()
         )
         prompt = f"""Select the best agent for this user request. Respond with JSON only.
 
@@ -253,7 +253,7 @@ File context: {"yes" if has_context else "no"}
 Respond with JSON only:
 {{"multi_step": true/false, "subtasks": [{{"agent":"<role>","description":"<task>","dependencies":[]}}]}}
 
-Available agents: {', '.join(list(self.agents.keys())[:20])}"""
+Available agents: {', '.join(list(self.agents.keys()))}"""
 
         try:
             resp = await self.llm.complete(
@@ -267,17 +267,26 @@ Available agents: {', '.join(list(self.agents.keys())[:20])}"""
         except Exception:
             return None
 
-        # Build Subtask DAG
+        # Build Subtask DAG — normalize LLM dependency references to sub_N format
         subtasks = []
         for i, st in enumerate(plan["subtasks"]):
             agent = st.get("agent", "")
             if agent not in self.agents:
                 continue
+            raw_deps = st.get("dependencies", [])
+            normalized_deps = []
+            for d in raw_deps:
+                if isinstance(d, int):
+                    normalized_deps.append(f"sub_{d}")
+                elif isinstance(d, str) and d.isdigit():
+                    normalized_deps.append(f"sub_{int(d)}")
+                elif isinstance(d, str) and d.startswith("sub_"):
+                    normalized_deps.append(d)
             subtasks.append(Subtask(
                 id=f"sub_{i}",
                 agent=agent,
                 description=st.get("description", ""),
-                dependencies=st.get("dependencies", []),
+                dependencies=normalized_deps,
             ))
         if len(subtasks) < 2:
             return None
@@ -570,7 +579,7 @@ User request: {user_message}"""
         if file_ids:
             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
             import json as _json2
-            from pathlib import Path as _Path
+            new_files = []
             for fid in file_ids:
                 try:
                     from src.integrations.files import file_upload_read, _uploads_dir
@@ -592,6 +601,28 @@ User request: {user_message}"""
                             file_context_parts.append(
                                 f"[File: {fname} ({ftype})]\n{data['text']}"
                             )
+                            new_files.append({"filename": fname, "text": data["text"], "type": ftype})
+                except Exception:
+                    pass
+            # Persist new files to SharedState for multi-turn memory
+            if new_files and session is not None:
+                try:
+                    existing = await session.execute(
+                        select(_SSs).where(_SSs.key == f"conv:{conversation_id}:files")
+                    )
+                    prev_state = existing.scalar_one_or_none()
+                    all_saved = (prev_state.value.get("files", []) if prev_state else []) + new_files
+                    if prev_state:
+                        prev_state.value = {"files": all_saved}
+                        prev_state.updated_at = datetime.now(timezone.utc)
+                    else:
+                        session.add(_SSs(
+                            key=f"conv:{conversation_id}:files",
+                            value={"files": all_saved},
+                            owner="orchestrator",
+                            updated_at=datetime.now(timezone.utc),
+                        ))
+                    await session.commit()
                 except Exception:
                     pass
             if file_context_parts:

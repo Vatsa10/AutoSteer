@@ -68,11 +68,14 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async ({ message, conversationId, targetAgent, fileIds, files }: SendMessageVars) => {
+      const apiKey = process.env.NEXT_PUBLIC_API_KEY || "";
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["X-API-Key"] = apiKey;
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             message,
             conversation_id: conversationId,

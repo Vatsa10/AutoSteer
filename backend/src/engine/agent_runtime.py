@@ -519,9 +519,8 @@ Format:
         else:
             display_content = full_content
 
-        # Parse handoff from full content
+        # Parse handoff from display_content (after tool execution)
         handoff = None
-        display_content = full_content
         start_marker = "HANDOFF_JSON_START"
         end_marker = "HANDOFF_JSON_END"
         start_idx = full_content.find(start_marker)

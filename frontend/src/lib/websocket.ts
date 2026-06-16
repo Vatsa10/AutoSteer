@@ -33,7 +33,6 @@ export function createChatWebSocket(callbacks: WSCallbacks): WebSocket {
 
   ws.onclose = () => {
     callbacks.onClose?.();
-    callbacks.onError?.(new Event("close"));
   };
 
   return ws;
