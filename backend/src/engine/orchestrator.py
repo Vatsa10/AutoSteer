@@ -90,6 +90,38 @@ class OrchestrationEngine:
     def _normalize_department(self, name: str) -> str:
         return name.lower().replace(" & ", "_").replace(" ", "_")
 
+    async def _classify_intent(self, user_message: str, has_context: bool) -> dict | None:
+        """Use fast LLM to classify user intent for agent coordination."""
+        prompt = f"""Classify this user request into a coordination action. Respond with JSON only.
+
+User message: "{user_message}"
+Has document/file context available: {has_context}
+
+Actions:
+- create_document: user wants to create/generate/make a document, resume, report, presentation, or file
+- research_only: user only wants to search/find/analyze information
+- chat_only: simple conversation, no special action needed
+
+For create_document, also include:
+- doc_type: "resume", "report", "document", "presentation"
+- needs_research: true/false (should web search enrich the content?)
+- search_query: what to search for (if needs_research)
+
+Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_research":true/false,"search_query":"..."}}"""
+
+        try:
+            response = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=prompt)],
+                system_prompt="Classify user intent for agent coordination. Return JSON only.",
+                temperature=0.0,
+                max_tokens=150,
+                model="gpt-4o-mini",
+            )
+            import json as _json
+            return _json.loads(response.content)
+        except Exception:
+            return None
+
     async def _route_department(self, user_message: str) -> RoutingResult | None:
         """Route to department: regex first, then LLM fallback, then direct answer."""
         regex_result = self.master_router.route(user_message)
@@ -336,16 +368,9 @@ User request: {user_message}"""
                 + f"\n\n---\n{user_message}"
             )
 
-        # ── Agent coordination: detect multi-step tasks ──────────
-        # If document context exists and message asks to create/generate/make,
-        # route to content_marketer for document generation
-        create_triggers = ["create resume", "make resume", "generate resume", "craft resume",
-                          "create document", "make document", "generate document",
-                          "create report", "make report", "generate report",
-                          "create presentation", "make presentation", "create ppt"]
-        msg_lower = user_message.lower()
-        is_create_task = any(t in msg_lower for t in create_triggers)
+        # ── LLM-based intent classification for agent coordination ──
         has_context = bool(all_file_context)
+        intent = await self._classify_intent(user_message, has_context)
 
         department: str | None = None
         agent_role: str | None = None
@@ -426,35 +451,32 @@ User request: {user_message}"""
                     }
             agent_role = agent_result.target
 
-        # ── Multi-agent coordination: create tasks with context ────
-        if is_create_task and has_context and self.agents.get("content_marketer"):
-            # Phase 1: web_researcher searches for additional context
-            research_context = ""
-            web_researcher = self.agents.get("web_researcher")
-            if web_researcher:
+        # ── Multi-agent coordination: dispatch based on LLM intent ──
+        if intent and intent.get("action") == "create_document" and has_context:
+            # Phase 1: web_researcher searches for enrichment
+            if intent.get("needs_research") and self.agents.get("web_researcher"):
                 try:
-                    search_query = user_message.replace("create resume", "").replace("make resume", "").replace("generate", "").replace("craft resume", "").strip() or "additional information"
-                    research_msg = (
-                        f"Search for additional professional information to enrich a document. "
-                        f"Query: {search_query}. Return key facts and achievements found."
+                    sq = intent.get("search_query", user_message)
+                    rr = await self.agents["web_researcher"].process(
+                        f"Search for additional information to enrich a {intent.get('doc_type', 'document')}. "
+                        f"Query: {sq}. Return key facts and achievements."
                     )
-                    rr = await web_researcher.process(research_msg)
-                    if rr.content and "error" not in rr.content.lower():
-                        research_context = f"\n\n[Web Research Results]\n{rr.content}"
+                    if rr.content:
+                        effective_message += f"\n\n[Web Research]\n{rr.content}"
                 except Exception:
                     pass
 
             # Phase 2: content_marketer creates the document
-            agent_role = "content_marketer"
-            department = "marketing"
-            effective_message = (
-                "Create a professional document using ALL the information below. "
-                "The file content is the primary source. Use the web research results "
-                "to enrich it. When done, generate the final document using the "
-                "create_docx tool.\n\n"
-                + effective_message
-                + research_context
-            )
+            if self.agents.get("content_marketer"):
+                agent_role = "content_marketer"
+                department = "marketing"
+                effective_message = (
+                    f"Create a professional {intent.get('doc_type', 'document')} using ALL "
+                    "information below. Use the file content as primary source. "
+                    "When done, generate the final output using the appropriate tool "
+                    f"({'create_pptx' if 'presentation' in intent.get('doc_type', '') else 'create_docx'}).\n\n"
+                    + effective_message
+                )
 
         # Step 3: Agent processes the message
         agent_runtime = self.agents.get(agent_role) if agent_role else None
@@ -700,11 +722,26 @@ User request: {user_message}"""
         """Streaming version of process_message. Yields routing events + tokens."""
         conversation_id = conversation_id or str(uuid.uuid4())
 
-        # Load file content
+        # Load file content + persisted document context
         effective_message = user_message
+        file_context_parts = []
+
+        # Restore from SharedState for multi-turn memory
+        if session is not None and conversation_id:
+            try:
+                from sqlalchemy import select as _sa_ss
+                from src.models.shared_state import SharedState as _SSs
+                r = await session.execute(_sa_ss(_SSs).where(_SSs.key == f"conv:{conversation_id}:files"))
+                prev = r.scalar_one_or_none()
+                if prev and prev.value:
+                    for fd in prev.value.get("files", []):
+                        if fd.get("text"):
+                            file_context_parts.append(f"[File: {fd.get('filename','unknown')} ({fd.get('type','')})]\n{fd['text']}")
+            except Exception:
+                pass
+
         if file_ids:
             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
-            file_context_parts = []
             import json as _json2
             from pathlib import Path as _Path
             for fid in file_ids:
@@ -786,32 +823,28 @@ User request: {user_message}"""
             agent_role = agent_result.target
             yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
 
-        # Multi-agent coordination for create tasks
-        create_kw = ["create resume", "make resume", "generate resume", "craft resume",
-                     "create document", "make document", "generate document",
-                     "create report", "make report", "create presentation", "make ppt"]
-        if any(k in user_message.lower() for k in create_kw) and file_context_parts:
+        # LLM-based agent coordination
+        stream_intent = await self._classify_intent(user_message, bool(file_context_parts))
+        if stream_intent and stream_intent.get("action") == "create_document" and file_context_parts:
+            if stream_intent.get("needs_research") and self.agents.get("web_researcher"):
+                try:
+                    sq = stream_intent.get("search_query", user_message)
+                    rr = await self.agents["web_researcher"].process(
+                        f"Search for info to enrich a {stream_intent.get('doc_type', 'document')}. "
+                        f"Query: {sq}. Return key facts."
+                    )
+                    if rr.content:
+                        effective_message += f"\n\n[Web Research]\n{rr.content}"
+                except Exception:
+                    pass
             if self.agents.get("content_marketer"):
-                # Phase 1: web search for enrichment
-                web_researcher = self.agents.get("web_researcher")
-                if web_researcher:
-                    try:
-                        sq = user_message
-                        for kw in create_kw:
-                            sq = sq.replace(kw, "")
-                        rctx = await web_researcher.process(
-                            f"Search for additional info to enrich a document. Query: {sq.strip() or 'more details'}. Return key facts."
-                        )
-                        if rctx.content:
-                            effective_message += f"\n\n[Web Research]\n{rctx.content}"
-                    except Exception:
-                        pass
                 agent_role = "content_marketer"
                 department = "marketing"
                 effective_message = (
-                    "Create a professional document using ALL the information below. "
-                    "Use the file content as primary source and web research to enrich. "
-                    "Generate the final document using create_docx tool.\n\n"
+                    f"Create a professional {stream_intent.get('doc_type', 'document')} "
+                    "using ALL information below. Use file content as source. "
+                    "Generate final output using "
+                    f"{'create_pptx' if 'presentation' in stream_intent.get('doc_type', '') else 'create_docx'}.\n\n"
                     + effective_message
                 )
 

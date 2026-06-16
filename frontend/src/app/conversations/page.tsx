@@ -4,10 +4,12 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { History, MessageSquare, ChevronRight, Loader2, Search, AlertCircle } from "lucide-react";
 import { useConversations } from "@/lib/hooks";
+import { useChatStore } from "@/lib/store";
 
 export default function ConversationsPage() {
   const [search, setSearch] = useState("");
   const router = useRouter();
+  const setConversationId = useChatStore((s) => s.setConversationId);
 
   const { data: conversations = [], isLoading, error } = useConversations();
 
@@ -20,7 +22,8 @@ export default function ConversationsPage() {
   }, [conversations, search]);
 
   function handleOpen(id: string) {
-    router.push(`/?c=${encodeURIComponent(id)}`);
+    setConversationId(id);
+    router.push("/");
   }
 
   return (
