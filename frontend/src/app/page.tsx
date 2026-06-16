@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, memo, type ReactNode } from "react";
 import { Plus, ArrowUpRight, Menu, X } from "lucide-react";
 import { ClerkProvider, SignInButton, SignUpButton, Show, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
@@ -30,6 +30,90 @@ function HazardButton({ children }: { children: ReactNode }) {
     </SignUpButton>
   );
 }
+
+// ── Live orchestration graph (isolated perpetual-motion leaf) ──
+type GNode = { id: string; x: number; y: number; label: string };
+const NODES: GNode[] = [
+  { id: "route", x: 46, y: 180, label: "ROUTE" },
+  { id: "a1", x: 200, y: 72, label: "RESEARCH" },
+  { id: "a2", x: 200, y: 180, label: "ANALYZE" },
+  { id: "a3", x: 200, y: 288, label: "REVIEW" },
+  { id: "out", x: 354, y: 180, label: "SYNTHESIZE" },
+];
+const EDGES: [string, string][] = [
+  ["route", "a1"], ["route", "a2"], ["route", "a3"],
+  ["a1", "out"], ["a2", "out"], ["a3", "out"],
+];
+const LANES = [["route", "a1", "out"], ["route", "a2", "out"], ["route", "a3", "out"]];
+
+const AgentGraph = memo(function AgentGraph() {
+  const reduce = useReducedMotion();
+  const at = (id: string) => NODES.find((n) => n.id === id)!;
+
+  return (
+    <svg viewBox="0 0 400 360" className="w-full h-auto max-w-[480px]" role="img" aria-label="Agent orchestration graph: one request routed to parallel agents and synthesized.">
+      {/* edges draw in */}
+      {EDGES.map(([a, b], i) => {
+        const p = at(a), q = at(b);
+        return (
+          <motion.line
+            key={`${a}-${b}`}
+            x1={p.x} y1={p.y} x2={q.x} y2={q.y}
+            stroke="#0a0a0a" strokeWidth={1.25}
+            initial={reduce ? false : { pathLength: 0, opacity: 0 }}
+            animate={{ pathLength: 1, opacity: 0.45 }}
+            transition={{ duration: 0.7, delay: 0.4 + i * 0.08, ease: EASE }}
+          />
+        );
+      })}
+
+      {/* hazard packets travelling route -> agent -> synthesize */}
+      {!reduce && LANES.map((lane, i) => {
+        const pts = lane.map(at);
+        return (
+          <motion.rect
+            key={`packet-${i}`}
+            width={7} height={7} fill="#e61919"
+            initial={{ x: pts[0].x - 3.5, y: pts[0].y - 3.5, opacity: 0 }}
+            animate={{
+              x: pts.map((p) => p.x - 3.5),
+              y: pts.map((p) => p.y - 3.5),
+              opacity: [0, 1, 1, 1, 0],
+            }}
+            transition={{ duration: 2.6, times: [0, 0.5, 1], repeat: Infinity, delay: 1 + i * 0.45, ease: "easeInOut" }}
+          />
+        );
+      })}
+
+      {/* nodes */}
+      {NODES.map((n, i) => (
+        <g key={n.id}>
+          <motion.rect
+            x={n.x - 8} y={n.y - 8} width={16} height={16}
+            fill={n.id === "out" ? "#e61919" : "#f4f4f0"}
+            stroke="#0a0a0a" strokeWidth={2}
+            initial={reduce ? false : { scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: 0.2 + i * 0.12, duration: 0.4, ease: EASE }}
+            style={{ transformBox: "fill-box", transformOrigin: "center" }}
+          />
+          {n.id === "route" && !reduce && (
+            <motion.rect
+              x={n.x - 8} y={n.y - 8} width={16} height={16}
+              fill="none" stroke="#e61919" strokeWidth={2}
+              style={{ transformBox: "fill-box", transformOrigin: "center" }}
+              animate={{ scale: [1, 1.9], opacity: [0.7, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeOut" }}
+            />
+          )}
+          <text x={n.x} y={n.y + (n.id === "a1" ? -16 : 26)} textAnchor="middle" className="font-tele" fontSize="9" letterSpacing="1" fill="#0a0a0a" opacity={0.55}>
+            {n.label}
+          </text>
+        </g>
+      ))}
+    </svg>
+  );
+});
 
 function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }) {
   const reduce = useReducedMotion();
@@ -88,7 +172,7 @@ function Hero() {
     <section className="relative min-h-[100dvh] border-b-2 border-[#0a0a0a] pt-[68px] overflow-hidden">
       <div className="max-w-[1400px] mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 min-h-[calc(100dvh-68px)]">
         {/* Left: macro headline */}
-        <div className="lg:col-span-7 flex flex-col justify-center py-16 lg:pr-10 lg:border-r-2 lg:border-[#0a0a0a]">
+        <div className="lg:col-span-7 flex flex-col justify-center py-16 lg:pr-10">
           <motion.p
             initial={reduce ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -134,19 +218,18 @@ function Hero() {
           </motion.div>
         </div>
 
-        {/* Right: bleeding numeral */}
-        <div className="lg:col-span-5 relative flex flex-col justify-center items-end border-t-2 border-[#0a0a0a] lg:border-t-0 py-16 lg:py-0 overflow-hidden">
-          <div className="absolute inset-0 halftone opacity-[0.07]" aria-hidden />
-          <motion.span
-            initial={reduce ? false : { opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.9, delay: 0.3, ease: EASE }}
-            className="relative font-display text-[#e61919] text-[clamp(7rem,18vw,16rem)] leading-none select-none -mr-2"
-          >
-            43
-          </motion.span>
-          <p className="relative font-tele text-[11px] text-ink/60 mt-4 text-right">
-            SPECIALIZED AGENTS<br />UNIT / D-01
+        {/* Right: live orchestration graph */}
+        <div className="lg:col-span-5 relative flex flex-col justify-center items-center border-t-2 border-[#0a0a0a] lg:border-t-0 py-16 lg:py-0 lg:pl-10 overflow-hidden">
+          <div className="absolute inset-0 halftone opacity-[0.06]" aria-hidden />
+          <div className="absolute top-6 left-6 lg:left-10 flex items-center gap-2 z-10">
+            <span className="w-2 h-2 bg-[#e61919] animate-breathe" aria-hidden />
+            <span className="font-tele text-[10px] text-ink/60">LIVE / UNIT D-01</span>
+          </div>
+          <Crosshair className="absolute top-6 right-6" />
+          <Crosshair className="absolute bottom-6 left-6 lg:left-10" />
+          <AgentGraph />
+          <p className="relative font-tele text-[10px] text-ink/50 mt-6 text-center z-10">
+            43 AGENTS · 12 DEPARTMENTS · 1 RESPONSE
           </p>
         </div>
       </div>
