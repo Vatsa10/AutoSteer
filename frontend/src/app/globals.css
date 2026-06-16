@@ -1,39 +1,74 @@
 @import "tailwindcss";
 
 @theme inline {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: var(--font-display), "Archivo Black", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "Courier New", monospace;
+
+  --color-paper: #f4f4f0;
+  --color-ink: #0a0a0a;
+  --color-hazard: #e61919;
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--color-slate-300) transparent;
+  scrollbar-color: var(--color-ink) transparent;
+}
+
+::selection {
+  background: var(--color-hazard);
+  color: var(--color-paper);
 }
 
 body {
-  background: #ffffff;
-  color: var(--color-slate-900);
+  background: #f4f4f0;
+  color: #0a0a0a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Routing path animation */
-@keyframes trace-path {
-  from { transform: scaleX(0); opacity: 0; }
-  to   { transform: scaleX(1); opacity: 1; }
+/* Macro display type — Swiss industrial */
+.font-display {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  line-height: 0.9;
 }
 
-.animate-trace {
-  animation: trace-path 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-  transform-origin: left;
+/* Micro telemetry type */
+.font-tele {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
-/* Pulse for live indicator */
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 oklch(0.55 0.18 250 / 0.4); }
-  50%      { box-shadow: 0 0 0 4px oklch(0.55 0.18 250 / 0); }
+/* Global mechanical grain (fixed overlay, never on scrolling content) */
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-.animate-pulse-glow {
-  animation: pulse-glow 2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+/* Halftone dot field for hero numeral backdrop */
+.halftone {
+  background-image: radial-gradient(var(--color-ink) 1px, transparent 1.4px);
+  background-size: 9px 9px;
+}
+
+/* Breathing hazard status indicator */
+@keyframes hazard-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--color-hazard); }
+  50%      { opacity: 0.55; box-shadow: 0 0 0 3px transparent; }
+}
+
+.animate-breathe {
+  animation: hazard-breathe 1.8s steps(2, end) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-breathe { animation: none; }
 }
