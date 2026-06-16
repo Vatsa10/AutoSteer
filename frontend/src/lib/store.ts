@@ -95,5 +95,5 @@ export const useChatStore = create<ChatStore>((set) => ({
     set((s) => ({ routingEvents: [...s.routingEvents, event] })),
   clearRoutingEvents: () => set({ routingEvents: [] }),
   setIsStreaming: (v) => set({ isStreaming: v }),
-  reset: () => set(initialChatState),
+  reset: () => set({ messages: [], conversationId: undefined, targetAgent: null, routingStage: "", routingEvents: [], isStreaming: false }),
 }));

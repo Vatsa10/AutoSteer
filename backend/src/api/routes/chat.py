@@ -51,6 +51,8 @@ async def chat(
         for f in body.files:
             try:
                 raw = _b64.b64decode(f.content)
+                if len(raw) > 5 * 1024 * 1024:
+                    continue  # skip files >5MB
                 print(f"[chat] decoded {f.filename}: {len(raw)} bytes")
                 meta = save_upload(f.filename, raw)
                 all_file_ids.append(meta["file_id"])

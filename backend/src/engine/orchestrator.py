@@ -102,6 +102,35 @@ class OrchestrationEngine:
     def _normalize_department(self, name: str) -> str:
         return name.lower().replace(" & ", "_").replace(" ", "_")
 
+    async def _llm_pick_agent(self, user_message: str, context: str = "") -> str | None:
+        """Let LLM dynamically select the best agent for this request."""
+        agent_list = "\n".join(
+            f"- {role}: {runtime.config.tasks.keys() if hasattr(runtime.config, 'tasks') else 'general'}"
+            for role, runtime in list(self.agents.items())[:30]
+        )
+        prompt = f"""Select the best agent for this user request. Respond with JSON only.
+
+Available agents:
+{agent_list}
+
+User request: "{user_message[:300]}"
+
+Respond: {{"agent": "<agent_role>"}}"""
+
+        try:
+            resp = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=prompt)],
+                system_prompt="Agent selection classifier. Return JSON only.",
+                temperature=0.0, max_tokens=80, model="gpt-4o-mini",
+            )
+            data = _json.loads(resp.content)
+            agent = data.get("agent", "")
+            if agent in self.agents:
+                return agent
+        except Exception:
+            pass
+        return None
+
     async def _classify_intent(self, user_message: str, has_context: bool) -> dict | None:
         """Use fast LLM to classify user intent for agent coordination."""
         prompt = f"""Classify this user request into a coordination action. Respond with JSON only.
@@ -609,14 +638,16 @@ User request: {user_message}"""
                 department = _dept_to_dir.get(dept_key, dept_key)
                 agent_result = await self._route_agent(user_message, dept_key)
                 if not agent_result:
-                    # Fallback: if file context exists, try content_marketer
-                    if file_context_parts and self.agents.get("content_marketer"):
-                        agent_role = "content_marketer"
-                        department = "marketing"
-                    else:
-                        yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
+                    # Dynamic fallback: let LLM pick best agent for this request
+                    agent_role = await self._llm_pick_agent(user_message, effective_message)
+                    if not agent_role:
+                        yield {"type": "error", "message": "No suitable agent found for your request."}
                         yield {"type": "done"}
                         return
+                    for dept_name, agent_list in self.department_agents.items():
+                        if agent_role in agent_list:
+                            department = self._dept_to_dir.get(dept_name, dept_name)
+                            break
                 else:
                     agent_role = agent_result.target
                 yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}

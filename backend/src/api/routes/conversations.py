@@ -25,8 +25,8 @@ async def list_conversations(
             id=c.id,
             title=c.title,
             status=c.status,
-            created_at=c.created_at.isoformat() if c.created_at else None,
-            updated_at=c.updated_at.isoformat() if c.updated_at else None,
+            created_at=c.created_at.isoformat() if c.created_at else "",
+            updated_at=c.updated_at.isoformat() if c.updated_at else "",
         )
         for c in conversations
     ]

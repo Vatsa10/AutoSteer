@@ -53,10 +53,11 @@ async def websocket_chat(websocket: WebSocket):
                 for f in inline_files:
                     try:
                         raw = _b64.b64decode(f["content"])
-                        meta = save_upload(f["filename"], raw)
-                        file_ids.append(meta["file_id"])
-                    except Exception:
-                        pass
+                        if len(raw) <= 5 * 1024 * 1024:
+                            meta = save_upload(f["filename"], raw)
+                            file_ids.append(meta["file_id"])
+                    except Exception as exc:
+                        print(f"[ws] inline file error: {exc}")
 
             engine = websocket.app.state.engine
             if not engine:
