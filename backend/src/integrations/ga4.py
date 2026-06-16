@@ -78,3 +78,17 @@ async def ga4_read(
             "error": f"GA4 query failed: {exc}",
             "property_id": ga_property,
         })
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    creds = await get_credential("google", session, workspace_id)
+    meta = await get_credential_metadata("google", session, workspace_id)
+    ga_property = meta.get("ga4_property_id", "")
+    if not creds:
+        return {"ok": False, "error": "Google service account not configured"}
+    if not ga_property:
+        return {
+            "ok": False,
+            "error": 'GA4 property id missing. Connect with metadata {"ga4_property_id": "properties/123456789"}',
+        }
+    return {"ok": True, "message": "Google credentials + GA4 property configured", "property_id": ga_property}

@@ -42,3 +42,17 @@ async def zapier_webhook(
         "event": event,
         "response_preview": resp.text[:200],
     }, indent=2)
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    # A webhook URL has no safe read endpoint — firing it would trigger the Zap.
+    # Verify a URL is configured and well-formed instead.
+    meta = await get_credential_metadata("zapier", session, workspace_id)
+    webhook_url = meta.get("webhook_url") or await get_credential("zapier", session, workspace_id)
+    if not webhook_url:
+        webhook_url = get_settings().zapier_webhook_url
+    if not webhook_url:
+        return {"ok": False, "error": "No webhook URL configured"}
+    if not webhook_url.startswith("https://"):
+        return {"ok": False, "error": "Webhook URL must be https"}
+    return {"ok": True, "message": "Webhook URL configured (not fired)"}

@@ -58,3 +58,22 @@ async def wandb_read(
     edges = data.get("data", {}).get("project", {}).get("runs", {}).get("edges", [])
     runs = [e.get("node", {}) for e in edges]
     return json.dumps({"entity": entity, "project": project, "count": len(runs), "runs": runs}, indent=2)
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    api_key = await get_credential("wandb", session, workspace_id)
+    if not api_key:
+        return {"ok": False, "error": "No token configured"}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.post(
+            WANDB_API,
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={"query": "query { viewer { username } }"},
+        )
+    if resp.status_code >= 400:
+        return {"ok": False, "error": resp.text[:200]}
+    data = resp.json()
+    if data.get("errors"):
+        return {"ok": False, "error": str(data["errors"])[:200]}
+    username = data.get("data", {}).get("viewer", {}).get("username")
+    return {"ok": True, "username": username}

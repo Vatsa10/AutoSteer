@@ -50,3 +50,15 @@ async def typeform_create(
         "title": data.get("title"),
         "link": data.get("_links", {}).get("display"),
     }, indent=2)
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    token = await get_credential("typeform", session, workspace_id)
+    if not token:
+        return {"ok": False, "error": "No token configured"}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(f"{TYPEFORM_API}/me", headers={"Authorization": f"Bearer {token}"})
+    if resp.status_code >= 400:
+        return {"ok": False, "error": resp.text[:200]}
+    data = resp.json()
+    return {"ok": True, "alias": data.get("alias"), "email": data.get("email")}

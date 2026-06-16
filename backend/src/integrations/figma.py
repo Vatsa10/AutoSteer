@@ -48,3 +48,15 @@ async def figma_link_read(
         "pages": [p.get("name") for p in data.get("document", {}).get("children", [])],
         "link": f"https://www.figma.com/file/{key}",
     }, indent=2)
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    token = await get_credential("figma", session, workspace_id)
+    if not token:
+        return {"ok": False, "error": "No token configured"}
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        resp = await client.get(f"{FIGMA_API}/me", headers={"X-Figma-Token": token})
+    if resp.status_code >= 400:
+        return {"ok": False, "error": resp.text[:200]}
+    data = resp.json()
+    return {"ok": True, "handle": data.get("handle"), "email": data.get("email")}

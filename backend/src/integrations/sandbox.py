@@ -13,16 +13,24 @@ MAX_OUTPUT_CHARS = 8000
 TIMEOUT_SECONDS = 10
 
 
-async def _run_e2b(code: str, language: str, api_key: str) -> dict:
-    async with __import__("httpx").AsyncClient(timeout=TIMEOUT_SECONDS + 5) as client:
-        resp = await client.post(
-            "https://api.e2b.dev/v1/sandbox/run",
-            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-            json={"code": code, "language": language},
-        )
-        if resp.status_code >= 400:
-            return {"error": f"E2B error: {resp.status_code}", "detail": resp.text[:500]}
-        return resp.json()
+async def _run_e2b(code: str, language: str, api_key: str) -> dict | None:
+    """Run via the E2B Code Interpreter SDK if installed. Returns None to signal fallback."""
+    try:
+        from e2b_code_interpreter import AsyncSandbox  # type: ignore
+    except ImportError:
+        return None
+    try:
+        sandbox = await AsyncSandbox.create(api_key=api_key, timeout=TIMEOUT_SECONDS + 5)
+        try:
+            execution = await sandbox.run_code(code)
+            stdout = "".join(execution.logs.stdout)[:MAX_OUTPUT_CHARS]
+            stderr = "".join(execution.logs.stderr)[:MAX_OUTPUT_CHARS]
+            err = str(execution.error) if execution.error else None
+            return {"sandbox": "e2b", "stdout": stdout, "stderr": stderr, "error": err}
+        finally:
+            await sandbox.kill()
+    except Exception as exc:
+        return {"sandbox": "e2b", "error": f"E2B execution failed: {exc}"}
 
 
 def _validate_python(code: str) -> str | None:
@@ -86,7 +94,21 @@ async def code_sandbox_lite(
 
     if e2b_key:
         result = await _run_e2b(code, language, e2b_key)
-        return json.dumps({"sandbox": "e2b", **result}, indent=2)
+        if result is not None:
+            return json.dumps(result, indent=2)
+        # SDK not installed — fall back to local subprocess sandbox.
 
     result = await _run_subprocess_python(code)
     return json.dumps(result, indent=2)
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    settings = get_settings()
+    e2b_key = await get_credential("e2b", session, workspace_id) or settings.e2b_api_key
+    if e2b_key:
+        try:
+            import e2b_code_interpreter  # type: ignore  # noqa: F401
+            return {"ok": True, "mode": "e2b", "message": "E2B key configured and SDK installed"}
+        except ImportError:
+            return {"ok": True, "mode": "subprocess_lite", "message": "E2B key set but SDK missing — using local sandbox"}
+    return {"ok": True, "mode": "subprocess_lite", "message": "Local subprocess sandbox (no E2B key required)"}

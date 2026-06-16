@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import get_settings
 from src.database import get_db
-from src.integrations.credentials import get_credential, is_connected
+from src.integrations.credentials import ENV_FALLBACKS, get_credential, is_connected
 from src.integrations.crypto import encrypt_token
 from src.integrations.providers import PROVIDERS, TEST_HANDLERS
 from src.models.integration_connection import IntegrationConnection
@@ -38,19 +38,10 @@ async def list_integrations(
         connected = await is_connected(pid, session, workspace_id)
         source = "workspace" if connected else None
 
-        # Check env fallback
+        # Check env fallback via the canonical provider → settings-attr map
         if not connected:
-            env_val = getattr(settings, provider.get("env_var", "").lower().replace("_", "_"), "")
-            # Map env var to settings attr
-            attr_map = {
-                "TAVILY_API_KEY": settings.tavily_api_key,
-                "SLACK_BOT_TOKEN": settings.slack_bot_token,
-                "GITHUB_TOKEN": settings.github_token,
-                "NOTION_TOKEN": settings.notion_token,
-                "LINEAR_API_KEY": settings.linear_api_key,
-                "GOOGLE_SERVICE_ACCOUNT_JSON": settings.google_service_account_json,
-            }
-            if attr_map.get(provider.get("env_var", "")):
+            fallback = ENV_FALLBACKS.get(pid)
+            if fallback and getattr(settings, fallback[1], ""):
                 connected = True
                 source = "env"
 
@@ -145,6 +136,9 @@ async def test_integration(
             return {"ok": True, "provider": provider, "message": "Credentials configured"}
         return {"ok": False, "provider": provider, "error": "No credentials configured"}
 
-    mod = importlib.import_module(module_path)
-    result = await mod.test_connection(session, workspace_id)
+    try:
+        mod = importlib.import_module(module_path)
+        result = await mod.test_connection(session, workspace_id)
+    except Exception as exc:
+        return {"provider": provider, "ok": False, "error": f"Test failed: {exc}"}
     return {"provider": provider, **result}

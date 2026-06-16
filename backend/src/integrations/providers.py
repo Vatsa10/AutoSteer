@@ -122,6 +122,14 @@ PROVIDERS = [
         "connect_type": "api_key",
         "env_var": "RESEND_API_KEY",
     },
+    {
+        "id": "postmark",
+        "name": "Postmark",
+        "description": "Send transactional emails (beta, requires approval)",
+        "scopes": ["emails:send"],
+        "connect_type": "server_token",
+        "env_var": "POSTMARK_API_KEY",
+    },
     # Phase D
     {
         "id": "e2b",
@@ -164,15 +172,37 @@ PROVIDERS = [
         "connect_type": "pat",
         "env_var": "FIGMA_ACCESS_TOKEN",
     },
+    {
+        "id": "pagespeed",
+        "name": "Google PageSpeed",
+        "description": "Lighthouse / PageSpeed performance audits",
+        "scopes": ["audit"],
+        "connect_type": "api_key",
+        "env_var": "GOOGLE_PAGESPEED_API_KEY",
+    },
 ]
 
+# provider id → module exposing async test_connection(session, workspace_id) -> dict
 TEST_HANDLERS = {
     "slack": "src.integrations.slack",
     "github": "src.integrations.github",
     "notion": "src.integrations.notion",
     "linear": "src.integrations.linear",
+    "google": "src.integrations.google",
     "hubspot": "src.integrations.hubspot",
+    "apollo": "src.integrations.apollo",
+    "posthog": "src.integrations.posthog",
     "stripe": "src.integrations.stripe_metrics",
+    "typeform": "src.integrations.typeform",
     "intercom": "src.integrations.intercom",
+    "zendesk": "src.integrations.zendesk",
     "sentry": "src.integrations.sentry",
+    "resend": "src.integrations.email",
+    "postmark": "src.integrations.email",
+    "e2b": "src.integrations.sandbox",
+    "wandb": "src.integrations.wandb",
+    "zapier": "src.integrations.zapier",
+    "docusign": "src.integrations.docusign",
+    "figma": "src.integrations.figma",
+    "pagespeed": "src.integrations.lighthouse",
 }

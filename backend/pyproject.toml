@@ -38,6 +38,14 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
 ]
+# Optional integration SDKs. Code guards these with ImportError and degrades
+# gracefully, so they are not required for core install.
+integrations = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "google-analytics-data>=0.18",
+    "e2b-code-interpreter>=1.0",
+]
 
 [tool.ruff]
 line-length = 100

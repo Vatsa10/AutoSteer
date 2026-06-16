@@ -7,6 +7,7 @@ import shutil
 import httpx
 
 from src.config import get_settings
+from src.integrations.credentials import get_credential
 
 
 async def _run_lighthouse_cli(url: str) -> dict:
@@ -51,10 +52,11 @@ async def _run_pagespeed_api(url: str, api_key: str) -> dict:
     return {"mode": "pagespeed_api", "url": url, "scores": scores}
 
 
-async def lighthouse_audit(url: str, **_) -> str:
+async def lighthouse_audit(url: str, session=None, workspace_id: str = "default", **_) -> str:
     settings = get_settings()
-    if settings.google_pagespeed_api_key:
-        result = await _run_pagespeed_api(url, settings.google_pagespeed_api_key)
+    api_key = await get_credential("pagespeed", session, workspace_id) or settings.google_pagespeed_api_key
+    if api_key:
+        result = await _run_pagespeed_api(url, api_key)
     else:
         result = await _run_lighthouse_cli(url)
         if "error" in result and "not found" in result.get("error", ""):
@@ -65,3 +67,15 @@ async def lighthouse_audit(url: str, **_) -> str:
             })
 
     return json.dumps(result, indent=2)
+
+
+async def test_connection(session=None, workspace_id: str = "default") -> dict:
+    settings = get_settings()
+    if settings.google_pagespeed_api_key:
+        return {"ok": True, "mode": "pagespeed_api", "message": "PageSpeed API key configured"}
+    if shutil.which("lighthouse"):
+        return {"ok": True, "mode": "lighthouse_cli", "message": "lighthouse CLI available"}
+    return {
+        "ok": False,
+        "error": "No PageSpeed API key and lighthouse CLI not installed",
+    }

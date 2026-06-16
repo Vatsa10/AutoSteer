@@ -17,6 +17,30 @@ import {
   type IntegrationProvider,
 } from "@/lib/api";
 
+type MetaField = { key: string; label: string; placeholder: string };
+
+// Providers that need extra connection metadata beyond the token.
+const META_FIELDS: Record<string, MetaField[]> = {
+  notion: [{ key: "default_page_id", label: "Default parent page ID", placeholder: "Notion page ID (optional)" }],
+  zendesk: [
+    { key: "subdomain", label: "Subdomain", placeholder: "yourcompany" },
+    { key: "email", label: "Agent email", placeholder: "agent@company.com" },
+  ],
+  google: [
+    { key: "ga4_property_id", label: "GA4 property ID", placeholder: "properties/123456789 (optional)" },
+    { key: "share_email", label: "Share created docs with", placeholder: "you@company.com (optional)" },
+  ],
+  docusign: [
+    { key: "account_id", label: "Account ID", placeholder: "DocuSign account ID" },
+    { key: "template_id", label: "Default template ID", placeholder: "optional" },
+  ],
+  wandb: [
+    { key: "entity", label: "Entity", placeholder: "team or username" },
+    { key: "project", label: "Project", placeholder: "project name" },
+  ],
+  zapier: [{ key: "webhook_url", label: "Webhook URL", placeholder: "https://hooks.zapier.com/..." }],
+};
+
 function StatusDot({ connected }: { connected: boolean }) {
   return (
     <span
@@ -28,20 +52,26 @@ function StatusDot({ connected }: { connected: boolean }) {
 function ProviderCard({ provider }: { provider: IntegrationProvider }) {
   const queryClient = useQueryClient();
   const [token, setToken] = useState("");
-  const [notionPageId, setNotionPageId] = useState("");
+  const [meta, setMeta] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+
+  const metaFields = META_FIELDS[provider.id] ?? [];
 
   async function handleConnect() {
     setBusy("connect");
     setMessage(null);
     try {
-      const metadata =
-        provider.id === "notion" && notionPageId
-          ? { default_page_id: notionPageId }
-          : undefined;
-      await connectIntegration(provider.id, token, metadata);
+      const metadata = Object.fromEntries(
+        Object.entries(meta).filter(([, v]) => v.trim() !== ""),
+      );
+      await connectIntegration(
+        provider.id,
+        token,
+        Object.keys(metadata).length ? metadata : undefined,
+      );
       setToken("");
+      setMeta({});
       setMessage("Connected successfully");
       queryClient.invalidateQueries({ queryKey: ["integrations"] });
     } catch (e) {
@@ -102,20 +132,21 @@ function ProviderCard({ provider }: { provider: IntegrationProvider }) {
         <div className="space-y-2 mb-3">
           <input
             type="password"
-            placeholder="API token / bot token"
+            placeholder={provider.id === "zapier" ? "Webhook URL or token" : "API token / bot token"}
             value={token}
             onChange={(e) => setToken(e.target.value)}
             className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
           />
-          {provider.id === "notion" && (
+          {metaFields.map((f) => (
             <input
+              key={f.key}
               type="text"
-              placeholder="Default parent page ID (optional)"
-              value={notionPageId}
-              onChange={(e) => setNotionPageId(e.target.value)}
+              placeholder={f.label}
+              value={meta[f.key] ?? ""}
+              onChange={(e) => setMeta((m) => ({ ...m, [f.key]: e.target.value }))}
               className="w-full text-sm px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
             />
-          )}
+          ))}
         </div>
       )}
 
