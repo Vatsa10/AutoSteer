@@ -2,9 +2,9 @@
 
 **Multi-agent orchestration that routes every request through the right AI specialist.**
 
-42 config-driven AI agents. 12 departments. 3-level hierarchical routing. One natural language API. Each agent has its own personality, expertise, decision boundaries, and task capabilities — all defined in YAML, powered by any LLM provider through LiteLLM.
+43 config-driven AI agents. 12 departments. Dynamic task decomposition with parallel sub-agent execution. 3-tier conversational memory with semantic search. Multimodal document analysis (PDF, DOCX, images). Professional document generation (Word, PowerPoint). Streaming responses with real-time routing visualization.
 
-Send a message. Watch it get classified, routed through the organizational hierarchy, and answered by the most qualified agent with full context of who it is and what it can do.
+Send a message. Watch it get classified, routed through the organizational hierarchy, and answered by the most qualified agent — or broken into subtasks and executed in parallel by a team of agents.
 
 ---
 
@@ -19,11 +19,11 @@ You: "Design a new onboarding flow for enterprise customers"
                               of its decision boundaries
 ```
 
-1. **You send a message** — natural language, any domain
-2. **Master Orchestrator classifies intent** — regex pattern matching with confidence scoring, falls back to LLM-based classification for unmatched patterns, routes to the right department
-3. **Department Orchestrator selects the agent** — picks the most qualified specialist (regex + LLM fallback)
-4. **Agent processes with full context** — personality, expertise, tools, tasks, and decision boundaries injected as system prompt
-5. **Response streams back in real-time** — routing events (classifying → department → agent → processing), token-by-token streaming, metadata with model + usage. WebSocket with REST fallback.
+1. **You send a message** — natural language, any domain. Optionally attach PDFs, Word docs, or images.
+2. **Dynamic task decomposition** — complex requests ("research X, create a resume and a presentation") are broken into subtasks by the LLM planner, then executed in parallel by sub-agents.
+3. **Master Orchestrator classifies intent** — regex + LLM fallback routing. LLM dynamically selects agents when regex misses.
+4. **Agent processes with full context** — personality, expertise, tools, tasks, decision boundaries, user preferences, document context, and conversation memory all injected.
+5. **Response streams in real-time** — routing events, token-by-token streaming, tool execution results, and file download links.
 
 ---
 
@@ -67,43 +67,44 @@ curl -X POST http://localhost:8000/api/chat \
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│                   Next.js Frontend                    │
-│  Chat + Streaming │ Agent Browser │ History + Search │
-│  TanStack Query · Zustand · Tailwind v4 · Radix UI   │
-└──────────────────────┬───────────────────────────────┘
-                       │ REST + WebSocket (streaming)
-┌──────────────────────┴───────────────────────────────┐
-│                    FastAPI Backend                     │
-│                                                        │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
-│  │ API      │  │ Orchestration│  │ Message Bus   │   │
-│  │ REST/WS  │  │ Engine       │  │ (Redis)       │   │
-│  │          │  │              │  │               │   │
-│  │ /chat    │  │ Master Router│  │ pub/sub       │   │
-│  │ /agents  │  │ Dept Routers │  │ channels      │   │
-│  │ /tools   │  │ Agent Runtime│  │               │   │
-│  │ /ws/chat │  │ Workflow Exec│  │               │   │
-│  └──────────┘  └──────────────┘  └───────────────┘   │
-│                                                        │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
-│  │ LLM      │  │ Tool Exec    │  │ State          │   │
-│  │ LiteLLM  │  │              │  │               │   │
-│  │          │  │ 17+ tools +  │  │ Postgres 16   │   │
-│  │ Stream   │  │ tools +      │  │ Redis 7       │   │
-│  │ Claude   │  │ extensible   │  │               │   │
-│  │ OpenAI   │  │ registry     │  │               │   │
-│  │ Ollama   │  │              │  │               │   │
-│  └──────────┘  └──────────────┘  └───────────────┘   │
-│                                                        │
-│  ┌──────────┐  ┌──────────────┐  ┌───────────────┐   │
-│  │ YAML     │  │ Auth         │  │ DB Layer      │   │
-│  │ Loader   │  │              │  │               │   │
-│  │          │  │ X-API-Key    │  │ SQLAlchemy    │   │
-│  │ 97 files │  │ middleware   │  │ 2.0 async     │   │
-│  │ 42 agents│  │ (optional)   │  │               │   │
-│  └──────────┘  └──────────────┘  └───────────────┘   │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                    Next.js Frontend                       │
+│  Chat + Streaming │ Agent Browser │ Settings + Memory    │
+│  TanStack Query · Zustand · ReactMarkdown · Tailwind v4  │
+└───────────────────────┬──────────────────────────────────┘
+                        │ REST + WebSocket (streaming)
+┌───────────────────────┴──────────────────────────────────┐
+│                     FastAPI Backend                        │
+│                                                            │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐    │
+│  │ API      │  │ Orchestration│  │ Memory Manager   │    │
+│  │ REST/WS  │  │ Engine       │  │                  │    │
+│  │          │  │              │  │ Working/Summary   │    │
+│  │ /chat    │  │ Task Decomp  │  │ Semantic (vector) │    │
+│  │ /agents  │  │ Agent Router │  │ Structured Facts  │    │
+│  │ /tools   │  │ DAG Executor │  │ Documents         │    │
+│  │ /ws/chat │  │ Sub-Agents   │  │                  │    │
+│  │ /settings│  │              │  │                  │    │
+│  └──────────┘  └──────────────┘  └──────────────────┘    │
+│                                                            │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐    │
+│  │ LLM      │  │ Tool Exec    │  │ State             │    │
+│  │ LiteLLM  │  │              │  │                  │    │
+│  │ GPT-4o   │  │ 47 tools     │  │ Postgres 16      │    │
+│  │ GPT-4o   │  │ Web search   │  │ pgvector          │    │
+│  │ mini     │  │ Doc gen      │  │ Redis 7           │    │
+│  │ Claude   │  │ PDF/OCR      │  │ SharedState       │    │
+│  │ Ollama   │  │ Crawler      │  │                  │    │
+│  └──────────┘  └──────────────┘  └──────────────────┘    │
+│                                                            │
+│  ┌──────────┐  ┌──────────────┐  ┌──────────────────┐    │
+│  │ YAML     │  │ Auth         │  │ DB Layer          │    │
+│  │ Loader   │  │              │  │                  │    │
+│  │          │  │ X-API-Key    │  │ SQLAlchemy 2.0   │    │
+│  │ 43 agents│  │ middleware   │  │ async             │    │
+│  │ 1 master │  │ (optional)   │  │                  │    │
+│  └──────────┘  └──────────────┘  └──────────────────┘    │
+└────────────────────────────────────────────────────────────┘
 ```
 
 **Key decisions:** Config-driven agents (YAML, not code). Multi-provider LLM via LiteLLM with streaming. 3-level hierarchical routing (regex + LLM fallback). Each agent has a distinct personality, communication style, values, and decision boundaries. Real-time streaming via WebSocket with REST fallback. Tools executed through an extensible registry. White + blue UI theme.
@@ -669,7 +670,67 @@ cd backend
 pytest -v
 ```
 
-29 tests covering config, schemas, loader, LLM, agent runtime, router, messaging, orchestrator, API endpoints, and full integration flow.
+44 tests covering config, schemas, loader, LLM, agent runtime, router, messaging, orchestrator, API endpoints, tool execution, and full integration flow.
+
+---
+
+## Dynamic Task Decomposition
+
+Complex requests are broken into subtasks by an LLM planner. Sub-agents execute in parallel where dependencies allow, then results are synthesized into a single response.
+
+```
+User: "Research Vatsa Joshi, create a resume and a presentation about his work"
+  ↓
+  Decompose (GPT-4o-mini):
+    sub_0: web_researcher searches for Vatsa online
+    sub_1: content_marketer creates resume (depends on sub_0)
+    sub_2: content_marketer creates presentation (depends on sub_0)
+  ↓
+  Execute DAG: [sub_0] → [sub_1, sub_2] parallel
+  ↓
+  Synthesize: combined response with file download links
+```
+
+## Memory System
+
+Hybrid 4-tier memory inspired by ChatGPT's Dreaming V3 architecture:
+
+| Tier | Retention | Mechanism |
+|------|-----------|-----------|
+| Working | Last 8 messages | Full text in context window |
+| Summary | Older messages | 1500-char rolling compression |
+| Semantic | Full history | pgvector embeddings, cosine similarity search |
+| Structured | Facts/preferences | Extracted by LLM every 5 turns, stored in PostgreSQL |
+
+Token-aware compaction keeps context under 5000 tokens. Document context persists across turns via SharedState.
+
+## Cost Optimization
+
+Three architectural shifts reduce LLM costs by ~50-60%:
+
+| Shift | What | Savings |
+|-------|------|---------|
+| Code workflows | Simple messages ("hey", "thanks") skip LLM entirely via `_is_simple_message()` | ~15% |
+| Aggressive compaction | 8-msg window, proactive token budgeting, SubAgent (gpt-4o-mini) for tool synthesis | ~30% |
+| Sub-Agent dispatch | gpt-4o-mini for intent, routing, decomposition. gpt-4o for complex answers only | ~10x on tool calls |
+
+## Document Generation
+
+Agents create professional Word (.docx) and PowerPoint (.pptx) files natively:
+
+- **Word:** Markdown parsing, Calibri fonts, blue headings, bullet/number lists, auto-footer
+- **PowerPoint:** 8 slide layouts (title, section, content, two-column, big number, quote, summary, thank-you), 4 color themes, slide transitions
+- Tools registered in the extensible registry with alias resolution
+- Generated files served via `GET /api/files/download/{filename}`
+
+## Settings & Preferences
+
+User-facing settings hub at `/settings`:
+
+- **Preferences:** Custom instructions ("What should AutoSteer know about you?", "How should AutoSteer respond?") injected into every conversation
+- **Memory:** View/edit extracted facts, upload context documents, review conversation summaries
+- **Agents:** Pin preferred agents for routing priority, search/filter 43 agents
+- **Integrations:** Connect API keys for Slack, GitHub, Notion, HubSpot, 20+ services
 
 ---
 
