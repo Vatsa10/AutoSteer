@@ -220,7 +220,6 @@ function Hero() {
 
         {/* Right: live orchestration graph */}
         <div className="lg:col-span-5 relative flex flex-col justify-center items-center border-t-2 border-[#0a0a0a] lg:border-t-0 py-16 lg:py-0 lg:pl-10 overflow-hidden">
-          <div className="absolute inset-0 halftone opacity-[0.06]" aria-hidden />
           <div className="absolute top-6 left-6 lg:left-10 flex items-center gap-2 z-10">
             <span className="w-2 h-2 bg-[#e61919] animate-breathe" aria-hidden />
             <span className="font-tele text-[10px] text-ink/60">LIVE / UNIT D-01</span>
