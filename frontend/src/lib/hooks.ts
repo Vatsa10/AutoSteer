@@ -54,6 +54,13 @@ export function useConversationMessages(conversationId: string | undefined) {
 
 interface FileAttachment { filename: string; content: string; mime_type: string; }
 
+function getPreferences(): Record<string, unknown> | null {
+  try {
+    const stored = localStorage.getItem("autosteer_preferences");
+    return stored ? JSON.parse(stored) : null;
+  } catch { return null; }
+}
+
 interface SendMessageVars {
   message: string;
   conversationId?: string;
@@ -82,6 +89,7 @@ export function useSendMessage() {
             target_agent: targetAgent || null,
             file_ids: fileIds || null,
             files: files || null,
+            preferences: getPreferences(),
           }),
         },
       );

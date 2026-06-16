@@ -11,7 +11,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Loader2,
-  Plug,
+  Settings,
 } from "lucide-react";
 import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
 import { useConversations } from "@/lib/hooks";
@@ -19,9 +19,8 @@ import { useConversations } from "@/lib/hooks";
 const navItems = [
   { href: "/", label: "Chat", icon: MessageSquare },
   { href: "/agents", label: "Agents", icon: Users },
-  { href: "/agents/custom", label: "Custom agent", icon: Users },
   { href: "/conversations", label: "History", icon: History },
-  { href: "/settings/integrations", label: "Integrations", icon: Plug },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 interface SidebarProps {

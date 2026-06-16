@@ -481,6 +481,7 @@ User request: {user_message}"""
         target_agent: str | None = None,
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
+        preferences: dict | None = None,
     ) -> dict:
         """REST endpoint � wraps _process_impl, collects streaming events into final dict."""
         conv_id = conversation_id or str(uuid.uuid4())
@@ -531,11 +532,13 @@ User request: {user_message}"""
         target_agent: str | None = None,
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
+        preferences: dict | None = None,
     ) -> AsyncGenerator[dict, None]:
         """WebSocket endpoint — delegates to _process_impl."""
         async for event in self._process_impl(
             user_message=user_message, conversation_id=conversation_id,
             target_agent=target_agent, session=session, file_ids=file_ids,
+            preferences=preferences,
         ):
             yield event
 
@@ -546,9 +549,20 @@ User request: {user_message}"""
         target_agent: str | None = None,
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
+        preferences: dict | None = None,
     ) -> AsyncGenerator[dict, None]:
         """Single processing implementation — used by both REST and WS."""
         conversation_id = conversation_id or str(uuid.uuid4())
+
+        # Inject user preferences into system context
+        if preferences:
+            pref_parts = []
+            if preferences.get("about"):
+                pref_parts.append(f"## About the User\n{preferences['about']}")
+            if preferences.get("responseStyle"):
+                pref_parts.append(f"## Response Style\n{preferences['responseStyle']}")
+            if pref_parts:
+                effective_message = "\n\n".join(pref_parts) + f"\n\n---\n{user_message}"
 
         # Skip LLM for trivial messages
         simple = self._is_simple_message(user_message) if not file_ids else None

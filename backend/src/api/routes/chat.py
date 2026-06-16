@@ -9,7 +9,7 @@ router = APIRouter(tags=["chat"])
 
 class InlineFile(BaseModel):
     filename: str
-    content: str  # base64 encoded file bytes
+    content: str
     mime_type: str = "application/octet-stream"
 
 
@@ -18,7 +18,8 @@ class ChatRequest(BaseModel):
     conversation_id: str | None = None
     target_agent: str | None = None
     file_ids: list[str] | None = None
-    files: list[InlineFile] | None = None  # inline file content — no upload needed
+    files: list[InlineFile] | None = None
+    preferences: dict | None = None  # {about, responseStyle, pinnedAgents}
 
 
 class ChatResponse(BaseModel):
@@ -67,5 +68,6 @@ async def chat(
         target_agent=body.target_agent,
         session=session,
         file_ids=all_file_ids if all_file_ids else None,
+        preferences=body.preferences,
     )
     return ChatResponse(**result)

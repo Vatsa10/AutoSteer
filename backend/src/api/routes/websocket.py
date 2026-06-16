@@ -45,6 +45,7 @@ async def websocket_chat(websocket: WebSocket):
             conversation_id = payload.get("conversation_id")
             target_agent = payload.get("target_agent")
             file_ids = list(payload.get("file_ids") or [])
+            preferences = payload.get("preferences")
             # Process inline files
             inline_files = payload.get("files")
             if inline_files:
@@ -72,6 +73,7 @@ async def websocket_chat(websocket: WebSocket):
                         target_agent=target_agent,
                         session=session,
                         file_ids=file_ids,
+                        preferences=preferences,
                     ):
                         await websocket.send_json(event)
             except Exception as e:
