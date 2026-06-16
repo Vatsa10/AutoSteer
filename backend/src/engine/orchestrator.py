@@ -432,415 +432,23 @@ User request: {user_message}"""
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
     ) -> dict:
-        conversation_id = conversation_id or str(uuid.uuid4())
-
-        # ── Load file content + persisted document memory ─────────
-        effective_message = user_message
-        all_file_context: list[str] = []
-
-        # Restore persisted file content from previous turns
-        if session is not None and conversation_id:
-            try:
-                from sqlalchemy import select as _sa_sel
-                from src.models.shared_state import SharedState as _SS
-                r = await session.execute(
-                    _sa_sel(_SS).where(_SS.key == f"conv:{conversation_id}:files")
-                )
-                prev = r.scalar_one_or_none()
-                if prev and prev.value:
-                    for fdata in prev.value.get("files", []):
-                        fname = fdata.get("filename", "unknown")
-                        ftext = fdata.get("text", "")
-                        ftype = fdata.get("type", "")
-                        if ftext:
-                            all_file_context.append(f"[File: {fname} ({ftype})]\n{ftext}")
-            except Exception:
-                pass
-
-        # Load new files from this request
-        if file_ids:
-            print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
-            new_files: list[dict] = []
-            import json as _json2
-            for fid in file_ids:
-                try:
-                    from src.integrations.files import file_upload_read, _uploads_dir
-                    raw = await file_upload_read(fid, max_chars=8000)
-                    data = _json2.loads(raw)
-                    if "error" in data:
-                        uploads = _uploads_dir()
-                        for candidate in uploads.iterdir():
-                            if candidate.is_file() and fid.lower() in candidate.name.lower():
-                                raw = await file_upload_read(candidate.stem, max_chars=8000)
-                                data = _json2.loads(raw)
-                                break
-                    if "error" not in data:
-                        ftype = data.get("type", "file")
-                        fname = data.get("filename", fid)
-                        if ftype == "image" and data.get("image_base64"):
-                            all_file_context.append(f"[Image: {fname}]")
-                        elif data.get("text"):
-                            all_file_context.append(
-                                f"[File: {fname} ({ftype})]\n{data['text']}"
-                            )
-                            new_files.append({"filename": fname, "text": data["text"], "type": ftype})
-                except Exception:
-                    pass
-            # Persist new file content for future turns
-            if new_files and session is not None:
-                try:
-                    from src.models.shared_state import SharedState as _SS2
-                    existing = await session.execute(
-                        _sa_sel(_SS2).where(_SS2.key == f"conv:{conversation_id}:files")
-                    )
-                    prev_state = existing.scalar_one_or_none()
-                    all_saved = (prev_state.value.get("files", []) if prev_state else []) + new_files
-                    if prev_state:
-                        prev_state.value = {"files": all_saved}
-                        prev_state.updated_at = datetime.now(timezone.utc)
-                    else:
-                        session.add(_SS2(
-                            key=f"conv:{conversation_id}:files",
-                            value={"files": all_saved},
-                            owner="orchestrator",
-                            updated_at=datetime.now(timezone.utc),
-                        ))
-                    await session.commit()
-                except Exception:
-                    pass
-
-        if all_file_context:
-            print(f"[orchestrator] loaded {len(all_file_context)} file context(s)")
-            effective_message = (
-                "\n\n".join(all_file_context)
-                + f"\n\n---\n{user_message}"
-            )
-
-        # ── LLM-based intent classification for agent coordination ──
-        has_context = bool(all_file_context)
-        intent = await self._classify_intent(user_message, has_context)
-
-        department: str | None = None
-        agent_role: str | None = None
-
-        if target_agent:
-            # Direct agent selection — skip routing
-            agent_role = target_agent
-            # Find which department this agent belongs to
-            for dept_name, agent_list in self.department_agents.items():
-                if target_agent in agent_list:
-                    department = self._dept_to_dir.get(dept_name, dept_name)
-                    break
-        else:
-            # Step 1: Master orchestrator routes to department
-            dept_result = await self._route_department(user_message)
-            if not dept_result:
-                try:
-                    fallback = await self.llm.complete(
-                        messages=[LLMMessage(role="user", content=effective_message)],
-                        system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
-                        temperature=0.7,
-                        max_tokens=1024,
-                    )
-                    return {
-                        "conversation_id": conversation_id,
-                        "response": fallback.content,
-                        "routed_to": "direct",
-                        "agent": "fallback",
-                        "model": fallback.model,
-                        "usage": fallback.usage,
-                    }
-                except Exception:
-                    return {
-                        "conversation_id": conversation_id,
-                        "response": "I couldn't route your request to a specific department. Could you rephrase or provide more details about what you need?",
-                        "routed_to": None,
-                        "agent": None,
-                    }
-            department = dept_result.target
-
-            # Check for multi-department workflow trigger
-            if getattr(self, "master_config", None) and "multi_department_workflows" in self.master_config:
-                triggered = self._detect_workflow_trigger(
-                    user_message, self.master_config["multi_department_workflows"]
-                )
-                if triggered and getattr(self, "workflow_executor", None):
-                    workflow_result = await self.workflow_executor.execute_workflow(
-                        workflow_name=triggered["name"],
-                        workflow_def=triggered["def"],
-                        user_message=user_message,
-                        conversation_id=conversation_id,
-                        session=session,
-                    )
-                    return {
-                        "conversation_id": conversation_id,
-                        "response": workflow_result.get("summary", ""),
-                        "routed_to": None,
-                        "agent": None,
-                        "workflow": workflow_result,
-                    }
-
-            # Step 2: Department orchestrator routes to agent
-            # Resolve master target (e.g. "sales_orchestrator") to normalized dept key
-            target_normalized = department.replace("_", "")
-            _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
-            _dept_to_dir = getattr(self, "_dept_to_dir", {})
-            dept_key = _orch_to_dept.get(target_normalized, department)
-            department = _dept_to_dir.get(dept_key, dept_key)
-            dept_router = self.department_routers.get(dept_key) or self.department_routers.get(department)
-            agent_result = await self._route_agent(user_message, dept_key)
-
-            if not agent_result:
-                return {
-                        "conversation_id": conversation_id,
-                        "response": f"Routed to {department} department, but no specific agent matched. Please provide more details.",
-                        "routed_to": department,
-                        "agent": None,
-                    }
-            agent_role = agent_result.target
-
-        # ── Dynamic task decomposition (before single-agent routing) ──
-        decomp_result = await self._decompose_and_execute(
-            effective_message, has_context, conversation_id, session
-        )
-        if decomp_result:
-            return decomp_result
-
-        # ── Multi-agent coordination: dispatch based on LLM intent ──
-        if intent and intent.get("action") == "create_document" and has_context:
-            # Phase 1: web_researcher searches for enrichment
-            if intent.get("needs_research") and self.agents.get("web_researcher"):
-                try:
-                    sq = intent.get("search_query", user_message)
-                    rr = await self.agents["web_researcher"].process(
-                        f"Search for additional information to enrich a {intent.get('doc_type', 'document')}. "
-                        f"Query: {sq}. Return key facts and achievements."
-                    )
-                    if rr.content:
-                        effective_message += f"\n\n[Web Research]\n{rr.content}"
-                except Exception:
-                    pass
-
-            # Phase 2: content_marketer creates the document
-            if self.agents.get("content_marketer"):
-                agent_role = "content_marketer"
-                department = "marketing"
-                effective_message = (
-                    f"Create a professional {intent.get('doc_type', 'document')} using ALL "
-                    "information below. Use the file content as primary source. "
-                    "When done, generate the final output using the appropriate tool "
-                    f"({'create_pptx' if 'presentation' in intent.get('doc_type', '') else 'create_docx'}).\n\n"
-                    + effective_message
-                )
-
-        # Step 3: Agent processes the message
-        agent_runtime = self.agents.get(agent_role) if agent_role else None
-        if not agent_runtime:
-            return {
-                "conversation_id": conversation_id,
-                "response": f"Agent '{agent_role}' is not available.",
-                "routed_to": department,
-                "agent": agent_role,
-            }
-
-        # Restore conversation history from DB for memory continuity
-        if session is not None and conversation_id:
-            try:
-                from sqlalchemy import select as _sa_select
-                result = await session.execute(
-                    _sa_select(MessageModel)
-                    .where(MessageModel.conversation_id == conversation_id)
-                    .order_by(MessageModel.created_at.asc())
-                )
-                prior = result.scalars().all()
-                if prior:
-                    prior_dicts = [
-                        {"message_type": m.message_type.value if hasattr(m.message_type, "value") else str(m.message_type),
-                         "content": m.content}
-                        for m in prior
-                    ]
-                    agent_runtime.load_history(prior_dicts)
-            except Exception:
-                pass
-
-        set_tool_context(session=session, workspace_id="default")
-        response = await agent_runtime.process(effective_message)
-
-        # HANDOFF: Check if agent requested a handoff to another agent
-        handoff_agent = None
-        if response.handoff:
-            handoff = response.handoff
-            target_runtime = self.agents.get(handoff.target_agent)
-            if target_runtime:
-                handoff_agent = handoff.target_agent
-
-                # Publish HANDOFF message on the bus
-                if self.message_bus:
-                    handoff_msg = AgentMessage(
-                        id=str(uuid.uuid4()),
-                        from_agent=agent_role,
-                        to_agent=handoff.target_agent,
-                        message_type=MessageType.HANDOFF,
-                        priority=Priority.P1,
-                        content=f"Handoff from {agent_role}: {handoff.reason}",
-                        payload={
-                            "context_summary": handoff.context_summary,
-                            "current_state": handoff.current_state,
-                            "expected_outcome": handoff.expected_outcome,
-                        },
-                        thread_id=conversation_id,
-                    )
-                    await self.message_bus.publish(
-                        f"agent:{handoff.target_agent}", handoff_msg
-                    )
-
-                # Build handoff prompt for target agent
-                handoff_prompt = (
-                    f"[HANDOFF from {agent_role}]\n"
-                    f"Reason: {handoff.reason}\n"
-                    f"Context: {handoff.context_summary}\n"
-                    f"Current state: {handoff.current_state}\n"
-                    f"Expected outcome: {handoff.expected_outcome}\n\n"
-                    f"Continue based on this context and provide your response."
-                )
-                target_response = await target_runtime.process(handoff_prompt)
-
-                # Persist handoff message
-                if session is not None:
-                    session.add(MessageModel(
-                        id=str(uuid.uuid4()),
-                        conversation_id=conversation_id,
-                        from_agent=agent_role,
-                        to_agent=handoff.target_agent,
-                        message_type=MessageType.HANDOFF,
-                        priority=Priority.P1,
-                        content=f"Handoff from {agent_role}: {handoff.reason}",
-                        payload={
-                            "context_summary": handoff.context_summary,
-                            "current_state": handoff.current_state,
-                            "expected_outcome": handoff.expected_outcome,
-                        },
-                        thread_id=conversation_id,
-                        created_at=datetime.now(timezone.utc),
-                    ))
-
-                # Target agent's response becomes the final response
-                response = target_response
-                agent_role = handoff.target_agent
-
-        now = datetime.now(timezone.utc)
-
-        # Persist conversation and messages
-        if session is not None:
-            from sqlalchemy import select as sa_select
-
-            result = await session.execute(
-                sa_select(Conversation).where(Conversation.id == conversation_id)
-            )
-            conv = result.scalar_one_or_none()
-
-            if conv is None:
-                conv = Conversation(
-                    id=conversation_id,
-                    title=user_message[:500],
-                    status="active",
-                    created_at=now,
-                    updated_at=now,
-                )
-                session.add(conv)
-            else:
-                conv.updated_at = now
-
-            # Save user message
-            session.add(MessageModel(
-                id=str(uuid.uuid4()),
-                conversation_id=conversation_id,
-                from_agent="user",
-                to_agent=agent_role or "unknown",
-                message_type=MessageType.REQUEST,
-                priority=Priority.P2,
-                content=user_message,
-                thread_id=conversation_id,
-                created_at=now,
-            ))
-
-            # Save agent response
-            session.add(MessageModel(
-                id=str(uuid.uuid4()),
-                conversation_id=conversation_id,
-                from_agent=agent_role or "unknown",
-                to_agent="user",
-                message_type=MessageType.RESPONSE,
-                priority=Priority.P2,
-                content=response.content,
-                thread_id=conversation_id,
-                created_at=now,
-            ))
-
-            await session.commit()
-        else:
-            # Fallback: in-memory tracking for backward compat
-            now_str = now.isoformat()
-            if not hasattr(self, "_conversations"):
-                self._conversations: dict[str, dict] = {}
-            if not hasattr(self, "_messages"):
-                self._messages: dict[str, list[dict]] = {}
-            if conversation_id not in self._conversations:
-                self._conversations[conversation_id] = {
-                    "title": user_message[:120],
-                    "status": "active",
-                    "created_at": now_str,
-                    "updated_at": now_str,
-                }
-            else:
-                self._conversations[conversation_id]["updated_at"] = now_str
-            if conversation_id not in self._messages:
-                self._messages[conversation_id] = []
-            self._messages[conversation_id].append({
-                "id": str(uuid.uuid4()),
-                "conversation_id": conversation_id,
-                "from_agent": "user",
-                "to_agent": agent_role,
-                "message_type": "request",
-                "priority": "P2",
-                "content": user_message,
-                "thread_id": conversation_id,
-                "created_at": now_str,
-            })
-            self._messages[conversation_id].append({
-                "id": str(uuid.uuid4()),
-                "conversation_id": conversation_id,
-                "from_agent": agent_role,
-                "to_agent": "user",
-                "message_type": "response",
-                "priority": "P2",
-                "content": response.content,
-                "thread_id": conversation_id,
-                "created_at": now_str,
-            })
-
-        # Publish to message bus if available
-        if self.message_bus:
-            msg = AgentMessage(
-                id=str(uuid.uuid4()),
-                from_agent=agent_role,
-                to_agent="user",
-                message_type=MessageType.RESPONSE,
-                priority=Priority.P2,
-                content=response.content,
-                thread_id=conversation_id,
-            )
-            await self.message_bus.publish(f"agent:{agent_role}", msg)
-
-        return {
-            "conversation_id": conversation_id,
-            "response": response.content,
-            "routed_to": department,
-            "agent": agent_role,
-            "model": response.model,
-            "usage": response.usage,
-            "structured": response.structured,
-        }
+        """REST endpoint � wraps _process_impl, collects streaming events into final dict."""
+        conv_id = conversation_id or str(uuid.uuid4())
+        result: dict = {"conversation_id": conv_id, "response": "", "routed_to": None, "agent": None, "model": None, "usage": None, "structured": None}
+        async for event in self._process_impl(
+            user_message=user_message, conversation_id=conversation_id,
+            target_agent=target_agent, session=session, file_ids=file_ids,
+        ):
+            if event["type"] == "token":
+                result["response"] += event.get("content", "")
+            elif event["type"] == "metadata":
+                for k in ("conversation_id", "agent", "department", "model", "usage"):
+                    if k in event:
+                        key = "routed_to" if k == "department" else k
+                        result[key] = event[k]
+            elif event["type"] == "error":
+                result["response"] = event.get("message", "")
+        return result
 
     def list_agents(self) -> list[dict]:
         result = []
@@ -874,7 +482,22 @@ User request: {user_message}"""
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
     ) -> AsyncGenerator[dict, None]:
-        """Streaming version of process_message. Yields routing events + tokens."""
+        """WebSocket endpoint — delegates to _process_impl."""
+        async for event in self._process_impl(
+            user_message=user_message, conversation_id=conversation_id,
+            target_agent=target_agent, session=session, file_ids=file_ids,
+        ):
+            yield event
+
+    async def _process_impl(
+        self,
+        user_message: str,
+        conversation_id: str | None = None,
+        target_agent: str | None = None,
+        session: AsyncSession | None = None,
+        file_ids: list[str] | None = None,
+    ) -> AsyncGenerator[dict, None]:
+        """Single processing implementation — used by both REST and WS."""
         conversation_id = conversation_id or str(uuid.uuid4())
 
         # Load file content + persisted document context
@@ -977,6 +600,16 @@ User request: {user_message}"""
                 return
             agent_role = agent_result.target
             yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+
+        # Dynamic task decomposition
+        decomp = await self._decompose_and_execute(
+            effective_message, bool(file_context_parts), conversation_id, session
+        )
+        if decomp:
+            yield {"type": "token", "content": decomp["response"]}
+            yield {"type": "metadata", "conversation_id": conversation_id, "agent": decomp.get("agent"), "department": decomp.get("routed_to"), "model": decomp.get("model"), "usage": decomp.get("usage")}
+            yield {"type": "done"}
+            return
 
         # LLM-based agent coordination
         stream_intent = await self._classify_intent(user_message, bool(file_context_parts))
