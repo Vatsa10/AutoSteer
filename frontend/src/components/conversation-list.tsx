@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { MessageSquare, Plus, Trash2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { deleteConversation } from "@/lib/api";
-import { useToastStore } from "@/lib/store";
+import { useToastStore, useChatStore } from "@/lib/store";
 import { useRouter } from "next/navigation";
 
 export interface ConversationSummary {
@@ -40,6 +40,7 @@ export function ConversationList({
 }: ConversationListProps) {
   const queryClient = useQueryClient();
   const addToast = useToastStore((s) => s.addToast);
+  const reset = useChatStore((s) => s.reset);
   const router = useRouter();
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmId, setConfirmId] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export function ConversationList({
         queryClient.invalidateQueries({ queryKey: ["conversations"] });
         queryClient.invalidateQueries({ queryKey: ["messages"] });
         if (activeId === id) {
+          reset();
           router.push("/");
         }
         addToast("Conversation deleted", "success");

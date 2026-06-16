@@ -29,8 +29,8 @@ class AgentResult:
 
 class AgentRuntime:
     # Memory tier limits
-    MAX_WORKING_MESSAGES = 12   # Keep last 12 in full text
-    SUMMARY_MAX_CHARS = 400     # Rolling summary of older messages
+    MAX_WORKING_MESSAGES = 12    # Keep last 12 in full text
+    SUMMARY_MAX_CHARS = 1200     # Rolling summary of older messages
 
     def __init__(
         self,
@@ -212,7 +212,7 @@ class AgentRuntime:
         section_descs = []
         for s in schema.sections:
             section_descs.append(
-                f'    {{{{"type": "{s.type}", "title": "{s.title}", "items": ["...", "..."]}}}}'
+                f'    {{"type": "{s.type}", "title": "{s.title}", "items": ["...", "..."]}}'
             )
 
         sections_json = ",\n".join(section_descs)
@@ -312,7 +312,7 @@ Format:
         return agent_result
 
     _TOOL_CALL_RE = re.compile(
-        r"TOOL_CALL_START\s*(\{.*?\})\s*TOOL_CALL_END", re.DOTALL
+        r"TOOL_CALL_START\s*(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})\s*TOOL_CALL_END", re.DOTALL
     )
 
     async def _execute_tool_calls(
@@ -378,7 +378,8 @@ Format:
             f"Original request was: {self.conversation_history[-1].content}"
         )
 
-        self.conversation_history.append(LLMMessage(role="assistant", content=follow_up_msg))
+        # Don't persist meta-instructions as assistant messages — skip appending
+        # self.conversation_history.append(LLMMessage(role="assistant", content=follow_up_msg))
         memory_ctx2 = self._build_memory_context()
         sp2 = f"{self._system_prompt}\n\n{memory_ctx2}" if memory_ctx2 else self._system_prompt
         follow_up = await self.llm.complete(
@@ -391,7 +392,7 @@ Format:
 
     # ── Auto-search triggers ──────────────────────────────────────
     _SEARCH_TRIGGERS = re.compile(
-        r"\b(who|what|where|when|why|how|research|find|search|look up|tell me about|information on|learn about|latest|news about)\b",
+        r"\b(who|what|where|when|why|research|find|search|look up|tell me about|information on|learn about|latest|news about)\b",
         re.IGNORECASE,
     )
 
@@ -408,21 +409,20 @@ Format:
         if not self._SEARCH_TRIGGERS.search(user_message):
             return None
 
-        # Find available search tool (check both filtered and global registries)
+        # Find available search tool (check filtered, then global)
         search_tool = None
+        search_registry = self.tool_registry
         for name in ("ddg_search", "web_search"):
             if self.tool_registry.is_registered(name):
                 search_tool = name
                 break
 
-        # Fallback: try global registry if filtered view doesn't have it
         if not search_tool:
             try:
                 from src.engine.tool_executor import get_tool_registry
-                global_reg = get_tool_registry()
+                search_registry = get_tool_registry()
                 for name in ("ddg_search", "web_search"):
-                    if global_reg.is_registered(name):
-                        self.tool_registry = global_reg  # upgrade to full registry
+                    if search_registry.is_registered(name):
                         search_tool = name
                         break
             except Exception:
@@ -441,7 +441,7 @@ Format:
 
         try:
             result = await execute_tool(
-                self.tool_registry, search_tool,
+                search_registry, search_tool,
                 {"query": query, "max_results": 5},
                 timeout_seconds=15.0,
             )
@@ -500,7 +500,13 @@ Format:
             if chunk.usage:
                 usage = chunk.usage
             if chunk.is_done and not chunk.content:
-                pass  # done marker, no content
+                pass
+
+        # Execute tools if agent emitted TOOL_CALL markers
+        if "TOOL_CALL_START" in full_content:
+            display_content, model_name, usage = await self._execute_tool_calls(full_content, model_name, usage)
+        else:
+            display_content = full_content
 
         # Parse handoff from full content
         handoff = None

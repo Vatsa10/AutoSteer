@@ -1,12 +1,9 @@
-"""Workspace file read tool — multimodal: text, PDF, DOCX, images.
-
-Optimized for low latency: PDFs read first 3 pages by default (quick scan mode).
-Images converted in under 50ms. DOCX extracted via streaming paragraph iterator.
-"""
+"""Workspace file read tool — multimodal: text, PDF, DOCX, images."""
 
 import base64
 import io
 import json
+import re
 from pathlib import Path
 
 from src.config import get_settings
@@ -100,15 +97,18 @@ async def file_upload_read(
 
 
 def save_upload(filename: str, content: bytes) -> dict:
-    """Save uploaded file; return file_id metadata."""
+    """Save uploaded file; return unique file_id metadata."""
+    import uuid as _uuid
     uploads = _uploads_dir()
-    safe_name = Path(filename).name.replace("..", "").replace("/", "_")
-    dest = uploads / safe_name
+    safe_name = re.sub(r'[^\w.-]', '_', Path(filename).name)
+    unique_id = _uuid.uuid4().hex[:12]
+    dest = uploads / f"{unique_id}_{safe_name}"
     dest.write_bytes(content)
     return {
-        "file_id": dest.stem,
+        "file_id": unique_id,
         "filename": safe_name,
         "size_bytes": len(content),
+        "stored_as": dest.name,
     }
 
 

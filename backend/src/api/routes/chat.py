@@ -39,12 +39,8 @@ async def chat(
 ):
     engine = request.app.state.engine
     if not engine:
-        return ChatResponse(
-            conversation_id="error",
-            response="Engine not initialized. Check agent definitions.",
-            routed_to=None,
-            agent=None,
-        )
+        from fastapi import HTTPException
+        raise HTTPException(status_code=503, detail="Engine not initialized")
 
     # Process inline files — save to disk, get file_ids
     all_file_ids = list(body.file_ids or [])

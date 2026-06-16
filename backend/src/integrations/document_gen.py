@@ -8,16 +8,30 @@ import json
 import os
 from pathlib import Path
 
-from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.dml.color import RGBColor
-from pptx.enum.text import PP_ALIGN
-
-from docx import Document
-from docx.shared import Pt as DocxPt, RGBColor as DocxRGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-
 from src.config import get_settings
+
+# Lazy imports for pptx/docx — only loaded when create_pptx/create_docx called
+_PPTX = None
+_DOCX = None
+
+def _get_pptx():
+    global _PPTX
+    if _PPTX is None:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt
+        from pptx.dml.color import RGBColor
+        from pptx.enum.text import PP_ALIGN
+        _PPTX = (Presentation, Inches, Pt, RGBColor, PP_ALIGN)
+    return _PPTX
+
+def _get_docx():
+    global _DOCX
+    if _DOCX is None:
+        from docx import Document
+        from docx.shared import Pt as DocxPt, RGBColor as DocxRGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        _DOCX = (Document, DocxPt, DocxRGBColor, WD_ALIGN_PARAGRAPH)
+    return _DOCX
 
 
 def _outputs_dir() -> Path:
@@ -39,6 +53,7 @@ async def create_docx(
     workspace_id: str = "default",
 ) -> str:
     """Generate a professional Word document from markdown content."""
+    Document, DocxPt, DocxRGBColor, WD_ALIGN_PARAGRAPH = _get_docx()
     doc = Document()
     style = doc.styles["Normal"]
     font = style.font
@@ -120,7 +135,6 @@ THEMES = {
     "dark":   {"primary": (99,102,241), "accent": (129,140,248), "bg_dark": (15,23,42), "bg_light": (30,41,59), "text": (226,232,240), "white": (255,255,255)},
     "green":  {"primary": (5,150,105), "accent": (16,185,129), "bg_dark": (6,78,59), "bg_light": (236,253,245), "text": (26,26,26), "white": (255,255,255)},
     "warm":   {"primary": (234,88,12), "accent": (249,115,22), "bg_dark": (124,45,18), "bg_light": (255,247,237), "text": (26,26,26), "white": (255,255,255)},
-    "warm":   {"primary": 0xEA580C, "accent": 0xF97316, "bg_dark": 0x7C2D12, "bg_light": 0xFFF7ED, "text": 0x1A1A1A, "white": 0xFFFFFF},
 }
 
 
@@ -165,7 +179,7 @@ async def create_pptx(
     """
     colors = THEMES.get(theme, THEMES["blue"])
     trans = transition if transition in TRANSITIONS else "fade"
-
+    Presentation, Inches, Pt, RGBColor, PP_ALIGN = _get_pptx()
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)

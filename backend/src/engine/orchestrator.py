@@ -191,6 +191,8 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                     tid, result = item
                     results[tid] = result
                     task_map[tid].result = result
+                elif isinstance(item, BaseException):
+                    print(f"[dag] subtask {level[0] if len(level)==1 else 'parallel'} failed: {item}")
 
         return results
 
@@ -596,22 +598,27 @@ User request: {user_message}"""
                         yield {"type": "error", "message": "Could not classify your request. Please rephrase or try again."}
                     yield {"type": "done"}
                     return
-            if not agent_role:  # only route if intent fallback didn't already set agent
+            if not agent_role:
                 department = dept_result.target
                 yield {"type": "routing", "stage": "department", "department": department}
 
-                # Resolve department key
-                target_normalized = department.replace("_", "")
+                # Resolve department key: use normalize (preserves underscores)
                 _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
                 _dept_to_dir = getattr(self, "_dept_to_dir", {})
-                dept_key = _orch_to_dept.get(target_normalized, department)
+                dept_key = _orch_to_dept.get(self._normalize_department(department), department)
                 department = _dept_to_dir.get(dept_key, dept_key)
                 agent_result = await self._route_agent(user_message, dept_key)
                 if not agent_result:
-                    yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
-                    yield {"type": "done"}
-                    return
-                agent_role = agent_result.target
+                    # Fallback: if file context exists, try content_marketer
+                    if file_context_parts and self.agents.get("content_marketer"):
+                        agent_role = "content_marketer"
+                        department = "marketing"
+                    else:
+                        yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
+                        yield {"type": "done"}
+                        return
+                else:
+                    agent_role = agent_result.target
                 yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
 
         # Dynamic task decomposition

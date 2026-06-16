@@ -56,6 +56,11 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     }
   }, [initialConversationId, setConversationId]);
 
+  // ── Clear messages when switching conversations ──────────────
+  useEffect(() => {
+    setMessages([]);
+  }, [conversationId, setMessages]);
+
   // ── Load conversation history ────────────────────────────────
   const { data: historyMessages, isLoading: isLoadingHistory } =
     useConversationMessages(conversationId);

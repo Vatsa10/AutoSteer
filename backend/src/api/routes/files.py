@@ -25,20 +25,20 @@ async def upload_file(file: UploadFile = File(...)):
 @router.get("/files/download/{filename:path}")
 async def download_file(filename: str):
     """Download a generated file (docx, pptx, etc.)."""
-    uploads = _uploads_dir()
-    generated = uploads / "_generated"
+    uploads = _uploads_dir().resolve()
+    generated = (uploads / "_generated").resolve()
+    safe_name = Path(filename).name  # strip any path traversal
     # Try generated dir first, then uploads root
     for base in (generated, uploads):
-        filepath = base / filename
-        if filepath.is_file():
-            media = _media_type(filename)
+        filepath = (base / safe_name).resolve()
+        if str(filepath).startswith(str(base)) and filepath.is_file():
+            media = _media_type(safe_name)
             return FileResponse(
-                path=str(filepath),
-                filename=filename,
+                path=str(filepath), filename=safe_name,
                 media_type=media,
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
             )
-    raise HTTPException(status_code=404, detail=f"File '{filename}' not found")
+    raise HTTPException(status_code=404, detail=f"File not found")
 
 
 def _media_type(filename: str) -> str:
