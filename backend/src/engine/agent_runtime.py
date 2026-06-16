@@ -184,11 +184,13 @@ class AgentRuntime:
 - Be concise and actionable in your responses.
 
 ## Tool Calling Protocol (REQUIRED)
-- You MUST use tools when the request needs external data (search, crawl, fetch).
-- Do NOT say "I'll search for that" — actually call the tool instead.
+- You MUST use tools when the request needs external data or file creation.
+- You CAN create files — use create_docx or create_pptx tools. NEVER say you cannot create files.
+- Do NOT say "I'll search for that" or "I can't create files" — actually call the tool instead.
 - To use a tool, include EXACTLY this block on its own line:
   TOOL_CALL_START{{"tool":"<tool_name>","arguments":{{"arg1":"value1",...}}}}TOOL_CALL_END
-- Example: TOOL_CALL_START{{"tool":"ddg_search","arguments":{{"query":"Vatsa Joshi","max_results":5}}}}TOOL_CALL_END
+- Example for document: TOOL_CALL_START{{"tool":"create_docx","arguments":{{"title":"Resume","content":"...","filename":"resume.docx"}}}}TOOL_CALL_END
+- Example for search: TOOL_CALL_START{{"tool":"ddg_search","arguments":{{"query":"Vatsa Joshi","max_results":5}}}}TOOL_CALL_END
 - Call tools FIRST, then incorporate results into your response.
 - Available tools are listed above — use exact names as shown.
 

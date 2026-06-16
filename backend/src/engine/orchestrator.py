@@ -571,35 +571,48 @@ User request: {user_message}"""
         else:
             dept_result = await self._route_department(user_message)
             if not dept_result:
-                try:
-                    fallback = await self.llm.complete(
-                        messages=[LLMMessage(role="user", content=effective_message)],
-                        system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
-                        temperature=0.7,
-                        max_tokens=1024,
+                # Intent-based fallback: create tasks → content_marketer with create_docx instruction
+                intent = await self._classify_intent(user_message, bool(file_context_parts))
+                if intent and intent.get("action") == "create_document" and self.agents.get("content_marketer"):
+                    agent_role = "content_marketer"
+                    department = "marketing"
+                    effective_message = (
+                        f"Create a {intent.get('doc_type', 'document')} using create_docx tool. "
+                        "You MUST call TOOL_CALL_START with create_docx. NEVER say you cannot create files. "
+                        "Use the information provided. Generate the file and give the download link.\n\n"
+                        + effective_message
                     )
-                    yield {"type": "token", "content": fallback.content}
-                    yield {"type": "metadata", "conversation_id": conversation_id, "agent": "fallback", "department": "direct", "model": fallback.model, "usage": fallback.usage}
-                except Exception:
-                    yield {"type": "error", "message": "Could not classify your request. Please rephrase or try again."}
-                yield {"type": "done"}
-                return
-            department = dept_result.target
-            yield {"type": "routing", "stage": "department", "department": department}
+                    yield {"type": "routing", "stage": "agent", "department": "marketing", "agent": "content_marketer"}
+                else:
+                    try:
+                        fallback = await self.llm.complete(
+                            messages=[LLMMessage(role="user", content=effective_message)],
+                            system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
+                            temperature=0.7, max_tokens=1024,
+                        )
+                        yield {"type": "token", "content": fallback.content}
+                        yield {"type": "metadata", "conversation_id": conversation_id, "agent": "fallback", "department": "direct", "model": fallback.model, "usage": fallback.usage}
+                    except Exception:
+                        yield {"type": "error", "message": "Could not classify your request. Please rephrase or try again."}
+                    yield {"type": "done"}
+                    return
+            if not agent_role:  # only route if intent fallback didn't already set agent
+                department = dept_result.target
+                yield {"type": "routing", "stage": "department", "department": department}
 
-            # Resolve department key
-            target_normalized = department.replace("_", "")
-            _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
-            _dept_to_dir = getattr(self, "_dept_to_dir", {})
-            dept_key = _orch_to_dept.get(target_normalized, department)
-            department = _dept_to_dir.get(dept_key, dept_key)
-            agent_result = await self._route_agent(user_message, dept_key)
-            if not agent_result:
-                yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
-                yield {"type": "done"}
-                return
-            agent_role = agent_result.target
-            yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+                # Resolve department key
+                target_normalized = department.replace("_", "")
+                _orch_to_dept = getattr(self, "_orchestrator_to_dept", {})
+                _dept_to_dir = getattr(self, "_dept_to_dir", {})
+                dept_key = _orch_to_dept.get(target_normalized, department)
+                department = _dept_to_dir.get(dept_key, dept_key)
+                agent_result = await self._route_agent(user_message, dept_key)
+                if not agent_result:
+                    yield {"type": "error", "message": f"Routed to {department}, but no agent matched."}
+                    yield {"type": "done"}
+                    return
+                agent_role = agent_result.target
+                yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
 
         # Dynamic task decomposition
         decomp = await self._decompose_and_execute(
