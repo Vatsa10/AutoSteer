@@ -38,6 +38,7 @@ from src.integrations.hubspot import hubspot_note, hubspot_read
 from src.integrations.intercom import intercom_read, intercom_reply_draft
 from src.integrations.lighthouse import lighthouse_audit
 from src.integrations.linear import linear_create, linear_read
+from src.integrations.local_llm import local_complete
 from src.integrations.notion import notion_export
 from src.integrations.policy import policy_doc_generate
 from src.integrations.posthog import posthog_read
@@ -47,6 +48,7 @@ from src.integrations.search import web_search
 from src.integrations.sentry import sentry_read
 from src.integrations.slack import slack_post, slack_read
 from src.integrations.stripe_metrics import stripe_metrics_read
+from src.integrations.tts import speak_text
 from src.integrations.typeform import typeform_create
 from src.integrations.url_fetch import url_fetch
 from src.integrations.wandb import wandb_read
@@ -513,6 +515,14 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
     registry.register("create_pptx", _ctx_wrap(create_pptx), _schema(
         "create_pptx", "Generate a professional PowerPoint presentation (.pptx).",
         {"title": {"type": "string"}, "slides": {"type": "string"}, "filename": {"type": "string"}},
+    ))
+    registry.register("speak_text", _ctx_wrap(speak_text), _schema(
+        "speak_text", "Convert text to speech audio (local Kokoro or OpenAI TTS).",
+        {"text": {"type": "string"}, "voice": {"type": "string"}, "output_filename": {"type": "string"}, "provider": {"type": "string"}},
+    ))
+    registry.register("local_complete", _ctx_wrap(local_complete), _schema(
+        "local_complete", "Run a completion on the local LLM (llama.cpp). Offline/air-gapped.",
+        {"prompt": {"type": "string"}, "max_tokens": {"type": "integer"}, "temperature": {"type": "number"}},
     ))
     return registry
 

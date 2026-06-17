@@ -32,7 +32,7 @@ class LLMStreamChunk:
 class LLMProvider:
     def __init__(
         self,
-        default_model: str = "claude-sonnet-4-6",
+        default_model: str = "gpt-4o-mini",
         anthropic_api_key: str = "",
         openai_api_key: str = "",
     ):

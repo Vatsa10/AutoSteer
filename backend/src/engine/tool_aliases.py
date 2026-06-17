@@ -209,6 +209,8 @@ TOOL_CATALOG: dict[str, dict] = {
     "carta_read": {"tier": ToolTier.PLANNED, "provider": "carta", "description": "Cap table summary"},
     "create_docx": {"tier": ToolTier.LIVE, "provider": None, "description": "Generate professional Word documents from markdown"},
     "create_pptx": {"tier": ToolTier.LIVE, "provider": None, "description": "Generate professional PowerPoint presentations"},
+    "speak_text": {"tier": ToolTier.BETA, "provider": "kokoro", "description": "Convert text to speech audio (local Kokoro or OpenAI)"},
+    "local_complete": {"tier": ToolTier.BETA, "provider": "llama_cpp", "description": "Local LLM completion via llama.cpp (offline)"},
 }
 
 

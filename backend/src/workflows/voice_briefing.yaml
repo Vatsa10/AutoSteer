@@ -1,0 +1,36 @@
+# Raah Workflow — Research + voice briefing
+name: voice_briefing
+description: "Research a topic and produce an audio briefing."
+
+inputs:
+  topic:
+    type: string
+    required: true
+
+steps:
+  - id: research
+    type: agent_call
+    agent: web_researcher
+    description: "Find the latest on this topic."
+    dependencies: []
+    config:
+      max_sources: 3
+
+  - id: summarize
+    type: agent_call
+    agent: content_marketer
+    description: "Condense the research into a 2-minute spoken briefing script."
+    dependencies: [research]
+    config:
+      tone: conversational
+      max_length: 600   # ~2 minutes of speech
+
+  - id: speak
+    type: tool_call
+    tool: speak_text
+    description: "Convert the briefing to speech audio."
+    dependencies: [summarize]
+    config:
+      provider: kokoro   # or "openai"
+      voice: af_heart
+      output_filename: briefing.wav

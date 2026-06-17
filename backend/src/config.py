@@ -13,7 +13,7 @@ class Settings(BaseSettings):
 
     # LLM
     default_llm_provider: str = "openai"
-    default_llm_model: str = "gpt-4o"
+    default_llm_model: str = "gpt-4o-mini"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
