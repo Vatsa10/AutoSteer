@@ -1,20 +1,13 @@
 "use client";
 
-import { useEffect, useState, memo, type ReactNode } from "react";
+import { useState, memo, type ReactNode } from "react";
 import { Plus, ArrowUpRight, Menu, X } from "lucide-react";
-import { ClerkProvider, SignInButton, SignUpButton, Show, useUser } from "@clerk/nextjs";
+import { ClerkProvider, SignInButton, SignUpButton, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, MotionConfig } from "motion/react";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const GITHUB = "https://github.com/vatsa10/autosteer";
-
-function RedirectIfSignedIn() {
-  const { isSignedIn } = useUser();
-  const router = useRouter();
-  useEffect(() => { if (isSignedIn) router.push("/chat"); }, [isSignedIn, router]);
-  return null;
-}
 
 // ── Primitives ───────────────────────────────────────────────
 function Crosshair({ className = "" }: { className?: string }) {
@@ -22,6 +15,15 @@ function Crosshair({ className = "" }: { className?: string }) {
 }
 
 function HazardButton({ children }: { children: ReactNode }) {
+  const { isSignedIn } = useUser();
+  const router = useRouter();
+  if (isSignedIn) {
+    return (
+      <button onClick={() => router.push("/chat")} className="font-tele text-xs bg-[#e61919] text-[#f4f4f0] px-5 py-3 transition-transform active:scale-[0.98] hover:bg-[#0a0a0a]">
+        [ {children} ]
+      </button>
+    );
+  }
   return (
     <SignUpButton mode="modal">
       <button className="font-tele text-xs bg-[#e61919] text-[#f4f4f0] px-5 py-3 transition-transform active:scale-[0.98] hover:bg-[#0a0a0a]">
@@ -131,6 +133,8 @@ function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }
 
 // ── Nav ──────────────────────────────────────────────────────
 function Nav() {
+  const { isSignedIn } = useUser();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   return (
     <nav className="fixed inset-x-0 top-0 z-50 h-[68px] border-b-2 border-[#0a0a0a] bg-[#f4f4f0]">
@@ -143,10 +147,16 @@ function Nav() {
           <a href={GITHUB} target="_blank" rel="noopener" className="font-tele text-xs text-ink/60 hover:text-[#0a0a0a] transition-colors flex items-center gap-1">
             GITHUB <ArrowUpRight className="w-3 h-3" strokeWidth={2} />
           </a>
-          <SignInButton mode="modal">
-            <button className="font-tele text-xs hover:text-[#e61919] transition-colors">SIGN IN</button>
-          </SignInButton>
-          <HazardButton>GET STARTED</HazardButton>
+          {isSignedIn ? (
+            <button onClick={() => router.push("/chat")} className="font-tele text-xs hover:text-[#e61919] transition-colors">
+              DASHBOARD
+            </button>
+          ) : (
+            <SignInButton mode="modal">
+              <button className="font-tele text-xs hover:text-[#e61919] transition-colors">SIGN IN</button>
+            </SignInButton>
+          )}
+          <HazardButton>{isSignedIn ? "OPEN CHAT" : "GET STARTED"}</HazardButton>
         </div>
 
         <button className="md:hidden" onClick={() => setOpen((v) => !v)} aria-label="Menu">
@@ -157,8 +167,12 @@ function Nav() {
       {open && (
         <div className="md:hidden border-b-2 border-[#0a0a0a] bg-[#f4f4f0] px-6 py-5 flex flex-col gap-4">
           <a href={GITHUB} target="_blank" rel="noopener" className="font-tele text-xs text-ink/60">GITHUB ›</a>
-          <SignInButton mode="modal"><button className="font-tele text-xs text-left">SIGN IN</button></SignInButton>
-          <HazardButton>GET STARTED</HazardButton>
+          {isSignedIn ? (
+            <button onClick={() => router.push("/chat")} className="font-tele text-xs text-left">DASHBOARD</button>
+          ) : (
+            <SignInButton mode="modal"><button className="font-tele text-xs text-left">SIGN IN</button></SignInButton>
+          )}
+          <HazardButton>{isSignedIn ? "OPEN CHAT" : "GET STARTED"}</HazardButton>
         </div>
       )}
     </nav>
@@ -421,9 +435,7 @@ function Footer() {
 export default function LandingPage() {
   return (
     <ClerkProvider>
-      <RedirectIfSignedIn />
-      <Show when="signed-out">
-        <MotionConfig reducedMotion="user">
+      <MotionConfig reducedMotion="user">
           <div className="grain bg-[#f4f4f0] text-[#0a0a0a]">
             <Nav />
             <Hero />
@@ -435,7 +447,6 @@ export default function LandingPage() {
             <Footer />
           </div>
         </MotionConfig>
-      </Show>
     </ClerkProvider>
   );
 }
