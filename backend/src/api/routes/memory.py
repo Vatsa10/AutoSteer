@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +30,11 @@ class SaveDocumentsBody(BaseModel):
 
 
 @router.get("/memory")
-async def get_memory(request: Request, session: AsyncSession = Depends(get_db)):
+async def get_memory(
+    request: Request,
+    workspace_id: str = Query(default="default"),
+    session: AsyncSession = Depends(get_db),
+):
     facts = []
     documents = []
     summary = ""
@@ -43,7 +47,12 @@ async def get_memory(request: Request, session: AsyncSession = Depends(get_db)):
     except Exception:
         pass
     try:
-        r = await session.execute(select(SharedState).where(SharedState.key == DOCS_KEY))
+        r = await session.execute(
+            select(SharedState).where(
+                SharedState.workspace_id == workspace_id,
+                SharedState.key == DOCS_KEY,
+            )
+        )
         row = r.scalar_one_or_none()
         if row and row.value:
             documents = row.value.get("documents", [])
@@ -54,7 +63,11 @@ async def get_memory(request: Request, session: AsyncSession = Depends(get_db)):
 
 
 @router.post("/memory/facts")
-async def add_fact(body: FactBody, request: Request, session: AsyncSession = Depends(get_db)):
+async def add_fact(
+    body: FactBody,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     import uuid
     from datetime import datetime, timezone
     fact = MemoryFact(
@@ -70,13 +83,22 @@ async def add_fact(body: FactBody, request: Request, session: AsyncSession = Dep
 
 
 @router.delete("/memory/facts/{fact_id}")
-async def delete_fact(fact_id: str, request: Request, session: AsyncSession = Depends(get_db)):
+async def delete_fact(
+    fact_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     await session.execute(delete(MemoryFact).where(MemoryFact.id == fact_id))
     return {"ok": True}
 
 
 @router.put("/memory/facts/{fact_id}")
-async def update_fact(fact_id: str, body: FactBody, request: Request, session: AsyncSession = Depends(get_db)):
+async def update_fact(
+    fact_id: str,
+    body: FactBody,
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
     r = await session.execute(select(MemoryFact).where(MemoryFact.id == fact_id))
     fact = r.scalar_one_or_none()
     if fact:
@@ -88,14 +110,30 @@ async def update_fact(fact_id: str, body: FactBody, request: Request, session: A
 
 
 @router.put("/memory/documents")
-async def save_documents(body: SaveDocumentsBody, request: Request, session: AsyncSession = Depends(get_db)):
+async def save_documents(
+    body: SaveDocumentsBody,
+    request: Request,
+    workspace_id: str = Query(default="default"),
+    session: AsyncSession = Depends(get_db),
+):
     from datetime import datetime, timezone
-    r = await session.execute(select(SharedState).where(SharedState.key == DOCS_KEY))
+    r = await session.execute(
+        select(SharedState).where(
+            SharedState.workspace_id == workspace_id,
+            SharedState.key == DOCS_KEY,
+        )
+    )
     row = r.scalar_one_or_none()
     val = {"documents": body.documents, "summary": body.summary}
     if row:
         row.value = val
         row.updated_at = datetime.now(timezone.utc)
     else:
-        session.add(SharedState(key=DOCS_KEY, value=val, owner="user", updated_at=datetime.now(timezone.utc)))
+        session.add(SharedState(
+            workspace_id=workspace_id,
+            key=DOCS_KEY,
+            value=val,
+            owner="user",
+            updated_at=datetime.now(timezone.utc),
+        ))
     return {"ok": True}

@@ -1,9 +1,13 @@
+import logging
 from collections.abc import AsyncGenerator
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from .config import get_settings
 from .models.base import Base
+
+logger = logging.getLogger(__name__)
 
 _db_engine = None
 _db_session_factory = None
@@ -37,10 +41,71 @@ def get_session_factory():
 
 
 async def init_db():
-    """Create all tables. Call once at startup."""
+    """Create all tables. Call once at startup.
+
+    Handles missing pgvector extension gracefully:
+    - CREATE EXTENSION vector runs in its own transaction; failure is non-fatal.
+    - If ``create_all`` fails (likely because of the Vector column type on
+      ``memory_embeddings``), the remaining tables are created individually.
+    - The module-level ``HAS_VECTOR_DB`` flag on ``memory_embedding`` is set
+      to ``True`` only when the full schema (including ``memory_embeddings``)
+      is created successfully.
+    """
     engine = get_engine()
+
+    # --- Phase 1: enable pgvector extension (best-effort) -------------------
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+            logger.info("pgvector extension enabled on the database server.")
+    except Exception as exc:
+        logger.warning(
+            "pgvector extension is not available (%s). "
+            "Vector search will be degraded until pgvector is installed.",
+            exc,
+        )
+
+    # --- Phase 2: create tables ---------------------------------------------
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        full_success = True
+        try:
+            await conn.run_sync(lambda c: Base.metadata.create_all(c))
+            logger.info("All database tables created successfully.")
+        except Exception as exc:
+            full_success = False
+            logger.warning(
+                "Could not create all tables in one pass (%s). "
+                "Attempting to create each table individually, "
+                "skipping memory_embeddings which depends on pgvector.",
+                exc,
+            )
+            for table in Base.metadata.sorted_tables:
+                if table.name == "memory_embeddings":
+                    logger.info(
+                        "Skipping memory_embeddings table (requires pgvector)."
+                    )
+                    continue
+                try:
+                    # Use ``t=table`` default arg to avoid late-binding closure bug.
+                    await conn.run_sync(
+                        lambda c, t=table: t.create(c, checkfirst=True)
+                    )
+                    logger.info("Created table: %s", table.name)
+                except Exception as tbl_exc:
+                    logger.error("Failed to create table %s: %s", table.name, tbl_exc)
+
+        # --- Phase 3: signal vector-search availability ----------------------
+        import src.models.memory_embedding as _mem_emb_mod
+
+        if full_success:
+            _mem_emb_mod.HAS_VECTOR_DB = True
+            logger.info("Vector search capabilities are active.")
+        else:
+            _mem_emb_mod.HAS_VECTOR_DB = False
+            logger.info(
+                "Vector search is disabled. "
+                "The memory_embeddings table was not created (requires pgvector)."
+            )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

@@ -83,6 +83,11 @@ class MemoryManager:
         """Semantic search over conversation history using pgvector."""
         if not self.session:
             return []
+        from src.models.memory_embedding import HAS_VECTOR_DB
+
+        if not HAS_VECTOR_DB:
+            return []
+
         try:
             embedding = await self._embed(query)
             from sqlalchemy import text
@@ -108,15 +113,18 @@ class MemoryManager:
         """Generate and store embedding for a message."""
         if not self.session or len(content) < 20:
             return
+        from src.models.memory_embedding import HAS_VECTOR_DB
+        if not HAS_VECTOR_DB:
+            return
         try:
             embedding = await self._embed(content[:2000])
-            from src.models.memory_embedding import MemoryEmbedding
+            from src.models.memory_embedding import MemoryEmbedding, serialize_embedding
             emb = MemoryEmbedding(
                 id=uuid.uuid4().hex[:16],
                 conversation_id=self.conversation_id,
                 content=content[:2000],
                 role=role,
-                embedding=embedding,
+                embedding=serialize_embedding(embedding),
             )
             self.session.add(emb)
             await self.session.commit()

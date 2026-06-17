@@ -79,7 +79,7 @@ export function useSendMessage() {
       const headers = await authHeaders();
       headers["Content-Type"] = "application/json";
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}\api\chat`,
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`,
         {
           method: "POST",
           headers,

@@ -490,6 +490,7 @@ User request: {user_message}"""
         async for event in self._process_impl(
             user_message=user_message, conversation_id=conversation_id,
             target_agent=target_agent, session=session, file_ids=file_ids,
+            preferences=preferences,
         ):
             if event["type"] == "token":
                 result["response"] += event.get("content", "")
@@ -534,12 +535,13 @@ User request: {user_message}"""
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
         preferences: dict | None = None,
+        workspace_id: str = "default",
     ) -> AsyncGenerator[dict, None]:
         """WebSocket endpoint — delegates to _process_impl."""
         async for event in self._process_impl(
             user_message=user_message, conversation_id=conversation_id,
             target_agent=target_agent, session=session, file_ids=file_ids,
-            preferences=preferences,
+            preferences=preferences, workspace_id=workspace_id,
         ):
             yield event
 
@@ -551,6 +553,7 @@ User request: {user_message}"""
         session: AsyncSession | None = None,
         file_ids: list[str] | None = None,
         preferences: dict | None = None,
+        workspace_id: str = "default",
     ) -> AsyncGenerator[dict, None]:
         """Single processing implementation — used by both REST and WS."""
         conversation_id = conversation_id or str(uuid.uuid4())
@@ -580,7 +583,7 @@ User request: {user_message}"""
             try:
                 from sqlalchemy import select as _sa_ss
                 from src.models.shared_state import SharedState as _SSs
-                r = await session.execute(_sa_ss(_SSs).where(_SSs.key == f"conv:{conversation_id}:files"))
+                r = await session.execute(_sa_ss(_SSs).where(_SSs.workspace_id == workspace_id, _SSs.key == f"conv:{conversation_id}:files"))
                 prev = r.scalar_one_or_none()
                 if prev and prev.value:
                     for fd in prev.value.get("files", []):
@@ -622,7 +625,7 @@ User request: {user_message}"""
                 try:
                     from sqlalchemy import select as _sa_sf
                     existing = await session.execute(
-                        _sa_sf(_SSs).where(_SSs.key == f"conv:{conversation_id}:files")
+                        _sa_sf(_SSs).where(_SSs.workspace_id == workspace_id, _SSs.key == f"conv:{conversation_id}:files")
                     )
                     prev_state = existing.scalar_one_or_none()
                     all_saved = (prev_state.value.get("files", []) if prev_state else []) + new_files
@@ -631,6 +634,7 @@ User request: {user_message}"""
                         prev_state.updated_at = datetime.now(timezone.utc)
                     else:
                         session.add(_SSs(
+                            workspace_id=workspace_id,
                             key=f"conv:{conversation_id}:files",
                             value={"files": all_saved},
                             owner="orchestrator",
@@ -761,7 +765,7 @@ User request: {user_message}"""
         yield {"type": "routing", "stage": "processing"}
 
         agent_runtime = agent_template.copy_for_request()
-        set_tool_context(session=session, workspace_id="default")
+        set_tool_context(session=session, workspace_id=workspace_id)
         full_content = ""
         model_name = ""
         usage = {}
@@ -778,7 +782,7 @@ User request: {user_message}"""
                     agent_runtime.load_history([{"message_type": m.message_type.value if hasattr(m.message_type, "value") else str(m.message_type), "content": m.content} for m in pp])
                 # Restore document context from previous turns
                 from src.models.shared_state import SharedState as _SSx
-                r2 = await session.execute(_sa_s2(_SSx).where(_SSx.key == f"conv:{conversation_id}:files"))
+                r2 = await session.execute(_sa_s2(_SSx).where(_SSx.workspace_id == workspace_id, _SSx.key == f"conv:{conversation_id}:files"))
                 ss = r2.scalar_one_or_none()
                 if ss and ss.value:
                     for fd in ss.value.get("files", []):
@@ -812,6 +816,7 @@ User request: {user_message}"""
                 if conv is None:
                     conv = Conversation(
                         id=conversation_id,
+                        workspace_id=workspace_id,
                         title=user_message[:500],
                         status="active",
                         created_at=now,
@@ -823,6 +828,7 @@ User request: {user_message}"""
 
                 session.add(MessageModel(
                     id=str(uuid.uuid4()),
+                    workspace_id=workspace_id,
                     conversation_id=conversation_id,
                     from_agent="user",
                     to_agent=agent_role or "unknown",
@@ -834,6 +840,7 @@ User request: {user_message}"""
                 ))
                 session.add(MessageModel(
                     id=str(uuid.uuid4()),
+                    workspace_id=workspace_id,
                     conversation_id=conversation_id,
                     from_agent=agent_role or "unknown",
                     to_agent="user",
