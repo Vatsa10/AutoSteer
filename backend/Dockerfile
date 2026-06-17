@@ -1,5 +1,5 @@
 # =============================================================================
-# AutoSteer Backend — Production Dockerfile
+# Raah Backend — Production Dockerfile
 # Uses multi-stage build to minimize final image size.
 # =============================================================================
 
@@ -41,10 +41,10 @@ ENV PATH=/root/.local/bin:$PATH
 COPY . .
 
 # Create a non-root user and switch to it for security.
-RUN addgroup --system --gid 1001 autosteer && \
-    adduser --system --uid 1001 --gid 1001 autosteer && \
-    chown -R autosteer:autosteer /app
-USER autosteer
+RUN addgroup --system --gid 1001 Raah && \
+    adduser --system --uid 1001 --gid 1001 Raah && \
+    chown -R Raah:Raah /app
+USER Raah
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl --fail http://localhost:8000/api/health || exit 1

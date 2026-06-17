@@ -17,7 +17,7 @@ async def url_fetch(url: str, max_chars: int = 8000) -> str:
     async with httpx.AsyncClient(
         timeout=30.0,
         follow_redirects=True,
-        headers={"User-Agent": "AutoSteer/0.1 (+https://github.com/autosteer)"},
+        headers={"User-Agent": "Raah/0.1 (+https://github.com/Raah)"},
     ) as client:
         resp = await client.get(url)
         resp.raise_for_status()

@@ -50,7 +50,7 @@ async def websocket_chat(websocket: WebSocket):
             # WebSocket auth check on first message
             if not getattr(websocket, "_authed", False):
                 _ws_settings = get_settings()
-                _ws_api_key = getattr(_ws_settings, "autosteer_api_key", "") or ""
+                _ws_api_key = getattr(_ws_settings, "raah_api_key", "") or ""
                 if _ws_api_key:
                     msg_key = payload.get("api_key", "")
                     if not msg_key or msg_key != _ws_api_key:

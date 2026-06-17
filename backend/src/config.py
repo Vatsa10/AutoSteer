@@ -4,7 +4,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    app_name: str = "AutoSteer"
+    app_name: str = "Raah"
     debug: bool = False
 
     # Database
@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     max_parallel: int = 3
 
     # Auth
-    autosteer_api_key: str = ""
+    Raah_api_key: str = ""
     clerk_secret_key: str = ""
     clerk_publishable_key: str = ""
 

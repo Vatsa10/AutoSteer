@@ -1,7 +1,7 @@
 """
 Authentication: API key and optional Clerk workspace auth.
 
-- AUTOSTEER_API_KEY: protects /api/* with X-API-Key header
+- raah_api_key: protects /api/* with X-API-Key header
 - CLERK_SECRET_KEY: validates Clerk JWT; sets request.state.workspace_id from org claim
 """
 
@@ -115,7 +115,7 @@ def get_workspace_id(request: Request) -> str:
 def setup_auth(app: FastAPI) -> bool:
     """Configure auth middleware. Returns True if API key auth is enabled."""
     settings = get_settings()
-    api_key = getattr(settings, "autosteer_api_key", "") or ""
+    api_key = getattr(settings, "raah_api_key", "") or ""
     clerk_key = getattr(settings, "clerk_secret_key", "") or ""
 
     if clerk_key:

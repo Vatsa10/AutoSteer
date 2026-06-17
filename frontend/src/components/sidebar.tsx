@@ -93,7 +93,7 @@ export function Sidebar({
             </div>
             <div>
               <h1 className="text-sm font-bold text-slate-900 leading-tight">
-                AutoSteer
+                Raah
               </h1>
             </div>
           </Link>

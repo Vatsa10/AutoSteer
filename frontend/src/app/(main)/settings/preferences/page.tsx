@@ -12,7 +12,7 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("autosteer_preferences");
+    const stored = localStorage.getItem("raah_preferences");
     if (stored) {
       try {
         const p = JSON.parse(stored);
@@ -26,7 +26,7 @@ export default function PreferencesPage() {
   async function handleSave() {
     setSaving(true);
     const prefs = { about, responseStyle, defaultAgent };
-    localStorage.setItem("autosteer_preferences", JSON.stringify(prefs));
+    localStorage.setItem("raah_preferences", JSON.stringify(prefs));
     await new Promise((r) => setTimeout(r, 300));
     setSaving(false);
     addToast("Preferences saved", "success");
@@ -37,17 +37,17 @@ export default function PreferencesPage() {
       <div>
         <h2 className="text-base font-semibold text-slate-800 mb-1">Preferences</h2>
         <p className="text-sm text-slate-500">
-          What AutoSteer knows about you and how it should respond.
+          What Raah knows about you and how it should respond.
         </p>
       </div>
 
       <section className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            What should AutoSteer know about you?
+            What should Raah know about you?
           </label>
           <p className="text-xs text-slate-400 mb-2">
-            Tell AutoSteer about yourself — your role, projects, preferences. This context is included in every conversation to give you better answers.
+            Tell Raah about yourself — your role, projects, preferences. This context is included in every conversation to give you better answers.
           </p>
           <textarea
             value={about}
@@ -60,7 +60,7 @@ export default function PreferencesPage() {
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            How should AutoSteer respond?
+            How should Raah respond?
           </label>
           <p className="text-xs text-slate-400 mb-2">
             Set your preferred communication style, detail level, and any constraints.
@@ -79,7 +79,7 @@ export default function PreferencesPage() {
             Default routing preference
           </label>
           <p className="text-xs text-slate-400 mb-2">
-            When AutoSteer routes your request, prefer this mode.
+            When Raah routes your request, prefer this mode.
           </p>
           <select
             value={defaultAgent}

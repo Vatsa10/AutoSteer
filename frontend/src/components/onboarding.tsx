@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ArrowRight, Upload, Search, FileText, Check, X, FileText as FileIcon, Loader2 } from "lucide-react";
+import { ArrowRight, Upload, Search, FileText, Check, Loader2 } from "lucide-react";
 import { uploadFile } from "@/lib/api";
 import { useToastStore } from "@/lib/store";
 
@@ -14,17 +14,17 @@ const STEPS = [
     icon: Search,
     question: "What kind of work do you do?",
     placeholder: "I'm a product manager at a SaaS startup...",
-    hint: "This helps AutoSteer pick the right agents and tone for your work.",
+    hint: "This helps Raah pick the right agents and tone for your work.",
   },
   {
     icon: Upload,
     question: "Try uploading a document",
-    description: "AutoSteer can read PDFs, Word docs, and images. Upload a file now.",
+    description: "Raah can read PDFs, Word docs, and images. Upload a file now.",
   },
   {
     icon: FileText,
     question: "Try a multi-agent task",
-    description: "AutoSteer uses multiple agents in parallel for complex tasks.",
+    description: "Raah uses multiple agents in parallel for complex tasks.",
     suggestions: [
       "Research quantum computing trends and create a report",
       "Analyze my competitor's website and draft a battle card",
@@ -43,7 +43,7 @@ export function Onboarding({ onComplete }: Props) {
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
-    if (localStorage.getItem("autosteer_onboarded")) setDone(true);
+    if (localStorage.getItem("raah_onboarded")) setDone(true);
   }, []);
 
   if (done) return null;
@@ -63,15 +63,15 @@ export function Onboarding({ onComplete }: Props) {
   }
 
   function finish() {
-    localStorage.setItem("autosteer_onboarded", "true");
+    localStorage.setItem("raah_onboarded", "true");
     if (role.trim()) {
       let prefs: Record<string, string> = {};
       try {
-        const existing = localStorage.getItem("autosteer_preferences");
+        const existing = localStorage.getItem("raah_preferences");
         prefs = existing ? JSON.parse(existing) : {};
       } catch { prefs = {}; }
       prefs.about = `The user described their work as: ${role.trim()}`;
-      localStorage.setItem("autosteer_preferences", JSON.stringify(prefs));
+      localStorage.setItem("raah_preferences", JSON.stringify(prefs));
     }
     setDone(true);
     onComplete({ role: role.trim(), about: role.trim() ? role : "" });
@@ -83,14 +83,6 @@ export function Onboarding({ onComplete }: Props) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full p-8 relative">
-        {/* Close */}
-        <button
-          onClick={() => setDone(true)}
-          className="absolute top-4 right-4 p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
         {/* Progress */}
         <div className="flex items-center justify-center gap-1.5 mb-8">
           {STEPS.map((_, i) => (
@@ -171,7 +163,7 @@ export function Onboarding({ onComplete }: Props) {
                 <button
                   key={i}
                   onClick={() => {
-                    sessionStorage.setItem("autosteer_template_prompt", sg);
+                    sessionStorage.setItem("raah_template_prompt", sg);
                     finish();
                   }}
                   className="w-full text-left text-sm text-slate-600 hover:text-blue-700 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg px-4 py-3 transition-all"
@@ -209,11 +201,6 @@ export function Onboarding({ onComplete }: Props) {
           )}
         </div>
 
-        <div className="text-center mt-4">
-          <button onClick={() => setDone(true)} className="text-xs text-slate-400 hover:text-slate-600">
-            Skip onboarding
-          </button>
-        </div>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 """
-Tool execution engine for AutoSteer agents.
+Tool execution engine for Raah agents.
 
 Provides ToolRegistry with YAML alias resolution, tier metadata, and per-agent filtering.
 """

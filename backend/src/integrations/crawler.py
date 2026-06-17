@@ -22,7 +22,7 @@ try:
 except ImportError:
     PdfReader = None  # type: ignore[assignment]
 
-_USER_AGENT = "AutoSteer/0.1 (+https://github.com/autosteer)"
+_USER_AGENT = "Raah/0.1 (+https://github.com/Raah)"
 
 
 async def web_crawl(

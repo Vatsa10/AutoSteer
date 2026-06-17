@@ -12,7 +12,7 @@ const archivoBlack = Archivo_Black({
 });
 
 export const metadata: Metadata = {
-  title: "AutoSteer",
+  title: "Raah",
   description: "Multi-agent orchestration that routes every request through the right AI specialist — 43 agents across 12 departments",
 };
 

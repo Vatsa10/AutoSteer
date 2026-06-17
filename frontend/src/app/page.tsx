@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, MotionConfig } from "motion/react";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
-const GITHUB = "https://github.com/vatsa10/autosteer";
+const GITHUB = "https://github.com/vatsa10/raah";
 
 // ── Primitives ───────────────────────────────────────────────
 function Crosshair({ className = "" }: { className?: string }) {
@@ -140,7 +140,7 @@ function Nav() {
     <nav className="fixed inset-x-0 top-0 z-50 h-[68px] border-b-2 border-[#0a0a0a] bg-[#f4f4f0]">
       <div className="max-w-[1400px] mx-auto h-full px-6 flex items-center justify-between">
         <span className="font-tele text-sm font-bold tracking-[0.12em]">
-          AUTOSTEER<sup className="text-[0.6em] align-super">®</sup>
+          RAAH<sup className="text-[0.6em] align-super">®</sup>
         </span>
 
         <div className="hidden md:flex items-center gap-6">
@@ -423,7 +423,7 @@ function Footer() {
   return (
     <footer className="max-w-[1400px] mx-auto px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
       <span className="font-tele text-xs font-bold tracking-[0.12em]">
-        AUTOSTEER<sup className="text-[0.6em] align-super">®</sup>
+        RAAH<sup className="text-[0.6em] align-super">®</sup>
       </span>
       <p className="font-tele text-[10px] text-ink/50 sm:text-center">FASTAPI · NEXT.JS · POSTGRESQL · REDIS</p>
       <p className="font-tele text-[10px] text-ink/50 sm:text-right">REV 2.6 / © 2026</p>
