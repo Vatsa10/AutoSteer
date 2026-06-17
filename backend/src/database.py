@@ -66,8 +66,8 @@ async def init_db():
         )
 
     # --- Phase 2: create tables ---------------------------------------------
+    full_success = True
     async with engine.begin() as conn:
-        full_success = True
         try:
             await conn.run_sync(lambda c: Base.metadata.create_all(c))
             logger.info("All database tables created successfully.")
@@ -75,37 +75,39 @@ async def init_db():
             full_success = False
             logger.warning(
                 "Could not create all tables in one pass (%s). "
-                "Attempting to create each table individually, "
+                "Retrying each table in a fresh transaction, "
                 "skipping memory_embeddings which depends on pgvector.",
                 exc,
             )
-            for table in Base.metadata.sorted_tables:
-                if table.name == "memory_embeddings":
-                    logger.info(
-                        "Skipping memory_embeddings table (requires pgvector)."
-                    )
-                    continue
-                try:
-                    # Use ``t=table`` default arg to avoid late-binding closure bug.
+
+    # If the first pass failed, create tables individually in fresh transactions
+    # so the poisoned transaction from create_all does not affect subsequent DDL.
+    if not full_success:
+        for table in Base.metadata.sorted_tables:
+            if table.name == "memory_embeddings":
+                logger.info("Skipping memory_embeddings table (requires pgvector).")
+                continue
+            try:
+                async with engine.begin() as conn:
                     await conn.run_sync(
                         lambda c, t=table: t.create(c, checkfirst=True)
                     )
                     logger.info("Created table: %s", table.name)
-                except Exception as tbl_exc:
-                    logger.error("Failed to create table %s: %s", table.name, tbl_exc)
+            except Exception as tbl_exc:
+                logger.error("Failed to create table %s: %s", table.name, tbl_exc)
 
-        # --- Phase 3: signal vector-search availability ----------------------
-        import src.models.memory_embedding as _mem_emb_mod
+    # --- Phase 3: signal vector-search availability --------------------------
+    import src.models.memory_embedding as _mem_emb_mod
 
-        if full_success:
-            _mem_emb_mod.HAS_VECTOR_DB = True
-            logger.info("Vector search capabilities are active.")
-        else:
-            _mem_emb_mod.HAS_VECTOR_DB = False
-            logger.info(
-                "Vector search is disabled. "
-                "The memory_embeddings table was not created (requires pgvector)."
-            )
+    if full_success:
+        _mem_emb_mod.HAS_VECTOR_DB = True
+        logger.info("Vector search capabilities are active.")
+    else:
+        _mem_emb_mod.HAS_VECTOR_DB = False
+        logger.info(
+            "Vector search is disabled. "
+            "The memory_embeddings table was not created (requires pgvector)."
+        )
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
