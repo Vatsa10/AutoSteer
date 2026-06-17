@@ -1,4 +1,5 @@
 from .agent import Agent
+from .approval import ApprovalRequest
 from .base import Base
 from .conversation import Conversation
 from .document_chunk import DocumentChunk
@@ -11,8 +12,9 @@ from .task import Task, TaskStatus
 from .workflow import Workflow, WorkflowStatus
 
 __all__ = [
-    "Base",
+    "ApprovalRequest",
     "Agent",
+    "Base",
     "Conversation",
     "DocumentChunk",
     "IntegrationConnection",

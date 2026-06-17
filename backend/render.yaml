@@ -1,10 +1,20 @@
+# =============================================================================
+# Raah — Render Blueprint (render.com)
+# Auto-provisions: Python web service + PostgreSQL (pgvector) + Redis
+# =============================================================================
+
 services:
+  # --- Backend: FastAPI web service -----------------------------------------
   - type: web
     name: raah-backend
     runtime: python
-    buildCommand: pip install -e ".[dev]"
-    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install . && pip install python-jose[cryptography]
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 2
+    plan: starter
+    healthCheckPath: /api/health
+
     envVars:
+      # Database & Redis (auto-provisioned by Render)
       - key: DATABASE_URL
         fromDatabase:
           name: raah-db
@@ -14,6 +24,10 @@ services:
           name: raah-redis
           type: redis
           property: connectionString
+
+      # LLM providers (set these AFTER creating the service in Render Dashboard)
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: DEFAULT_LLM_PROVIDER
@@ -21,12 +35,134 @@ services:
       - key: DEFAULT_LLM_MODEL
         value: gpt-4o
 
+      # Auth
+      - key: raah_api_key
+        generateValue: true
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_PUBLISHABLE_KEY
+        sync: false
+
+      # Encryption (auto-generated)
+      - key: INTEGRATION_ENCRYPTION_KEY
+        generateValue: true
+
+      # Phase A — search & collaboration
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: NOTION_TOKEN
+        sync: false
+
+      # Phase B
+      - key: LINEAR_API_KEY
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+
+      # Phase C — revenue & support
+      - key: HUBSPOT_ACCESS_TOKEN
+        sync: false
+      - key: APOLLO_API_KEY
+        sync: false
+      - key: POSTHOG_API_KEY
+        sync: false
+      - key: TYPEFORM_ACCESS_TOKEN
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: INTERCOM_ACCESS_TOKEN
+        sync: false
+      - key: ZENDESK_API_TOKEN
+        sync: false
+      - key: SENTRY_AUTH_TOKEN
+        sync: false
+
+      # Email
+      - key: EMAIL_SEND_ENABLED
+        value: "false"
+      - key: EMAIL_PROVIDER
+        value: resend
+      - key: EMAIL_FROM_ADDRESS
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: POSTMARK_API_KEY
+        sync: false
+
+      # Phase D — AI ops
+      - key: E2B_API_KEY
+        sync: false
+      - key: WANDB_API_KEY
+        sync: false
+
+      # Phase E — knowledge & ops
+      - key: ZAPIER_WEBHOOK_URL
+        sync: false
+      - key: DOCUSIGN_ACCESS_TOKEN
+        sync: false
+      - key: DOCUSIGN_TEMPLATE_ID
+        sync: false
+      - key: DOCUSIGN_TEMPLATE_URL
+        sync: false
+      - key: FIGMA_ACCESS_TOKEN
+        sync: false
+      - key: GOOGLE_PAGESPEED_API_KEY
+        sync: false
+
+      # Billing
+      - key: STRIPE_CHECKOUT_URL_STARTER
+        sync: false
+      - key: STRIPE_CHECKOUT_URL_TEAM
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # Workflow caps
+      - key: MAX_WORKFLOW_AGENTS
+        value: "10"
+      - key: MAX_PARALLEL
+        value: "3"
+      - key: MAX_CONCURRENT_DEPARTMENTS
+        value: "5"
+
+      # Uploads
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+
+  # --- Background worker (optional — for heavy workflows) --------------------
+  # - type: worker
+  #   name: raah-worker
+  #   runtime: python
+  #   buildCommand: pip install .
+  #   startCommand: celery -A src.messaging.celery_app worker --loglevel=info
+  #   plan: starter
+  #   envVars:
+  #     - key: DATABASE_URL
+  #       fromDatabase:
+  #         name: raah-db
+  #         property: connectionString
+  #     - key: REDIS_URL
+  #       fromService:
+  #         name: raah-redis
+  #         type: redis
+  #         property: connectionString
+  #     - fromGroup: raah-backend-env
+
+# Databases -------------------------------------------------------------------
 databases:
   - name: raah-db
     databaseName: raah
     user: raah
-    plan: free
+    plan: starter
+    # After creation, go to Render Dashboard → raah-db → Shell:
+    #   psql -c "CREATE EXTENSION IF NOT EXISTS vector;"
+    # pgvector is available on all Render PostgreSQL plans.
 
   - name: raah-redis
     ipAllowList: []
     plan: free
+    maxmemoryPolicy: noeviction

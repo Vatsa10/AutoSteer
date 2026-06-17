@@ -1,0 +1,58 @@
+# Raah Workflow — Content creation with human-in-the-loop approval
+name: content_approval
+description: "Draft content, submit for review, wait for human approval, then publish."
+schedule_cron: null  # Set to e.g. "0 9 * * 1" for weekly Monday 9am runs
+
+inputs:
+  topic:
+    type: string
+    required: true
+  audience:
+    type: string
+    default: general
+
+steps:
+  - id: research
+    type: agent_call
+    agent: web_researcher
+    description: "Gather background research on the topic."
+    dependencies: []
+    config:
+      max_sources: 5
+
+  - id: draft
+    type: agent_call
+    agent: content_marketer
+    description: "Create a polished draft from the research."
+    dependencies: [research]
+    config:
+      tone: professional
+
+  - id: quality_gate
+    type: condition
+    description: "Check if the draft meets minimum length requirement."
+    dependencies: [draft]
+    config:
+      condition:
+        mode: expression
+        operator: contains
+        value: "."
+      branches:
+        then: "seek_approval"   # Draft has content — proceed
+        else: "draft"             # Draft empty/failed — retry
+
+  - id: seek_approval
+    type: approval
+    description: "Submit the draft for human review before publishing."
+    dependencies: [quality_gate]
+    config:
+      prompt: "Please review the following draft content and approve or reject."
+      timeout_hours: 72   # Auto-reject after 3 days
+
+  - id: publish
+    type: tool_call
+    tool: create_docx
+    description: "Generate the final approved document."
+    dependencies: [seek_approval]
+    config:
+      filename: "approved_content.docx"

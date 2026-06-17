@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import agents, billing, chat, conversations, custom_agents, files, integrations, memory, preferences, prompts, tools, websocket
+from src.api.routes import agents, approvals, billing, chat, conversations, custom_agents, files, integrations, memory, preferences, prompts, tools, websocket, workflows
 from src.auth import setup_auth
 from src.config import get_settings
 from src.database import get_engine, init_db
@@ -103,6 +103,8 @@ def create_app() -> FastAPI:
     app.include_router(billing.router, prefix="/api")
     app.include_router(preferences.router, prefix="/api")
     app.include_router(memory.router, prefix="/api")
+    app.include_router(workflows.router, prefix="/api")
+    app.include_router(approvals.router, prefix="/api")
     app.include_router(websocket.router)
 
     # Setup auth (no-op if Raah_API_KEY is not set)

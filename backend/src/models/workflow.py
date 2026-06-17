@@ -29,8 +29,18 @@ class Workflow(Base):
     current_step: Mapped[int] = mapped_column(Integer, default=0)
     steps: Mapped[dict] = mapped_column(JSON, nullable=False)
     context: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Scheduling (Tier 3)
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cron_expression: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

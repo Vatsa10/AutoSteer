@@ -1,0 +1,46 @@
+# Raah Workflow Definition
+# YAML → Pydantic validated at load time. Kokoro-inspired pattern.
+name: research_report
+description: "Research a topic, draft content, and review for quality."
+inputs:
+  query:
+    type: string
+    required: true
+    description: "The research query or topic."
+  format:
+    type: string
+    default: markdown
+    enum: [markdown, docx, pptx]
+
+steps:
+  - id: research
+    type: agent_call
+    agent: web_researcher
+    description: "Search the web for the latest information on the given topic."
+    dependencies: []
+    config:
+      max_sources: 5
+
+  - id: draft
+    type: agent_call
+    agent: content_marketer
+    description: "Create a well-structured draft from the research findings."
+    dependencies: [research]
+    config:
+      tone: professional
+      max_length: 2000
+
+  - id: review
+    type: agent_call
+    agent: security_engineer
+    description: "Review the draft for accuracy, safety, and completeness."
+    dependencies: [draft]
+    config:
+      strictness: high
+
+  - id: format_output
+    type: tool_call
+    tool: create_docx
+    dependencies: [review]
+    config:
+      filename: "research_report.docx"

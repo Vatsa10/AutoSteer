@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "regions": ["bom1"],
+  "env": {
+    "NEXT_PUBLIC_API_URL": "https://raah-backend.onrender.com",
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY": "pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "NEXT_PUBLIC_API_KEY": ""
+  }
+}

@@ -60,6 +60,8 @@ class TaskDefinition(BaseModel):
     inputs: list[str]
     outputs: list[str]
     sla: str
+    retry_max: int = 2
+    retry_backoff_seconds: float = 2.0
 
 
 class ResponseSection(BaseModel):
