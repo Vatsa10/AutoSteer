@@ -10,6 +10,7 @@ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store"
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
 import { useToastStore } from "@/lib/store";
 import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
+import { resolveApproval } from "@/lib/api";
 import { Onboarding } from "@/components/onboarding";
 
 interface FileAttachment { filename: string; content: string; mime_type: string; }
@@ -44,6 +45,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [pendingApprovals, setPendingApprovals] = useState<Record<string, { approval_id: string; step_id: string; prompt: string; context?: string; busy?: boolean }>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +160,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               if (event.conversation_id && !convId) setConversationId(event.conversation_id);
               break;
             case "error": addToast(event.message, "error"); setIsStreaming(false); setRoutingStage(""); break;
+            case "approval":
+              setIsStreaming(false);
+              setPendingApprovals((p) => ({ ...p, [event.approval_id]: { approval_id: event.approval_id, step_id: event.step_id, prompt: event.prompt, context: event.context } }));
+              break;
             case "done":
               setIsStreaming(false); setRoutingStage("");
               queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -293,6 +299,47 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-md px-4 py-3">
                 <div className="flex items-center gap-2.5 mb-2"><Loader2 className="w-4 h-4 text-blue-600 animate-spin" /><span className="text-xs text-blue-600 font-medium">{routingStage === "classifying" && "Classifying intent…"}{routingStage === "routing" && "Routing to department…"}{routingStage === "processing" && "Agent processing…"}{routingStage === "department" && "Department matched…"}{routingStage === "agent" && "Agent selected…"}{!routingStage && "Working…"}</span></div>
                 <div className="w-48 h-1 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-blue-700 via-blue-500 to-blue-400 rounded-full animate-load" /></div>
+              </div>
+            </div>
+          )}
+          {Object.keys(pendingApprovals).length > 0 && !isStreaming && (
+            <div className="flex justify-start px-4">
+              <div className="bg-[#F4F4F0] border-2 border-[#E61919] px-4 py-3 max-w-[85%]">
+                {Object.values(pendingApprovals).map((a) => (
+                  <div key={a.approval_id} className="space-y-2">
+                    <p className="font-tele text-[10px] text-[#E61919]">[ AWAITING APPROVAL ]</p>
+                    <p className="font-tele text-xs text-[#0A0A0A]">{a.prompt}</p>
+                    {a.context && <p className="font-tele text-[10px] text-ink/50 truncate">{a.context.slice(0, 200)}</p>}
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={async () => {
+                          setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: true } }));
+                          try {
+                            await resolveApproval(a.approval_id, { action: "approved", note: "Approved from chat" });
+                            addToast("Approved", "success");
+                            setPendingApprovals((p) => { const n = { ...p }; delete n[a.approval_id]; return n; });
+                          } catch (e: any) { addToast(e?.message || "Failed", "error"); }
+                          finally { setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: false } })); }
+                        }}
+                        disabled={a.busy}
+                        className="font-tele text-[10px] bg-[#E61919] text-[#F4F4F0] px-4 py-1.5 hover:bg-[#0A0A0A] transition-colors disabled:opacity-40"
+                      >APPROVE</button>
+                      <button
+                        onClick={async () => {
+                          setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: true } }));
+                          try {
+                            await resolveApproval(a.approval_id, { action: "rejected", note: "Rejected from chat" });
+                            addToast("Rejected", "info");
+                            setPendingApprovals((p) => { const n = { ...p }; delete n[a.approval_id]; return n; });
+                          } catch (e: any) { addToast(e?.message || "Failed", "error"); }
+                          finally { setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: false } })); }
+                        }}
+                        disabled={a.busy}
+                        className="font-tele text-[10px] border-2 border-[#0A0A0A] px-4 py-1.5 hover:bg-[#0A0A0A] hover:text-[#F4F4F0] transition-colors disabled:opacity-40"
+                      >REJECT</button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}

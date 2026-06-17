@@ -6,6 +6,7 @@ export type WSEvent =
   | { type: "token"; content: string }
   | { type: "metadata"; conversation_id: string; agent?: string; department?: string; model?: string }
   | { type: "error"; message: string }
+  | { type: "approval"; approval_id: string; step_id: string; prompt: string; context?: string }
   | { type: "done" };
 
 interface WSCallbacks {

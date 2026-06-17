@@ -2,6 +2,7 @@ import asyncio
 import json as _json
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -455,25 +456,153 @@ User request: {user_message}"""
         except Exception:
             return None
 
+    def _load_workflows_from_disk(self) -> dict[str, dict]:
+        """Load YAML workflow definitions from disk. Kokoro-inspired pattern."""
+        from pathlib import Path
+        import yaml as _yaml
+        wf_dir = Path(__file__).resolve().parent.parent / "workflows"
+        if not wf_dir.exists():
+            return {}
+        workflows = {}
+        for f in sorted(wf_dir.glob("*.yaml")):
+            try:
+                raw = _yaml.safe_load(f.read_text(encoding="utf-8"))
+                workflows[raw.get("name", f.stem)] = raw
+            except Exception:
+                pass
+        return workflows
+
     def _detect_workflow_trigger(
-        self, user_message: str, workflows: dict
+        self, user_message: str
     ) -> dict | None:
-        """Detect if a user message triggers a multi-department workflow."""
-        trigger_map = {
-            "product_launch": ["launch", "product launch", "go to market", "ship product"],
-            "incident_response": ["incident", "outage", "security breach", "p0", "emergency"],
-            "quarterly_planning": ["quarterly planning", "quarterly review", "Q1", "Q2", "Q3", "Q4"],
-            "new_hire_onboarding": ["onboard", "new hire", "new employee", "joining"],
-            "fundraise": ["fundraise", "funding round", "series a", "series b", "investor", "raise capital"],
-        }
-        user_lower = user_message.lower()
-        for wf_name, triggers in trigger_map.items():
-            for trigger in triggers:
-                if trigger in user_lower:
-                    wf_def = workflows.get(wf_name)
-                    if wf_def:
-                        return {"name": wf_name, "def": wf_def}
+        """Detect if user message triggers a YAML-defined workflow.
+        Matches: 'run <name>', 'execute <name>', or workflow name directly."""
+        workflows = self._load_workflows_from_disk()
+        user_lower = user_message.lower().strip()
+        # Direct match: "run research_report" or "execute voice_briefing"
+        for prefix in ("run ", "execute ", "start ", "trigger "):
+            if user_lower.startswith(prefix):
+                name = user_lower[len(prefix):].strip()
+                if name in workflows:
+                    return {"name": name, "def": workflows[name]}
+        # Fuzzy: message contains workflow name
+        for wf_name, wf_def in workflows.items():
+            if wf_name.replace("_", " ") in user_lower:
+                return {"name": wf_name, "def": wf_def}
         return None
+
+    async def _execute_workflow_stream(
+        self,
+        wf_name: str,
+        wf_def: dict,
+        user_message: str,
+        conversation_id: str,
+        session: Any = None,
+    ):
+        """Stream a YAML workflow's steps through the chat as they execute.
+        Handles agent_call, tool_call, condition, and approval step types."""
+        import uuid as _uuid
+        steps = wf_def.get("steps", [])
+        results: dict[str, str] = {}
+        step_by_id = {s["id"]: s for s in steps}
+
+        # Topological sort by dependencies
+        in_degree = {s["id"]: len(s.get("dependencies", [])) for s in steps}
+        ready = [sid for sid, d in in_degree.items() if d == 0]
+
+        yield {"type": "token", "content": f"[ Workflow: {wf_name} · {len(steps)} steps ]\n\n"}
+
+        while ready:
+            sid = ready.pop(0)
+            step = step_by_id[sid]
+            step_type = step.get("type", "agent_call")
+
+            yield {"type": "routing", "stage": "processing", "department": "workflow", "agent": f"{wf_name}/{sid}"}
+            yield {"type": "token", "content": f">>> Step: {sid}\n"}
+
+            if step_type == "agent_call":
+                agent_role = step.get("agent", "")
+                if agent_role and agent_role in self.agents:
+                    dep_ctx = "\n".join(f"[{d}]: {results.get(d, '')[:1500]}" for d in step.get("dependencies", []))
+                    prompt = f"{dep_ctx}\n\n{step.get('description', '')}\n\nUser request: {user_message}"
+                    try:
+                        agent = self.agents[agent_role].copy_for_request()
+                        resp = await agent.process(prompt)
+                        results[sid] = getattr(resp, "content", str(resp))
+                        yield {"type": "token", "content": results[sid][:3000] + "\n\n"}
+                    except Exception as exc:
+                        results[sid] = f"Error: {exc}"
+                        yield {"type": "token", "content": f"Error: {exc}\n\n"}
+                else:
+                    results[sid] = f"Agent '{agent_role}' not available"
+                    yield {"type": "token", "content": f"Skipped: {results[sid]}\n\n"}
+
+            elif step_type == "tool_call":
+                tool_name = step.get("tool", "")
+                tool_config = step.get("config", {})
+                dep_ctx = "\n".join(f"[{d}]: {results.get(d, '')[:1500]}" for d in step.get("dependencies", []))
+                try:
+                    from src.engine.tool_executor import get_tool_registry, execute_tool, set_tool_context
+                    set_tool_context(session=session, workspace_id="default")
+                    registry = get_tool_registry()
+                    tool_args = {**tool_config, "text": dep_ctx or user_message}
+                    result = await execute_tool(registry, tool_name, tool_args)
+                    results[sid] = result.output if result.success else f"Error: {result.error}"
+                    yield {"type": "token", "content": f"[ Tool: {tool_name} ] → {str(results[sid])[:1000]}\n\n"}
+                except Exception as exc:
+                    results[sid] = f"Tool error: {exc}"
+                    yield {"type": "token", "content": f"Tool error: {exc}\n\n"}
+
+            elif step_type == "approval":
+                prompt = step.get("config", {}).get("prompt", "Approve this step?")
+                context_str = results.get(step.get("dependencies", [None])[0], "") if step.get("dependencies") else ""
+                # Create DB approval request
+                if session:
+                    try:
+                        from src.models.approval import ApprovalRequest
+                        from datetime import datetime, timezone
+                        import uuid as _uuid
+                        now = datetime.now(timezone.utc)
+                        approval = ApprovalRequest(
+                            id=_uuid.uuid4().hex[:16],
+                            workflow_run_id=conversation_id,
+                            step_id=sid,
+                            workspace_id="default",
+                            status="pending",
+                            prompt=prompt,
+                            context=context_str[:2000] if context_str else None,
+                            created_at=now,
+                        )
+                        session.add(approval)
+                        await session.commit()
+                    except Exception:
+                        pass
+                approval_id = approval.id if approval else sid
+                yield {"type": "approval", "approval_id": approval_id, "step_id": sid, "prompt": prompt, "context": context_str[:1000]}
+                yield {"type": "token", "content": f"\n[ ⏳ AWAITING APPROVAL: {sid} ]\n{prompt}\n\n"}
+                # Store result placeholder — real result comes when approval resolves via API
+                results[sid] = f"Pending approval: {prompt}"
+                break  # Stop execution until approved
+
+            elif step_type == "condition":
+                dep = step.get("dependencies", [None])[0]
+                dep_output = results.get(dep, "") if dep else ""
+                branches = step.get("config", {}).get("branches", {})
+                condition = step.get("config", {}).get("condition", {})
+                from src.engine.conditional import resolve_branch
+                target = resolve_branch(dep_output, branches, condition)
+                yield {"type": "token", "content": f"[ Branch: {target or 'default'} ]\n\n"}
+                if target and target in step_by_id:
+                    ready.insert(0, target)  # Jump to branch target next
+
+            # Unblock next steps
+            for s in steps:
+                if sid in s.get("dependencies", []):
+                    in_degree[s["id"]] -= 1
+                    if in_degree[s["id"]] == 0:
+                        ready.append(s["id"])
+
+        yield {"type": "metadata", "conversation_id": conversation_id, "agent": f"workflow:{wf_name}", "department": "workflow", "model": "gpt-4o-mini"}
 
     async def process_message(
         self,
@@ -669,6 +798,18 @@ User request: {user_message}"""
         else:
             dept_result = await self._route_department(user_message)
             if not dept_result:
+                # Check for YAML workflow trigger before falling back
+                wf_trigger = self._detect_workflow_trigger(user_message)
+                if wf_trigger:
+                    yield {"type": "routing", "stage": "processing", "department": "workflow", "agent": wf_trigger["name"]}
+                    async for event in self._execute_workflow_stream(
+                        wf_trigger["name"], wf_trigger["def"],
+                        user_message, conversation_id, session,
+                    ):
+                        yield event
+                    yield {"type": "done"}
+                    return
+
                 # Intent-based fallback: create tasks → content_marketer with create_docx instruction
                 intent = await self._classify_intent(user_message, bool(file_context_parts))
                 if intent and intent.get("action") == "create_document" and self.agents.get("content_marketer"):
@@ -686,12 +827,13 @@ User request: {user_message}"""
                         fallback = await self.llm.complete(
                             messages=[LLMMessage(role="user", content=effective_message)],
                             system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
-                            temperature=0.7, max_tokens=1024,
+                            temperature=0.7, max_tokens=1024, model="gpt-4o-mini",
                         )
                         yield {"type": "token", "content": fallback.content}
                         yield {"type": "metadata", "conversation_id": conversation_id, "agent": "fallback", "department": "direct", "model": fallback.model, "usage": fallback.usage}
-                    except Exception:
-                        yield {"type": "error", "message": "Could not classify your request. Please rephrase or try again."}
+                    except Exception as exc:
+                        print(f"[orchestrator] fallback LLM failed: {exc}")
+                        yield {"type": "error", "message": f"Could not process your request. {exc}"}
                     yield {"type": "done"}
                     return
             if not agent_role:
