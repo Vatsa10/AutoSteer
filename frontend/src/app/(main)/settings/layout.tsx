@@ -2,13 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Sliders, Brain, Plug, Bot, ArrowLeft } from "lucide-react";
+import { Sliders, Brain, Plug, Bot, ArrowLeft, Workflow, CheckSquare } from "lucide-react";
 
 const sections = [
   { href: "/settings/preferences", label: "Preferences", icon: Sliders, desc: "Custom instructions and behavior" },
   { href: "/settings/memory", label: "Memory", icon: Brain, desc: "Facts, documents, conversation context" },
   { href: "/settings/integrations", label: "Integrations", icon: Plug, desc: "API keys and service connections" },
   { href: "/settings/agents", label: "Agents", icon: Bot, desc: "Agent preferences and routing" },
+  { href: "/settings/workflows", label: "Workflows", icon: Workflow, desc: "YAML-defined multi-step automation pipelines" },
+  { href: "/settings/approvals", label: "Approvals", icon: CheckSquare, desc: "Pending human-in-the-loop review requests" },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {

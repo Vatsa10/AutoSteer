@@ -14,14 +14,18 @@ import {
   Loader2,
   Settings,
   LayoutTemplate,
+  CheckSquare,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
 import { useConversations } from "@/lib/hooks";
+import { getPendingApprovals } from "@/lib/api";
 
 const navItems = [
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/templates", label: "Templates", icon: LayoutTemplate },
   { href: "/agents", label: "Agents", icon: Users },
+  { href: "/settings/approvals", label: "Approvals", icon: CheckSquare },
   { href: "/conversations", label: "History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -42,6 +46,15 @@ export function Sidebar({
 
   // TanStack Query: auto-refreshes every 15s, invalidates on new messages
   const { data: conversations = [], isLoading } = useConversations();
+
+  // Pending approvals count — refetch every 30s for the badge
+  const { data: approvalData } = useQuery({
+    queryKey: ["pendingApprovalsCount"],
+    queryFn: getPendingApprovals,
+    refetchInterval: 30_000,
+    select: (data) => data.length,
+  });
+  const pendingCount = approvalData ?? 0;
 
   const summaries: ConversationSummary[] = conversations.map((c) => ({
     id: c.id,
@@ -124,6 +137,11 @@ export function Sidebar({
             >
               <Icon className="w-4 h-4" />
               {item.label}
+              {item.href === "/settings/approvals" && pendingCount > 0 && (
+                <span className="ml-auto text-[10px] font-bold bg-[#E61919] text-white px-1.5 py-0.5 leading-none">
+                  {pendingCount}
+                </span>
+              )}
             </Link>
           );
         })}

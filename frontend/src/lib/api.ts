@@ -262,3 +262,84 @@ export async function getPricing(): Promise<{ plans: PricingPlan[]; self_host: {
   const res = await apiFetch("/api/billing/pricing");
   return res.json();
 }
+
+// ── Workflows ─────────────────────────────────────────────────────
+
+export interface WorkflowStepDef {
+  id: string;
+  type?: string;
+  agent?: string | null;
+  tool?: string | null;
+  description?: string;
+  dependencies?: string[];
+  config?: Record<string, any>;
+}
+
+export interface WorkflowDefinition {
+  name: string;
+  description: string;
+  step_count?: number;
+  steps?: WorkflowStepDef[];
+}
+
+export interface WorkflowRunStep {
+  step_id: string;
+  agent: string;
+  status: "pending" | "running" | "completed" | "failed";
+  output?: string;
+  started_at?: string;
+  completed_at?: string;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflow_name: string;
+  status: "completed" | "failed" | "running";
+  started_at: string;
+  completed_at?: string;
+  steps: WorkflowRunStep[];
+}
+
+export async function getWorkflows(): Promise<WorkflowDefinition[]> {
+  const res = await apiFetch("/api/workflows");
+  const data = await res.json();
+  return data.workflows ?? [];
+}
+
+export async function getWorkflow(name: string): Promise<WorkflowDefinition> {
+  const res = await apiFetch(`/api/workflows/${encodeURIComponent(name)}`);
+  return res.json();
+}
+
+export async function getWorkflowRuns(name: string): Promise<{ runs: WorkflowRun[] }> {
+  const res = await apiFetch(`/api/workflows/${encodeURIComponent(name)}/runs`);
+  return res.json();
+}
+
+// ── Approvals ─────────────────────────────────────────────────────
+
+export interface PendingApproval {
+  id: string;
+  run_id: string;
+  step_id: string;
+  prompt: string;
+  context: string;
+  created_at: string;
+  status: "pending" | "approved" | "rejected";
+}
+
+export async function getPendingApprovals(): Promise<PendingApproval[]> {
+  const res = await apiFetch("/api/approvals/pending");
+  const data = await res.json();
+  return data.pending ?? [];
+}
+
+export async function resolveApproval(
+  id: string,
+  resolution: { action: "approved" | "rejected"; note?: string },
+): Promise<void> {
+  await apiFetch(`/api/approvals/${encodeURIComponent(id)}/resolve`, {
+    method: "POST",
+    body: JSON.stringify(resolution),
+  });
+}

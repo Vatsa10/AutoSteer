@@ -126,3 +126,21 @@ async def get_workflow_run(
         for t in r.scalars().all()
     ]
     return {"run": run, "steps": tasks}
+
+
+class ValidateBody(BaseModel):
+    yaml_content: str
+
+
+@router.post("/workflows/validate")
+async def validate_workflow_yaml(body: ValidateBody):
+    """Validate workflow YAML without executing it. Kokoro validate pattern."""
+    import yaml as _yaml
+    try:
+        raw = _yaml.safe_load(body.yaml_content)
+        wf = WorkflowDefinition(**raw)
+        return {"valid": True, "name": wf.name, "step_count": len(wf.steps)}
+    except _yaml.YAMLError as e:
+        return {"valid": False, "errors": [f"YAML parse error: {e}"]}
+    except Exception as e:
+        return {"valid": False, "errors": [str(e)]}
