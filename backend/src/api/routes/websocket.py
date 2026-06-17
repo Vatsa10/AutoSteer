@@ -41,6 +41,10 @@ async def websocket_chat(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             payload = json.loads(data)
+            # Respond to keepalive pings so proxies/servers don't kill the socket.
+            if payload.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+                continue
             message = payload.get("message", "")
             conversation_id = payload.get("conversation_id")
             target_agent = payload.get("target_agent")

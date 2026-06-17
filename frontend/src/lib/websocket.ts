@@ -11,28 +11,46 @@ export type WSEvent =
 interface WSCallbacks {
   onEvent: (event: WSEvent) => void;
   onError?: (error: Event) => void;
-  onClose?: () => void;
+  onClose?: (error: boolean) => void; // error=true if unexpected close
 }
 
 export function createChatWebSocket(callbacks: WSCallbacks): WebSocket {
   const ws = new WebSocket(`${WS_BASE}/ws/chat`);
+  let doneReceived = false;
+  let pingInterval: ReturnType<typeof setInterval> | null = null;
+
+  function stopPing() {
+    if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+  }
+
+  ws.onopen = () => {
+    // Heartbeat keeps the connection alive through proxy/server idle timeouts.
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 25_000);
+  };
 
   ws.onmessage = (msg: MessageEvent) => {
     try {
       const data = JSON.parse(msg.data);
+      if (data.type === "pong") return;
+      if (data.type === "done") doneReceived = true;
       callbacks.onEvent(data as WSEvent);
     } catch {
-      // Non-JSON message — treat as token
       callbacks.onEvent({ type: "token", content: msg.data });
     }
   };
 
   ws.onerror = (err) => {
+    stopPing();
     callbacks.onError?.(err);
   };
 
   ws.onclose = () => {
-    callbacks.onClose?.();
+    stopPing();
+    callbacks.onClose?.(!doneReceived);
   };
 
   return ws;

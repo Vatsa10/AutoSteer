@@ -49,6 +49,8 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadedOnce = useRef(false);
+  // Stable ref to avoid sendMessageMutation recreating sendViaWebSocket every render.
+  const sendMutationRef = useRef<ReturnType<typeof useSendMessage> | null>(null);
 
   // ── Deep-link + template prompt ──────────────────────────────
   useEffect(() => {
@@ -136,10 +138,16 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
 
   // ── REST mutation ────────────────────────────────────────────
   const sendMessageMutation = useSendMessage();
+  sendMutationRef.current = sendMessageMutation;
 
   // ── WebSocket send ───────────────────────────────────────────
   const sendViaWebSocket = useCallback(
     (message: string, fileIds: string[], convId?: string, tgtAgent?: string, files?: FileAttachment[]) => {
+      // Close any prior WebSocket before opening a new one.
+      if (wsRef.current) {
+        try { wsRef.current.close(); } catch {}
+        wsRef.current = null;
+      }
       clearRoutingEvents();
       setIsStreaming(true);
       const ws = createChatWebSocket({
@@ -159,17 +167,22 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
         },
         onError: () => {
           setWsMode(false); setIsStreaming(false); setRoutingStage("");
-          sendMessageMutation.mutate(
+          const m = sendMutationRef.current;
+          if (!m) return;
+          m.mutate(
             { message, conversationId: convId, targetAgent: tgtAgent, fileIds, files },
             { onSuccess: (data) => { appendContent(data.response); if (data.conversation_id && !convId) setConversationId(data.conversation_id); } },
           );
         },
-        onClose: () => { setIsStreaming(false); setRoutingStage(""); },
+        onClose: (error) => {
+          // Only reset streaming if the WS closed unexpectedly (not after a clean "done" event).
+          if (error) { setIsStreaming(false); setRoutingStage(""); setWsMode(false); }
+        },
       });
       wsRef.current = ws;
       ws.onopen = () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); };
     },
-    [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient, sendMessageMutation],
+    [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient],
   );
 
   // ── Submit ───────────────────────────────────────────────────
