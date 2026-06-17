@@ -11,6 +11,7 @@ export interface ConversationSummary {
   id: string;
   title: string;
   updated_at: string;
+  last_message?: string | null;
 }
 
 interface ConversationListProps {
@@ -107,17 +108,26 @@ export function ConversationList({
                 setConfirmId(null);
                 onSelect(conv.id);
               }}
-              className="flex items-center gap-2.5 flex-1 min-w-0 px-3 py-2"
+              className="flex items-start gap-2.5 flex-1 min-w-0 px-3 py-2"
             >
               <MessageSquare
-                className={`w-3.5 h-3.5 shrink-0 ${
+                className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${
                   activeId === conv.id ? "text-blue-600" : "text-slate-400"
                 }`}
               />
-              <span className="truncate flex-1">{conv.title}</span>
-              <span className="text-[10px] text-slate-400 shrink-0">
-                {timeAgo(conv.updated_at)}
-              </span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="truncate text-sm">{conv.title}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
+                    {timeAgo(conv.updated_at)}
+                  </span>
+                </div>
+                {conv.last_message && (
+                  <p className="text-[11px] text-slate-400 truncate mt-0.5 leading-tight">
+                    {conv.last_message}
+                  </p>
+                )}
+              </div>
             </button>
             <button
               onClick={(e) => handleDelete(e, conv.id)}

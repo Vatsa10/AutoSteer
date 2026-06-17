@@ -110,6 +110,7 @@ class ConversationResponse(BaseModel):
     status: str
     created_at: str | None = None
     updated_at: str | None = None
+    last_message: str | None = None
 
 
 class MessageResponse(BaseModel):

@@ -47,6 +47,7 @@ export function Sidebar({
     id: c.id,
     title: c.title,
     updated_at: c.updated_at,
+    last_message: c.last_message,
   }));
 
   if (collapsed) {

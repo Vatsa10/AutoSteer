@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -23,6 +23,35 @@ async def list_conversations(
         .order_by(Conversation.updated_at.desc())
     )
     conversations = result.scalars().all()
+
+    # Fetch the most recent message content for each conversation
+    conversation_ids = [c.id for c in conversations]
+    last_messages: dict[str, str | None] = {}
+    if conversation_ids:
+        # Subquery: latest created_at per conversation
+        latest = (
+            select(
+                Message.conversation_id,
+                func.max(Message.created_at).label("max_ts"),
+            )
+            .where(Message.conversation_id.in_(conversation_ids))
+            .group_by(Message.conversation_id)
+        ).subquery()
+
+        msg_result = await session.execute(
+            select(Message.content, Message.conversation_id)
+            .join(
+                latest,
+                (Message.conversation_id == latest.c.conversation_id)
+                & (Message.created_at == latest.c.max_ts),
+            )
+        )
+        for row in msg_result:
+            content = row.content
+            if content and len(content) > 120:
+                content = content[:120] + "..."
+            last_messages[row.conversation_id] = content
+
     return [
         ConversationResponse(
             id=c.id,
@@ -30,6 +59,7 @@ async def list_conversations(
             status=c.status,
             created_at=c.created_at.isoformat() if c.created_at else "",
             updated_at=c.updated_at.isoformat() if c.updated_at else "",
+            last_message=last_messages.get(c.id),
         )
         for c in conversations
     ]
