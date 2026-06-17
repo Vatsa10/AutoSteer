@@ -8,16 +8,15 @@ from src.integrations.credentials import get_credential
 
 
 async def _slack_request(
-    method: str,
+    api_method: str,
     token: str,
     params: dict | None = None,
     json_body: dict | None = None,
 ) -> dict:
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.request(
-            method,
-            f"https://slack.com/api/{method}",
-            headers={"Authorization": f"Bearer {token}"},
+        resp = await client.post(
+            f"https://slack.com/api/{api_method}",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             params=params,
             json=json_body,
         )

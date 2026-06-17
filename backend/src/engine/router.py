@@ -27,7 +27,7 @@ class OrchestratorRouter:
                     best_score = score
                     best_match = RoutingResult(
                         target=rule.target,
-                        confidence=min(1.0, score * 0.3 + rule.confidence_threshold),
+                        confidence=min(1.0, 0.4 + (1 - 0.6**score) * 0.6),
                         matched_pattern=rule.pattern,
                     )
 

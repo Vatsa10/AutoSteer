@@ -24,6 +24,11 @@ class ImportBody(BaseModel):
     summary: str = ""
 
 
+class SaveDocumentsBody(BaseModel):
+    documents: list[dict]
+    summary: str = ""
+
+
 @router.get("/memory")
 async def get_memory(request: Request, session: AsyncSession = Depends(get_db)):
     facts = []
@@ -61,14 +66,12 @@ async def add_fact(body: FactBody, request: Request, session: AsyncSession = Dep
         created_at=datetime.now(timezone.utc),
     )
     session.add(fact)
-    await session.commit()
     return {"ok": True, "id": fact.id}
 
 
 @router.delete("/memory/facts/{fact_id}")
 async def delete_fact(fact_id: str, request: Request, session: AsyncSession = Depends(get_db)):
     await session.execute(delete(MemoryFact).where(MemoryFact.id == fact_id))
-    await session.commit()
     return {"ok": True}
 
 
@@ -80,24 +83,19 @@ async def update_fact(fact_id: str, body: FactBody, request: Request, session: A
         fact.key = body.key
         fact.value = body.value
         fact.fact_type = body.fact_type
-        await session.commit()
         return {"ok": True}
     return {"ok": False, "error": "Fact not found"}
 
 
 @router.put("/memory/documents")
-async def save_documents(body: dict, request: Request, session: AsyncSession = Depends(get_db)):
+async def save_documents(body: SaveDocumentsBody, request: Request, session: AsyncSession = Depends(get_db)):
     from datetime import datetime, timezone
-    try:
-        r = await session.execute(select(SharedState).where(SharedState.key == DOCS_KEY))
-        row = r.scalar_one_or_none()
-        val = {"documents": body.get("documents", []), "summary": body.get("summary", "")}
-        if row:
-            row.value = val
-            row.updated_at = datetime.now(timezone.utc)
-        else:
-            session.add(SharedState(key=DOCS_KEY, value=val, owner="user", updated_at=datetime.now(timezone.utc)))
-        await session.commit()
-    except Exception:
-        await session.rollback()
+    r = await session.execute(select(SharedState).where(SharedState.key == DOCS_KEY))
+    row = r.scalar_one_or_none()
+    val = {"documents": body.documents, "summary": body.summary}
+    if row:
+        row.value = val
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        session.add(SharedState(key=DOCS_KEY, value=val, owner="user", updated_at=datetime.now(timezone.utc)))
     return {"ok": True}

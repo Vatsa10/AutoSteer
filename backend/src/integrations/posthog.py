@@ -67,4 +67,25 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     api_key = await get_credential("posthog", session, workspace_id)
     if not api_key:
         return {"ok": False, "error": "No token configured"}
-    return {"ok": True, "message": "API key present; verify project_id in metadata via posthog_read"}
+    meta = await get_credential_metadata("posthog", session, workspace_id)
+    host = meta.get("host", "https://app.posthog.com").rstrip("/")
+    project_id = meta.get("project_id", "")
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            if project_id:
+                resp = await client.get(
+                    f"{host}/api/projects/{project_id}/",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            else:
+                resp = await client.get(
+                    f"{host}/api/projects/",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+        if resp.status_code >= 400:
+            return {"ok": False, "error": resp.text[:200]}
+        data = resp.json()
+        project_id = project_id or (data.get("results", [{}])[0].get("id", "unknown") if isinstance(data.get("results"), list) else "unknown")
+        return {"ok": True, "project_id": project_id}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

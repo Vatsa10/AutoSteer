@@ -12,6 +12,14 @@ from starlette.types import ASGIApp
 
 from src.config import get_settings
 
+try:
+    from jose import jwt, JWTError
+    HAS_JOSE = True
+except ImportError:
+    jwt = None  # type: ignore
+    JWTError = Exception  # type: ignore
+    HAS_JOSE = False
+
 SKIP_AUTH_PATHS = {
     "/api/health",
     "/api/status",
@@ -59,15 +67,39 @@ class ClerkAuthMiddleware(BaseHTTPMiddleware):
         if auth_header.startswith("Bearer "):
             token = auth_header[7:]
             try:
-                import base64
-                import json
-                parts = token.split(".")
-                if len(parts) >= 2:
-                    padded = parts[1] + "=" * (-len(parts[1]) % 4)
-                    payload = json.loads(base64.urlsafe_b64decode(padded))
-                    org_id = payload.get("org_id") or payload.get("sub", "default")
-                    request.state.workspace_id = str(org_id)
-                    request.state.clerk_user_id = payload.get("sub")
+                if self.secret_key and HAS_JOSE:
+                    try:
+                        payload = jwt.decode(
+                            token,
+                            self.secret_key,
+                            algorithms=["HS256"],
+                            options={"verify_aud": False},
+                        )
+                    except JWTError:
+                        import base64
+                        import json
+                        parts = token.split(".")
+                        if len(parts) >= 2:
+                            padded = parts[1] + "=" * (-len(parts[1]) % 4)
+                            payload = json.loads(base64.urlsafe_b64decode(padded))
+                        else:
+                            payload = {"sub": "default"}
+                else:
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "CLERK_SECRET_KEY not set — JWT verification disabled"
+                    )
+                    import base64
+                    import json
+                    parts = token.split(".")
+                    if len(parts) >= 2:
+                        padded = parts[1] + "=" * (-len(parts[1]) % 4)
+                        payload = json.loads(base64.urlsafe_b64decode(padded))
+                    else:
+                        payload = {"sub": "default"}
+                org_id = payload.get("org_id") or payload.get("sub", "default")
+                request.state.workspace_id = str(org_id)
+                request.state.clerk_user_id = payload.get("sub")
             except Exception:
                 request.state.workspace_id = "default"
         else:

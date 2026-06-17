@@ -110,26 +110,32 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
         api_key = await get_credential("resend", session, workspace_id) or settings.resend_api_key
         if not api_key:
             return {"ok": False, "error": "Resend API key not configured"}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                "https://api.resend.com/domains",
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-        if resp.status_code >= 400:
-            return {"ok": False, "error": resp.text[:200]}
-        return {"ok": True, "provider": "resend", "send_enabled": settings.email_send_enabled}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    "https://api.resend.com/domains",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            if resp.status_code >= 400:
+                return {"ok": False, "error": resp.text[:200]}
+            return {"ok": True, "provider": "resend", "send_enabled": settings.email_send_enabled}
+        except Exception as exc:
+            return {"ok": False, "error": f"Connection failed: {exc}"}
 
     if provider == "postmark":
         api_key = await get_credential("postmark", session, workspace_id) or settings.postmark_api_key
         if not api_key:
             return {"ok": False, "error": "Postmark API key not configured"}
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.get(
-                "https://api.postmarkapp.com/server",
-                headers={"X-Postmark-Server-Token": api_key, "Accept": "application/json"},
-            )
-        if resp.status_code >= 400:
-            return {"ok": False, "error": resp.text[:200]}
-        return {"ok": True, "provider": "postmark", "send_enabled": settings.email_send_enabled}
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(
+                    "https://api.postmarkapp.com/server",
+                    headers={"X-Postmark-Server-Token": api_key, "Accept": "application/json"},
+                )
+            if resp.status_code >= 400:
+                return {"ok": False, "error": resp.text[:200]}
+            return {"ok": True, "provider": "postmark", "send_enabled": settings.email_send_enabled}
+        except Exception as exc:
+            return {"ok": False, "error": f"Connection failed: {exc}"}
 
     return {"ok": False, "error": f"Unknown email provider: {provider}"}

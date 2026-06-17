@@ -98,7 +98,6 @@ async def connect_integration(
         )
         session.add(conn)
 
-    await session.commit()
     return {"ok": True, "provider": provider, "workspace_id": workspace_id}
 
 
@@ -117,7 +116,6 @@ async def disconnect_integration(
     conn = result.scalar_one_or_none()
     if conn:
         await session.delete(conn)
-        await session.commit()
     return {"ok": True, "provider": provider, "disconnected": conn is not None}
 
 

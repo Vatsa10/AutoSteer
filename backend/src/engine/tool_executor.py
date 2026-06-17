@@ -250,6 +250,8 @@ async def _wrap_spreadsheet_export(filename: str, rows: list[list[str]], format:
 def _ctx_wrap(fn):
     """Wrap integration fn to inject session + workspace_id from context."""
     async def wrapper(**kwargs):
+        kwargs.pop("session", None)
+        kwargs.pop("workspace_id", None)
         ctx = get_tool_context()
         return await fn(session=ctx.get("session"), workspace_id=ctx.get("workspace_id", "default"), **kwargs)
     return wrapper

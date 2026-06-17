@@ -94,15 +94,18 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     token = await get_credential("notion", session, workspace_id)
     if not token:
         return {"ok": False, "error": "No token configured"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            "https://api.notion.com/v1/users/me",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Notion-Version": "2022-06-28",
-            },
-        )
-        if resp.status_code == 200:
-            user = resp.json()
-            return {"ok": True, "name": user.get("name"), "type": user.get("type")}
-        return {"ok": False, "error": resp.text[:200]}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                "https://api.notion.com/v1/users/me",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Notion-Version": "2022-06-28",
+                },
+            )
+            if resp.status_code == 200:
+                user = resp.json()
+                return {"ok": True, "name": user.get("name"), "type": user.get("type")}
+            return {"ok": False, "error": resp.text[:200]}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

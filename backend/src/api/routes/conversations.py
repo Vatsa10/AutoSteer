@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,11 +13,14 @@ router = APIRouter(tags=["conversations"])
 @router.get("/conversations")
 async def list_conversations(
     request: Request,
+    workspace_id: str = Query(default="default"),
     session: AsyncSession = Depends(get_db),
 ):
-    """List all conversations from DB, newest first."""
+    """List conversations for this workspace, newest first."""
     result = await session.execute(
-        select(Conversation).order_by(Conversation.updated_at.desc())
+        select(Conversation)
+        .where(Conversation.workspace_id == workspace_id)
+        .order_by(Conversation.updated_at.desc())
     )
     conversations = result.scalars().all()
     return [
@@ -36,12 +39,14 @@ async def list_conversations(
 async def get_conversation_messages(
     conversation_id: str,
     request: Request,
+    workspace_id: str = Query(default="default"),
     session: AsyncSession = Depends(get_db),
 ):
     """Get messages for a specific conversation, oldest first."""
     result = await session.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)
+        .where(Message.workspace_id == workspace_id)
         .order_by(Message.created_at.asc())
     )
     messages = result.scalars().all()
@@ -65,14 +70,20 @@ async def get_conversation_messages(
 async def delete_conversation(
     conversation_id: str,
     request: Request,
+    workspace_id: str = Query(default="default"),
     session: AsyncSession = Depends(get_db),
 ):
-    """Delete a conversation and all its messages."""
+    """Delete a conversation and all its messages for this workspace."""
     await session.execute(
-        delete(Message).where(Message.conversation_id == conversation_id)
+        delete(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.workspace_id == workspace_id,
+        )
     )
     await session.execute(
-        delete(Conversation).where(Conversation.id == conversation_id)
+        delete(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.workspace_id == workspace_id,
+        )
     )
-    await session.commit()
     return {"ok": True, "deleted": conversation_id}

@@ -38,11 +38,8 @@ class LLMProvider:
     ):
         self.default_model = default_model
         self.provider = self._detect_provider(default_model)
-
-        if anthropic_api_key:
-            os.environ.setdefault("ANTHROPIC_API_KEY", anthropic_api_key)
-        if openai_api_key:
-            os.environ.setdefault("OPENAI_API_KEY", openai_api_key)
+        self._anthropic_key = anthropic_api_key or ""
+        self._openai_key = openai_api_key or ""
 
     @staticmethod
     def _detect_provider(model: str) -> str:
@@ -95,8 +92,14 @@ class LLMProvider:
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        if json_mode:
+        # Only send response_format for OpenAI models — Anthropic rejects it
+        if json_mode and (model.startswith("gpt") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4") or self._detect_provider(model) == "openai"):
             kwargs["response_format"] = {"type": "json_object"}
+        # Pass API key as parameter when available instead of os.environ side-effect
+        if self._anthropic_key and model.startswith("claude"):
+            kwargs["api_key"] = self._anthropic_key
+        elif self._openai_key and (model.startswith("gpt") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4")):
+            kwargs["api_key"] = self._openai_key
 
         response = await acompletion(**kwargs)
 
@@ -138,8 +141,14 @@ class LLMProvider:
             max_tokens=max_tokens,
             stream=True,
         )
-        if json_mode:
+        # Only send response_format for OpenAI models — Anthropic rejects it
+        if json_mode and (model.startswith("gpt") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4") or self._detect_provider(model) == "openai"):
             kwargs["response_format"] = {"type": "json_object"}
+        # Pass API key as parameter when available instead of os.environ side-effect
+        if self._anthropic_key and model.startswith("claude"):
+            kwargs["api_key"] = self._anthropic_key
+        elif self._openai_key and (model.startswith("gpt") or model.startswith("o1") or model.startswith("o3") or model.startswith("o4")):
+            kwargs["api_key"] = self._openai_key
 
         response = await acompletion(**kwargs)
 

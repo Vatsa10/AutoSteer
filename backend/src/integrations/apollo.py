@@ -59,12 +59,15 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     api_key = await get_credential("apollo", session, workspace_id)
     if not api_key:
         return {"ok": False, "error": "No token configured"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.post(
-            f"{APOLLO_API}/mixed_people/search",
-            json={"page": 1, "per_page": 1},
-            headers=_headers(api_key),
-        )
-    if resp.status_code >= 400:
-        return {"ok": False, "error": resp.text[:200]}
-    return {"ok": True, "message": "Apollo connection verified"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{APOLLO_API}/mixed_people/search",
+                json={"page": 1, "per_page": 1},
+                headers=_headers(api_key),
+            )
+        if resp.status_code >= 400:
+            return {"ok": False, "error": resp.text[:200]}
+        return {"ok": True, "message": "Apollo connection verified"}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 import httpx
 
-ARXIV_API = "http://export.arxiv.org/api/query"
+ARXIV_API = "https://export.arxiv.org/api/query"
 ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 
 

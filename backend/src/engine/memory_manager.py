@@ -36,7 +36,7 @@ class ContextBudget:
     def would_exceed(self, n: int) -> bool:
         return self.total() + n > self.max_tokens
 
-    def summary(self) -> str:
+    def report(self) -> str:
         return (
             f"Budget: {self.total()}/{self.max_tokens} tokens "
             f"(sys={self.system_prompt}, sum={self.summary}, "

@@ -85,12 +85,15 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
         if settings.docusign_template_url:
             return {"ok": True, "mode": "template_link", "message": "Template URL configured (no API token)"}
         return {"ok": False, "error": "No token or template URL configured"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            "https://account.docusign.com/oauth/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-    if resp.status_code >= 400:
-        return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:160]}"}
-    data = resp.json()
-    return {"ok": True, "name": data.get("name"), "email": data.get("email")}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                "https://account.docusign.com/oauth/userinfo",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        if resp.status_code >= 400:
+            return {"ok": False, "error": f"HTTP {resp.status_code}: {resp.text[:160]}"}
+        data = resp.json()
+        return {"ok": True, "name": data.get("name"), "email": data.get("email")}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

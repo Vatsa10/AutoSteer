@@ -52,12 +52,15 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     if not token or not subdomain:
         return {"ok": False, "error": "Missing token or subdomain metadata"}
     email = meta.get("email", "agent@example.com")
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            f"https://{subdomain}.zendesk.com/api/v2/tickets.json",
-            auth=(f"{email}/token", token),
-            params={"per_page": 1},
-        )
-    if resp.status_code >= 400:
-        return {"ok": False, "error": resp.text[:200]}
-    return {"ok": True, "message": f"Zendesk ({subdomain}) connection verified"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"https://{subdomain}.zendesk.com/api/v2/tickets.json",
+                auth=(f"{email}/token", token),
+                params={"per_page": 1},
+            )
+        if resp.status_code >= 400:
+            return {"ok": False, "error": resp.text[:200]}
+        return {"ok": True, "message": f"Zendesk ({subdomain}) connection verified"}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

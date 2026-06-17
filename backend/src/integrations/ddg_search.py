@@ -50,17 +50,18 @@ def _run_ddg_search(query: str, max_results: int) -> list[dict]:
         html, re.DOTALL | re.IGNORECASE
     )
 
-    for url, title_html in result_blocks[:max_results]:
+    # Extract all snippets in document order and pair with result blocks
+    snippet_texts: list[str] = []
+    for m in re.finditer(
+        r'<[^>]*class="[^"]*result__snippet[^"]*"[^>]*>(.*?)</(?:a|span|div)>',
+        html, re.DOTALL | re.IGNORECASE,
+    ):
+        snippet_texts.append(re.sub(r"<[^>]+>", "", m.group(1)).strip())
+
+    for idx, (url, title_html) in enumerate(result_blocks[:max_results]):
         title = re.sub(r"<[^>]+>", "", title_html).strip()
         if title and url.startswith("http"):
-            # Try to find snippet near this result
-            snippet = ""
-            snippet_m = re.search(
-                r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
-                html, re.DOTALL | re.IGNORECASE
-            )
-            if snippet_m:
-                snippet = re.sub(r"<[^>]+>", "", snippet_m.group(1)).strip()
+            snippet = snippet_texts[idx] if idx < len(snippet_texts) else ""
             results.append({
                 "title": title,
                 "url": url,

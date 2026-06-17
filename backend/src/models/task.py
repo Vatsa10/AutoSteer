@@ -19,10 +19,11 @@ class Task(Base):
     __tablename__ = "tasks"
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String(64), default="default", index=True)
     conversation_id: Mapped[str] = mapped_column(
         String, ForeignKey("conversations.id"), nullable=False
     )
-    agent_id: Mapped[str] = mapped_column(String, ForeignKey("agents.id"), nullable=False)
+    agent_id: Mapped[str] = mapped_column(String, nullable=False)
     task_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.PENDING)
     inputs: Mapped[dict] = mapped_column(JSON, default=dict)

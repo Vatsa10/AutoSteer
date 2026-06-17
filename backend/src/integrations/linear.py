@@ -102,9 +102,12 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     token = await get_credential("linear", session, workspace_id)
     if not token:
         return {"ok": False, "error": "No token configured"}
-    gql = "{ viewer { id name email } }"
-    data = await _linear_query(token, gql)
-    if "errors" in data:
-        return {"ok": False, "error": str(data["errors"])}
-    viewer = data.get("data", {}).get("viewer", {})
-    return {"ok": True, "name": viewer.get("name"), "email": viewer.get("email")}
+    try:
+        gql = "{ viewer { id name email } }"
+        data = await _linear_query(token, gql)
+        if "errors" in data:
+            return {"ok": False, "error": str(data["errors"])}
+        viewer = data.get("data", {}).get("viewer", {})
+        return {"ok": True, "name": viewer.get("name"), "email": viewer.get("email")}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

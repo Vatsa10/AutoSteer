@@ -7,6 +7,7 @@ import {
   getConversations,
   getConversationMessages,
   getSystemStatus,
+  authHeaders,
   type ChatResponse,
   type ConversationMessage,
 } from "./api";
@@ -75,11 +76,10 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async ({ message, conversationId, targetAgent, fileIds, files }: SendMessageVars) => {
-      const apiKey = process.env.NEXT_PUBLIC_API_KEY || "";
-      const headers: Record<string, string> = { "Content-Type": "application/json" };
-      if (apiKey) headers["X-API-Key"] = apiKey;
+      const headers = await authHeaders();
+      headers["Content-Type"] = "application/json";
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/chat`,
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}\api\chat`,
         {
           method: "POST",
           headers,
@@ -99,8 +99,11 @@ export function useSendMessage() {
       }
       return res.json() as Promise<ChatResponse>;
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      if (variables.conversationId) {
+        queryClient.invalidateQueries({ queryKey: ["messages", variables.conversationId] });
+      }
     },
     onError: (error: Error) => {
       addToast(error.message, "error");

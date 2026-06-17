@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from src.config import get_settings
 from src.database import get_session_factory
 
 router = APIRouter()
@@ -45,6 +46,22 @@ async def websocket_chat(websocket: WebSocket):
             if payload.get("type") == "ping":
                 await websocket.send_json({"type": "pong"})
                 continue
+
+            # WebSocket auth check on first message
+            if not getattr(websocket, "_authed", False):
+                _ws_settings = get_settings()
+                _ws_api_key = getattr(_ws_settings, "autosteer_api_key", "") or ""
+                if _ws_api_key:
+                    msg_key = payload.get("api_key", "")
+                    if not msg_key or msg_key != _ws_api_key:
+                        await websocket.send_json({"type": "error", "message": "Invalid API key"})
+                        await websocket.close()
+                        manager.disconnect(websocket)
+                        return
+                websocket._authed = True
+                # Strip api_key from payload to avoid downstream confusion
+                payload.pop("api_key", None)
+
             message = payload.get("message", "")
             conversation_id = payload.get("conversation_id")
             target_agent = payload.get("target_agent")

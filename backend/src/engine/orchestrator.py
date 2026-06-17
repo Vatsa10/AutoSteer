@@ -213,9 +213,10 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                     for d in t.dependencies
                 )
                 full_ctx = f"{context}\n\n{dep_context}\n\nTask: {t.description}"
-                agent = self.agents.get(t.agent)
-                if not agent:
+                template = self.agents.get(t.agent)
+                if not template:
                     return tid, f"Agent {t.agent} not available"
+                agent = template.copy_for_request()
                 try:
                     r = await agent.process(full_ctx)
                     return tid, r.content
@@ -555,6 +556,7 @@ User request: {user_message}"""
         conversation_id = conversation_id or str(uuid.uuid4())
 
         # Inject user preferences into system context
+        effective_message = user_message
         if preferences:
             pref_parts = []
             if preferences.get("about"):
@@ -563,8 +565,6 @@ User request: {user_message}"""
                 pref_parts.append(f"## Response Style\n{preferences['responseStyle']}")
             if pref_parts:
                 effective_message = "\n\n".join(pref_parts) + f"\n\n---\n{user_message}"
-
-        # Skip LLM for trivial messages
         simple = self._is_simple_message(user_message) if not file_ids else None
         if simple:
             yield {"type": "token", "content": simple}
@@ -573,7 +573,6 @@ User request: {user_message}"""
             return
 
         # Load file content + persisted document context
-        effective_message = user_message
         file_context_parts = []
 
         # Restore from SharedState for multi-turn memory
@@ -621,8 +620,9 @@ User request: {user_message}"""
             # Persist new files to SharedState for multi-turn memory
             if new_files and session is not None:
                 try:
+                    from sqlalchemy import select as _sa_sf
                     existing = await session.execute(
-                        select(_SSs).where(_SSs.key == f"conv:{conversation_id}:files")
+                        _sa_sf(_SSs).where(_SSs.key == f"conv:{conversation_id}:files")
                     )
                     prev_state = existing.scalar_one_or_none()
                     all_saved = (prev_state.value.get("files", []) if prev_state else []) + new_files
@@ -731,7 +731,8 @@ User request: {user_message}"""
             if stream_intent.get("needs_research") and self.agents.get("web_researcher"):
                 try:
                     sq = stream_intent.get("search_query", user_message)
-                    rr = await self.agents["web_researcher"].process(
+                    wr = self.agents["web_researcher"].copy_for_request()
+                    rr = await wr.process(
                         f"Search for info to enrich a {stream_intent.get('doc_type', 'document')}. "
                         f"Query: {sq}. Return key facts."
                     )
@@ -751,14 +752,15 @@ User request: {user_message}"""
                 )
 
         # Phase 2: Agent processes with streaming
-        agent_runtime = self.agents.get(agent_role) if agent_role else None
-        if not agent_runtime:
+        agent_template = self.agents.get(agent_role) if agent_role else None
+        if not agent_template:
             yield {"type": "error", "message": f"Agent '{agent_role}' is not available."}
             yield {"type": "done"}
             return
 
         yield {"type": "routing", "stage": "processing"}
 
+        agent_runtime = agent_template.copy_for_request()
         set_tool_context(session=session, workspace_id="default")
         full_content = ""
         model_name = ""

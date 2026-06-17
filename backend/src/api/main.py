@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -30,6 +31,8 @@ async def lifespan(app: FastAPI):
     # 2. Initialize MessageBus (Redis)
     message_bus = MessageBus(redis_url=settings.redis_url)
     app.state.message_bus = message_bus
+    message_bus_task = asyncio.create_task(message_bus.start_listening())
+    app.state.message_bus_task = message_bus_task
 
     # 3. Initialize LLM Provider
     llm = LLMProvider(
@@ -60,6 +63,12 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if hasattr(app.state, "message_bus_task") and app.state.message_bus_task:
+        app.state.message_bus_task.cancel()
+        try:
+            await app.state.message_bus_task
+        except asyncio.CancelledError:
+            pass
     await message_bus.close()
     sql_engine = get_engine()
     await sql_engine.dispose()
@@ -75,7 +84,8 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "https://*.vercel.app"],
+        allow_origins=["http://localhost:3000"],
+        allow_origin_regex=r"https://.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

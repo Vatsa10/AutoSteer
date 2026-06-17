@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database import get_db
@@ -20,6 +20,13 @@ class ChatRequest(BaseModel):
     file_ids: list[str] | None = None
     files: list[InlineFile] | None = None
     preferences: dict | None = None  # {about, responseStyle, pinnedAgents}
+
+    @field_validator("message")
+    @classmethod
+    def message_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Message must not be empty")
+        return v
 
 
 class ChatResponse(BaseModel):

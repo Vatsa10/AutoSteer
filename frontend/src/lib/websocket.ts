@@ -10,8 +10,9 @@ export type WSEvent =
 
 interface WSCallbacks {
   onEvent: (event: WSEvent) => void;
+  onOpen?: () => void;
   onError?: (error: Event) => void;
-  onClose?: (error: boolean) => void; // error=true if unexpected close
+  onClose?: (error: boolean) => void;
 }
 
 export function createChatWebSocket(callbacks: WSCallbacks): WebSocket {
@@ -24,12 +25,12 @@ export function createChatWebSocket(callbacks: WSCallbacks): WebSocket {
   }
 
   ws.onopen = () => {
-    // Heartbeat keeps the connection alive through proxy/server idle timeouts.
     pingInterval = setInterval(() => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "ping" }));
       }
     }, 25_000);
+    callbacks.onOpen?.();
   };
 
   ws.onmessage = (msg: MessageEvent) => {

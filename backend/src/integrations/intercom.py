@@ -77,11 +77,14 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     token = await get_credential("intercom", session, workspace_id)
     if not token:
         return {"ok": False, "error": "No token configured"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get(
-            f"{INTERCOM_API}/me",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "Intercom-Version": "2.11"},
-        )
-    if resp.status_code >= 400:
-        return {"ok": False, "error": resp.text[:200]}
-    return {"ok": True, "admin": resp.json()}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{INTERCOM_API}/me",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json", "Intercom-Version": "2.11"},
+            )
+        if resp.status_code >= 400:
+            return {"ok": False, "error": resp.text[:200]}
+        return {"ok": True, "admin": resp.json()}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

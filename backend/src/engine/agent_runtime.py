@@ -473,6 +473,20 @@ Format:
 
         return None
 
+    def copy_for_request(self) -> "AgentRuntime":
+        """Return a shallow copy with fresh mutable state for concurrent request isolation.
+
+        The original instance remains an immutable template. All shared references
+        (tool_registry, soul, config, llm) are shared, not deep-copied.
+        """
+        import copy
+        clone = copy.copy(self)
+        clone.conversation_history = []
+        clone._rolling_summary = self._rolling_summary
+        clone._document_memory = list(self._document_memory)
+        clone._system_prompt = self._system_prompt
+        return clone
+
     def reset_history(self):
         self.conversation_history.clear()
 

@@ -38,16 +38,21 @@ async def get_pricing():
 @router.post("/billing/webhook")
 async def stripe_webhook(request: Request):
     """Minimal Stripe webhook stub — log event type; verify signature when secret set."""
+    try:
+        import stripe
+    except ImportError:
+        raise HTTPException(
+            status_code=500,
+            detail="stripe package required for webhook verification",
+        )
+
     settings = get_settings()
     body = await request.body()
     sig = request.headers.get("stripe-signature", "")
 
     if settings.stripe_webhook_secret and sig:
         try:
-            import stripe
             stripe.Webhook.construct_event(body, sig, settings.stripe_webhook_secret)
-        except ImportError:
-            pass
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

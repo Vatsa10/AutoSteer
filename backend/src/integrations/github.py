@@ -57,7 +57,8 @@ async def github_read(
                 "action": action,
             })
 
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            return json.dumps({"error": f"GitHub API error: {resp.status_code}", "detail": resp.text[:500]})
         data = resp.json()
 
     if action == "get_file" and isinstance(data, dict) and data.get("content"):
@@ -105,9 +106,12 @@ async def test_connection(session=None, workspace_id: str = "default") -> dict:
     token = await get_credential("github", session, workspace_id)
     if not token:
         return {"ok": False, "error": "No token configured"}
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        resp = await client.get("https://api.github.com/user", headers=_headers(token))
-        if resp.status_code == 200:
-            user = resp.json()
-            return {"ok": True, "login": user.get("login")}
-        return {"ok": False, "error": f"HTTP {resp.status_code}"}
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get("https://api.github.com/user", headers=_headers(token))
+            if resp.status_code == 200:
+                user = resp.json()
+                return {"ok": True, "login": user.get("login")}
+            return {"ok": False, "error": f"HTTP {resp.status_code}"}
+    except Exception as exc:
+        return {"ok": False, "error": f"Connection failed: {exc}"}

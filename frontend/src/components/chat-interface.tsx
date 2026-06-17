@@ -65,11 +65,6 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     }
   }, [initialConversationId, setConversationId, setInput]);
 
-  // ── Clear messages when switching conversations ──────────────
-  useEffect(() => {
-    setMessages([]);
-  }, [conversationId, setMessages]);
-
   // ── Load conversation history ────────────────────────────────
   const { data: historyMessages, isLoading: isLoadingHistory } =
     useConversationMessages(conversationId);
@@ -151,6 +146,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       clearRoutingEvents();
       setIsStreaming(true);
       const ws = createChatWebSocket({
+        onOpen: () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); },
         onEvent: (event: WSEvent) => {
           switch (event.type) {
             case "routing":
@@ -162,7 +158,11 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               if (event.conversation_id && !convId) setConversationId(event.conversation_id);
               break;
             case "error": addToast(event.message, "error"); setIsStreaming(false); setRoutingStage(""); break;
-            case "done": setIsStreaming(false); setRoutingStage(""); queryClient.invalidateQueries({ queryKey: ["conversations"] }); break;
+            case "done":
+              setIsStreaming(false); setRoutingStage("");
+              queryClient.invalidateQueries({ queryKey: ["conversations"] });
+              if (convId) queryClient.invalidateQueries({ queryKey: ["messages", convId] });
+              break;
           }
         },
         onError: () => {
@@ -180,7 +180,6 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
         },
       });
       wsRef.current = ws;
-      ws.onopen = () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); };
     },
     [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient],
   );
@@ -215,7 +214,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     }
   }
 
-  function handleNewConversation() { reset(); setInput(""); }
+  function handleNewConversation() {
+    if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
+    reset(); setInput("");
+  }
 
   return (
     <>

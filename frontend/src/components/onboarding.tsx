@@ -65,8 +65,11 @@ export function Onboarding({ onComplete }: Props) {
   function finish() {
     localStorage.setItem("autosteer_onboarded", "true");
     if (role.trim()) {
-      const existing = localStorage.getItem("autosteer_preferences");
-      const prefs = existing ? JSON.parse(existing) : {};
+      let prefs: Record<string, string> = {};
+      try {
+        const existing = localStorage.getItem("autosteer_preferences");
+        prefs = existing ? JSON.parse(existing) : {};
+      } catch { prefs = {}; }
       prefs.about = `The user described their work as: ${role.trim()}`;
       localStorage.setItem("autosteer_preferences", JSON.stringify(prefs));
     }

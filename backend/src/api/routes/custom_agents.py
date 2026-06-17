@@ -78,7 +78,6 @@ async def create_custom_agent(body: CustomAgentCreate, request: Request):
             is_active=True,
         )
         session.add(agent)
-        await session.commit()
 
     return {"ok": True, "id": agent_id, "role": role, "note": "Restart engine or hot-reload to activate in routing."}
 
@@ -93,5 +92,4 @@ async def delete_custom_agent(role: str, request: Request):
         if not agent:
             raise HTTPException(status_code=404, detail="Custom agent not found")
         await session.delete(agent)
-        await session.commit()
     return {"ok": True}

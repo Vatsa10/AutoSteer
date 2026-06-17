@@ -33,15 +33,11 @@ async def get_preferences(request: Request, session: AsyncSession = Depends(get_
 async def save_preferences(body: PreferencesBody, request: Request, session: AsyncSession = Depends(get_db)):
     from datetime import datetime, timezone
     prefs = body.model_dump()
-    try:
-        result = await session.execute(select(SharedState).where(SharedState.key == PREF_KEY))
-        row = result.scalar_one_or_none()
-        if row:
-            row.value = prefs
-            row.updated_at = datetime.now(timezone.utc)
-        else:
-            session.add(SharedState(key=PREF_KEY, value=prefs, owner="user", updated_at=datetime.now(timezone.utc)))
-        await session.commit()
-    except Exception:
-        await session.rollback()
+    result = await session.execute(select(SharedState).where(SharedState.key == PREF_KEY))
+    row = result.scalar_one_or_none()
+    if row:
+        row.value = prefs
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        session.add(SharedState(key=PREF_KEY, value=prefs, owner="user", updated_at=datetime.now(timezone.utc)))
     return {"ok": True}
