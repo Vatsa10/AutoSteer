@@ -33,9 +33,9 @@ services:
       retries: 5
       start_period: 30s
     environment:
-      POSTGRES_user: raah
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Raah_dev}
-      POSTGRES_DB: Raah
+      POSTGRES_USER: raah
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-raah_dev}
+      POSTGRES_DB: raah
     ports:
       - "5433:5432"
     volumes:
@@ -88,7 +88,7 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      DATABASE_URL: postgresql+asyncpg://raah:${POSTGRES_PASSWORD:-Raah_dev}@postgres:5432/Raah
+      DATABASE_URL: postgresql+asyncpg://raah:${POSTGRES_PASSWORD:-raah_dev}@postgres:5432/raah
       REDIS_URL: redis://redis:6379/0
       # Overridable via .env or host env — these defaults are dev-safe:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
