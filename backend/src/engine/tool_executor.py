@@ -496,7 +496,7 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
         "figma_link_read", "Read Figma file metadata.",
         {"file_key": {"type": "string"}, "figma_url": {"type": "string"}},
     ))
-    registry.register("lighthouse_audit", lighthouse_audit, _schema(
+    registry.register("lighthouse_audit", _ctx_wrap(lighthouse_audit), _schema(
         "lighthouse_audit", "Run Lighthouse/PageSpeed audit on URL.",
         {"url": {"type": "string"}},
     ))

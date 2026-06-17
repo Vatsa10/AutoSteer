@@ -1,9 +1,30 @@
 """Tests for tool alias resolution and registry."""
 
+import importlib
+import inspect
+
 import pytest
 
 from src.engine.tool_aliases import TOOL_ALIASES, resolve_tool_name, get_tool_tier, ToolTier
 from src.engine.tool_executor import ToolRegistry, get_tool_registry, register_builtin_tools, execute_tool
+from src.integrations.credentials import ENV_FALLBACKS
+from src.integrations.providers import PROVIDERS, TEST_HANDLERS
+
+
+def test_every_test_handler_module_exposes_test_connection():
+    """The Settings → Integrations 'Test' button imports these and calls test_connection."""
+    for provider, module_path in TEST_HANDLERS.items():
+        mod = importlib.import_module(module_path)
+        fn = getattr(mod, "test_connection", None)
+        assert fn is not None, f"{module_path} missing test_connection (provider {provider})"
+        assert inspect.iscoroutinefunction(fn), f"{module_path}.test_connection must be async"
+
+
+def test_every_provider_has_env_fallback_or_known_exception():
+    """Each provider with an env var resolves through the canonical ENV_FALLBACKS map."""
+    for provider in PROVIDERS:
+        pid = provider["id"]
+        assert pid in ENV_FALLBACKS, f"Provider '{pid}' missing from ENV_FALLBACKS"
 
 
 def test_alias_resolution():

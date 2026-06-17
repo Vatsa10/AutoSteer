@@ -71,7 +71,8 @@ async def lighthouse_audit(url: str, session=None, workspace_id: str = "default"
 
 async def test_connection(session=None, workspace_id: str = "default") -> dict:
     settings = get_settings()
-    if settings.google_pagespeed_api_key:
+    api_key = await get_credential("pagespeed", session, workspace_id) or settings.google_pagespeed_api_key
+    if api_key:
         return {"ok": True, "mode": "pagespeed_api", "message": "PageSpeed API key configured"}
     if shutil.which("lighthouse"):
         return {"ok": True, "mode": "lighthouse_cli", "message": "lighthouse CLI available"}
