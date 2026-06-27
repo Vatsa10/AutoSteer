@@ -275,7 +275,7 @@ wheels = [
 ]
 
 [[package]]
-name = "raah"
+name = "AutoSteer"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -11,7 +11,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
       <Show when="signed-out">
         <div className="h-screen flex flex-col items-center justify-center gap-6 p-8">
           <div className="text-center space-y-3 max-w-md">
-            <h1 className="text-2xl font-bold text-slate-800">Raah</h1>
+            <h1 className="text-2xl font-bold text-slate-800">AutoSteer</h1>
             <p className="text-sm text-slate-500">
               43 AI agents across 12 departments. One interface.
             </p>

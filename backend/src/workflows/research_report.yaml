@@ -1,4 +1,4 @@
-# Raah Workflow Definition
+# AutoSteer Workflow Definition
 # YAML → Pydantic validated at load time. Kokoro-inspired pattern.
 name: research_report
 description: "Research a topic, draft content, and review for quality."

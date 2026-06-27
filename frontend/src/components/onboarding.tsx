@@ -14,17 +14,17 @@ const STEPS = [
     icon: Search,
     question: "What kind of work do you do?",
     placeholder: "I'm a product manager at a SaaS startup...",
-    hint: "This helps Raah pick the right agents and tone for your work.",
+    hint: "This helps AutoSteer pick the right agents and tone for your work.",
   },
   {
     icon: Upload,
     question: "Try uploading a document",
-    description: "Raah can read PDFs, Word docs, and images. Upload a file now.",
+    description: "AutoSteer can read PDFs, Word docs, and images. Upload a file now.",
   },
   {
     icon: FileText,
     question: "Try a multi-agent task",
-    description: "Raah uses multiple agents in parallel for complex tasks.",
+    description: "AutoSteer uses multiple agents in parallel for complex tasks.",
     suggestions: [
       "Research quantum computing trends and create a report",
       "Analyze my competitor's website and draft a battle card",
@@ -43,7 +43,7 @@ export function Onboarding({ onComplete }: Props) {
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
-    if (localStorage.getItem("raah_onboarded")) setDone(true);
+    if (localStorage.getItem("AutoSteer_onboarded")) setDone(true);
   }, []);
 
   if (done) return null;
@@ -63,15 +63,15 @@ export function Onboarding({ onComplete }: Props) {
   }
 
   function finish() {
-    localStorage.setItem("raah_onboarded", "true");
+    localStorage.setItem("AutoSteer_onboarded", "true");
     if (role.trim()) {
       let prefs: Record<string, string> = {};
       try {
-        const existing = localStorage.getItem("raah_preferences");
+        const existing = localStorage.getItem("AutoSteer_preferences");
         prefs = existing ? JSON.parse(existing) : {};
       } catch { prefs = {}; }
       prefs.about = `The user described their work as: ${role.trim()}`;
-      localStorage.setItem("raah_preferences", JSON.stringify(prefs));
+      localStorage.setItem("AutoSteer_preferences", JSON.stringify(prefs));
     }
     setDone(true);
     onComplete({ role: role.trim(), about: role.trim() ? role : "" });
@@ -163,7 +163,7 @@ export function Onboarding({ onComplete }: Props) {
                 <button
                   key={i}
                   onClick={() => {
-                    sessionStorage.setItem("raah_template_prompt", sg);
+                    sessionStorage.setItem("AutoSteer_template_prompt", sg);
                     finish();
                   }}
                   className="w-full text-left text-sm text-slate-600 hover:text-blue-700 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg px-4 py-3 transition-all"

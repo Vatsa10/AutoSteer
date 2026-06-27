@@ -60,10 +60,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       loadedOnce.current = true;
       setConversationId(initialConversationId);
     }
-    const templatePrompt = sessionStorage.getItem("raah_template_prompt");
+    const templatePrompt = sessionStorage.getItem("AutoSteer_template_prompt");
     if (templatePrompt) {
       setInput(templatePrompt);
-      sessionStorage.removeItem("raah_template_prompt");
+      sessionStorage.removeItem("AutoSteer_template_prompt");
     }
   }, [initialConversationId, setConversationId, setInput]);
 
@@ -116,10 +116,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       setAttachments((prev) => [...prev, { filename: file.name, content: base64, mime_type: file.type || "application/octet-stream" }]);
       // Sync document to memory store
       try {
-        const stored = localStorage.getItem("raah_memory");
+        const stored = localStorage.getItem("AutoSteer_memory");
         const mem = stored ? JSON.parse(stored) : { facts: [], documents: [], summary: "" };
         mem.documents.push({ filename: file.name, preview: "", char_count: file.size });
-        localStorage.setItem("raah_memory", JSON.stringify(mem));
+        localStorage.setItem("AutoSteer_memory", JSON.stringify(mem));
       } catch {}
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Failed to read file", "error");
@@ -260,7 +260,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
             <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-5">
               <Network className="w-7 h-7 text-blue-600" />
             </div>
-            <h2 className="text-lg font-semibold text-slate-800 mb-2">Raah</h2>
+            <h2 className="text-lg font-semibold text-slate-800 mb-2">AutoSteer</h2>
             <p className="text-sm text-slate-500 max-w-md">Send a message and watch it route through the Master Orchestrator to the most qualified agent across 12 departments and 42 specialists.</p>
             <div className="mt-6 grid grid-cols-2 gap-2 w-full max-w-sm">
               {["Research the latest transformer architectures", "Design a new onboarding flow for enterprise customers", "Draft a sales proposal for Acme Corp", "Review my API for security vulnerabilities"].map((s) => (

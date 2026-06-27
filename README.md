@@ -1,4 +1,4 @@
-# Raah
+# AutoSteer
 
 **Multi-agent orchestration that routes every request through the right AI specialist.**
 
@@ -33,8 +33,8 @@ You: "Design a new onboarding flow for enterprise customers"
 
 ```bash
 # 1. Clone
-git clone https://github.com/vatsa/Raah.git
-cd Raah
+git clone https://github.com/vatsa/AutoSteer.git
+cd AutoSteer
 
 # 2. Start Postgres + Redis
 docker compose up -d
@@ -313,7 +313,7 @@ Live agent activity feed. Supports broadcasting messages to all connected client
 
 ## Streaming
 
-Raah supports real-time streaming at every layer:
+AutoSteer supports real-time streaming at every layer:
 
 1. **LLM streaming** — `LLMProvider.complete_stream()` yields tokens via LiteLLM's async stream mode
 2. **Agent streaming** — `AgentRuntime.process_stream()` yields token + metadata events with handoff parsing
@@ -379,7 +379,7 @@ registry.register("my_api", tool_my_api, {
 
 Optional API key authentication via `X-API-Key` header.
 
-**Enable:** Set `raah_api_key` in `.env`. All `/api/*` routes require the header (except `/api/health` and `/api/status`). WebSocket connections are allowed — auth is checked on the upgrade handshake.
+**Enable:** Set `AutoSteer_api_key` in `.env`. All `/api/*` routes require the header (except `/api/health` and `/api/status`). WebSocket connections are allowed — auth is checked on the upgrade handshake.
 
 **Frontend:** Set `NEXT_PUBLIC_API_KEY` in the frontend environment. The API client includes it in all requests automatically.
 
@@ -397,7 +397,7 @@ Optional API key authentication via `X-API-Key` header.
 | `DEFAULT_LLM_MODEL`          | `gpt-4o`                 | Default model                            |
 | `AGENTS_DIR`                 | `src/agents/definitions` | Path to YAML definitions                 |
 | `MAX_CONCURRENT_DEPARTMENTS` | `5`                      | Max parallel departments                 |
-| `raah_api_key`          | `""`                     | API key for auth (empty = no auth)       |
+| `AutoSteer_api_key`          | `""`                     | API key for auth (empty = no auth)       |
 | `DEBUG`                      | `false`                  | Enable debug logging                     |
 
 **Provider examples:**
@@ -572,7 +572,7 @@ Workflows execute departments in sequence with parallel phases via `asyncio.gath
 ## Project Structure
 
 ```
-Raah/
+AutoSteer/
 ├── backend/
 │   ├── src/
 │   │   ├── api/                     # FastAPI (REST + WebSocket)
@@ -727,7 +727,7 @@ Agents create professional Word (.docx) and PowerPoint (.pptx) files natively:
 
 User-facing settings hub at `/settings`:
 
-- **Preferences:** Custom instructions ("What should Raah know about you?", "How should Raah respond?") injected into every conversation
+- **Preferences:** Custom instructions ("What should AutoSteer know about you?", "How should AutoSteer respond?") injected into every conversation
 - **Memory:** View/edit extracted facts, upload context documents, review conversation summaries
 - **Agents:** Pin preferred agents for routing priority, search/filter 43 agents
 - **Integrations:** Connect API keys for Slack, GitHub, Notion, HubSpot, 20+ services

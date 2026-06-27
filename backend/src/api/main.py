@@ -76,7 +76,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="Raah",
+        title="AutoSteer",
         version="0.1.0",
         description="Multi-agent orchestration — 42 AI agents across 12 departments",
         lifespan=lifespan,
@@ -84,7 +84,7 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "https://tryraah.online"],
+        allow_origins=["http://localhost:3000", "https://tryAutoSteer.online"],
         allow_origin_regex=r"https://.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
@@ -107,7 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(approvals.router, prefix="/api")
     app.include_router(websocket.router)
 
-    # Setup auth (no-op if Raah_API_KEY is not set)
+    # Setup auth (no-op if AutoSteer_API_KEY is not set)
     auth_enabled = setup_auth(app)
     app.state.auth_enabled = auth_enabled
 

@@ -14,7 +14,7 @@ export default function SignUpPage() {
             <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
               <Network className="w-4 h-4 text-blue-400" />
             </div>
-            <span className="text-lg font-semibold tracking-tight text-zinc-100">Raah</span>
+            <span className="text-lg font-semibold tracking-tight text-zinc-100">AutoSteer</span>
           </Link>
           <div className="space-y-6">
             <h2 className="text-2xl font-bold text-zinc-100">Everything you need</h2>

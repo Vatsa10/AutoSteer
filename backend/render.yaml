@@ -1,12 +1,12 @@
 # =============================================================================
-# Raah — Render Blueprint (render.com)
+# AutoSteer — Render Blueprint (render.com)
 # Auto-provisions: Python web service + PostgreSQL (pgvector) + Redis
 # =============================================================================
 
 services:
   # --- Backend: FastAPI web service -----------------------------------------
   - type: web
-    name: raah-backend
+    name: AutoSteer-backend
     runtime: python
     buildCommand: pip install . && pip install python-jose[cryptography]
     startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 2
@@ -17,11 +17,11 @@ services:
       # Database & Redis (auto-provisioned by Render)
       - key: DATABASE_URL
         fromDatabase:
-          name: raah-db
+          name: AutoSteer-db
           property: connectionString
       - key: REDIS_URL
         fromService:
-          name: raah-redis
+          name: AutoSteer-redis
           type: redis
           property: connectionString
 
@@ -36,7 +36,7 @@ services:
         value: gpt-4o-mini
 
       # Auth
-      - key: raah_api_key
+      - key: AutoSteer_api_key
         generateValue: true
       - key: CLERK_SECRET_KEY
         sync: false
@@ -135,7 +135,7 @@ services:
 
   # --- Background worker (optional — for heavy workflows) --------------------
   # - type: worker
-  #   name: raah-worker
+  #   name: AutoSteer-worker
   #   runtime: python
   #   buildCommand: pip install .
   #   startCommand: celery -A src.messaging.celery_app worker --loglevel=info
@@ -143,26 +143,26 @@ services:
   #   envVars:
   #     - key: DATABASE_URL
   #       fromDatabase:
-  #         name: raah-db
+  #         name: AutoSteer-db
   #         property: connectionString
   #     - key: REDIS_URL
   #       fromService:
-  #         name: raah-redis
+  #         name: AutoSteer-redis
   #         type: redis
   #         property: connectionString
-  #     - fromGroup: raah-backend-env
+  #     - fromGroup: AutoSteer-backend-env
 
 # Databases -------------------------------------------------------------------
 databases:
-  - name: raah-db
-    databaseName: raah
-    user: raah
+  - name: AutoSteer-db
+    databaseName: AutoSteer
+    user: AutoSteer
     plan: starter
-    # After creation, go to Render Dashboard → raah-db → Shell:
+    # After creation, go to Render Dashboard → AutoSteer-db → Shell:
     #   psql -c "CREATE EXTENSION IF NOT EXISTS vector;"
     # pgvector is available on all Render PostgreSQL plans.
 
-  - name: raah-redis
+  - name: AutoSteer-redis
     ipAllowList: []
     plan: free
     maxmemoryPolicy: noeviction

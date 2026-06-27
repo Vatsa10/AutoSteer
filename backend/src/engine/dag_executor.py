@@ -1,8 +1,8 @@
 """
-Persisted DAG executor — marries Kokoro's sequential executor with Raah's DAG execution.
+Persisted DAG executor — marries Kokoro's sequential executor with AutoSteer's DAG execution.
 
 Every subtask gets a DB record at PENDING→IN_PROGRESS→COMPLETED/FAILED transitions.
-Uses Raah's existing Task/Workflow models. State survives server restart.
+Uses AutoSteer's existing Task/Workflow models. State survives server restart.
 """
 
 import asyncio

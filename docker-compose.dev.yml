@@ -1,5 +1,5 @@
 # =============================================================================
-# Raah — Development Overrides
+# AutoSteer — Development Overrides
 # =============================================================================
 # Usage:
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
@@ -18,7 +18,7 @@ services:
     ports:
       - "5432:5432"                    # default port for local psql / tooling
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U Raah -d Raah"]
+      test: ["CMD-SHELL", "pg_isready -U AutoSteer -d AutoSteer"]
       interval: 5s
       timeout: 3s
       retries: 10

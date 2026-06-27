@@ -1,5 +1,5 @@
 # =============================================================================
-# Raah — Production Docker Compose
+# AutoSteer — Production Docker Compose
 # =============================================================================
 # Usage:
 #   docker compose up -d                     # start all services
@@ -23,31 +23,31 @@ services:
   # ── PostgreSQL 16 with pgvector ──────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: Raah-postgres
+    container_name: AutoSteer-postgres
     <<: *restart-policy
     logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U Raah -d Raah"]
+      test: ["CMD-SHELL", "pg_isready -U AutoSteer -d AutoSteer"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
     environment:
-      POSTGRES_USER: raah
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-raah_dev}
-      POSTGRES_DB: raah
+      POSTGRES_USER: AutoSteer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-AutoSteer_dev}
+      POSTGRES_DB: AutoSteer
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     networks:
-      - Raah-network
+      - AutoSteer-network
 
   # ── Redis 7 ──────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    container_name: Raah-redis
+    container_name: AutoSteer-redis
     <<: *restart-policy
     logging: *default-logging
     healthcheck:
@@ -61,14 +61,14 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - Raah-network
+      - AutoSteer-network
 
   # ── Backend (FastAPI) ────────────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: Raah-backend
+    container_name: AutoSteer-backend
     <<: *restart-policy
     logging: *default-logging
     healthcheck:
@@ -88,29 +88,29 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      DATABASE_URL: postgresql+asyncpg://raah:${POSTGRES_PASSWORD:-raah_dev}@postgres:5432/raah
+      DATABASE_URL: postgresql+asyncpg://AutoSteer:${POSTGRES_PASSWORD:-AutoSteer_dev}@postgres:5432/AutoSteer
       REDIS_URL: redis://redis:6379/0
       # Overridable via .env or host env — these defaults are dev-safe:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      Raah_API_KEY: ${Raah_API_KEY:-}
+      AutoSteer_API_KEY: ${AutoSteer_API_KEY:-}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY:-dev-change-me-in-production-use-openssl-rand}
       DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-openai}
       DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-gpt-4o-mini}
       DEBUG: ${DEBUG:-false}
     networks:
-      - Raah-network
+      - AutoSteer-network
 
 # ── Named Volumes ──────────────────────────────────────────────────────────────
 volumes:
   postgres_data:
-    name: Raah_postgres_data
+    name: AutoSteer_postgres_data
   redis_data:
-    name: Raah_redis_data
+    name: AutoSteer_redis_data
 
 # ── Networks ───────────────────────────────────────────────────────────────────
 networks:
-  Raah-network:
-    name: Raah-network
+  AutoSteer-network:
+    name: AutoSteer-network
     driver: bridge

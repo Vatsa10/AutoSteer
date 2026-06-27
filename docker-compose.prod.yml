@@ -2,9 +2,9 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_user: raah
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-Raah_prod}
-      POSTGRES_DB: Raah
+      POSTGRES_user: AutoSteer
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-AutoSteer_prod}
+      POSTGRES_DB: AutoSteer
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
@@ -20,12 +20,12 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     environment:
-      DATABASE_URL: postgresql+asyncpg://raah:${POSTGRES_PASSWORD:-Raah_prod}@postgres:5432/Raah
+      DATABASE_URL: postgresql+asyncpg://AutoSteer:${POSTGRES_PASSWORD:-AutoSteer_prod}@postgres:5432/AutoSteer
       REDIS_URL: redis://redis:6379/0
       INTEGRATION_ENCRYPTION_KEY: ${INTEGRATION_ENCRYPTION_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      raah_api_key: ${raah_api_key:-}
+      AutoSteer_api_key: ${AutoSteer_api_key:-}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     depends_on:
       - postgres
@@ -38,7 +38,7 @@ services:
       dockerfile: Dockerfile
     environment:
       NEXT_PUBLIC_API_URL: http://backend:8000
-      NEXT_PUBLIC_API_KEY: ${raah_api_key:-}
+      NEXT_PUBLIC_API_KEY: ${AutoSteer_api_key:-}
     depends_on:
       - backend
     restart: unless-stopped

@@ -6,7 +6,7 @@ Adapted from Kokoro-AI-Workflow-Engine's ai/kokoro.py adapter pattern:
 - Multi-shape audio chunk normalization
 - Falls back gracefully when dependencies aren't installed
 
-Adds `speak_text` as a Raah tool that agents can invoke.
+Adds `speak_text` as a AutoSteer tool that agents can invoke.
 """
 
 from __future__ import annotations

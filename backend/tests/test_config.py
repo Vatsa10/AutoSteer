@@ -6,7 +6,7 @@ def test_settings_defaults():
         database_url="postgresql+asyncpg://test:test@localhost/test",
         redis_url="redis://localhost:6379/0",
     )
-    assert settings.app_name == "Raah"
+    assert settings.app_name == "AutoSteer"
     assert settings.debug is False
     assert settings.default_llm_provider == "openai"
     assert settings.default_llm_model == "gpt-4o-mini"

@@ -1,5 +1,5 @@
 """
-Protocol interfaces for Raah's orchestration layer.
+Protocol interfaces for AutoSteer's orchestration layer.
 
 Inspired by Kokoro-AI-Workflow-Engine's Protocol-based contracts.
 Uses PEP 544 structural subtyping — any object with the right methods

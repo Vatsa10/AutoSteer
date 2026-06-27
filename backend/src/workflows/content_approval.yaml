@@ -1,4 +1,4 @@
-# Raah Workflow — Content creation with human-in-the-loop approval
+# AutoSteer Workflow — Content creation with human-in-the-loop approval
 name: content_approval
 description: "Draft content, submit for review, wait for human approval, then publish."
 schedule_cron: null  # Set to e.g. "0 9 * * 1" for weekly Monday 9am runs

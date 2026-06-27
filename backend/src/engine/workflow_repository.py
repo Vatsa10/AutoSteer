@@ -1,7 +1,7 @@
 """
 SQLAlchemy persistence repository for workflow runs and step events.
 
-Adapts Kokoro's SqliteWorkflowRepository pattern to Raah's async PostgreSQL.
+Adapts Kokoro's SqliteWorkflowRepository pattern to AutoSteer's async PostgreSQL.
 """
 
 import json
@@ -17,7 +17,7 @@ from src.models.task import Task, TaskStatus
 
 
 class WorkflowPersistence:
-    """Saves workflow runs and step transitions using Raah's existing models."""
+    """Saves workflow runs and step transitions using AutoSteer's existing models."""
 
     def __init__(self, session: AsyncSession, workspace_id: str = "default"):
         self.session = session

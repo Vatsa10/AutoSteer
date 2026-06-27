@@ -21,7 +21,7 @@ def show_workflow_table(workflows: list[dict]) -> None:
 def show_agent_table() -> None:
     import httpx
     import os
-    api = os.getenv("RAAH_API_URL", "http://localhost:8000")
+    api = os.getenv("AutoSteer_API_URL", "http://localhost:8000")
     try:
         r = httpx.get(f"{api}/api/agents", timeout=5)
         agents = r.json()

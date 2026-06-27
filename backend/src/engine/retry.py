@@ -1,7 +1,7 @@
 """
 Retry wrapper with exponential backoff and jitter.
 
-Neither Kokoro nor Raah had this — built from scratch for workflow reliability.
+Neither Kokoro nor AutoSteer had this — built from scratch for workflow reliability.
 """
 
 import asyncio

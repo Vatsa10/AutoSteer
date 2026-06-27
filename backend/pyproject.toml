@@ -1,7 +1,7 @@
 [project]
-name = "raah"
+name = "AutoSteer"
 version = "0.1.0"
-description = "Raah — Multi-Agent Orchestration System. 43 agents across 12 departments."
+description = "AutoSteer — Multi-Agent Orchestration System. 43 agents across 12 departments."
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

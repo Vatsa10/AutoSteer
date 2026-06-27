@@ -14,7 +14,7 @@ export default function SignInPage() {
             <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
               <Network className="w-4 h-4 text-blue-400" />
             </div>
-            <span className="text-lg font-semibold tracking-tight text-zinc-100">Raah</span>
+            <span className="text-lg font-semibold tracking-tight text-zinc-100">AutoSteer</span>
           </Link>
           <blockquote className="text-2xl font-medium text-zinc-300 leading-relaxed">
             One interface for research, writing, coding, analysis, and document generation.

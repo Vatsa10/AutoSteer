@@ -5,7 +5,7 @@ Adapted from Kokoro-AI-Workflow-Engine's ai/llama_cpp.py:
 - Lazy-loaded model (imports only when first completion is requested)
 - Compatible with GGUF models from HuggingFace
 - Graceful fallback when llama-cpp-python isn't installed
-- Can serve as Raah's LLM provider when OPENAI_API_KEY is not set
+- Can serve as AutoSteer's LLM provider when OPENAI_API_KEY is not set
 """
 
 from __future__ import annotations
@@ -74,7 +74,7 @@ async def local_complete(
 ) -> str:
     """Run completion on the local LLM. Returns JSON with the generated text.
 
-    Designed to work as a drop-in for Raah's LLMProvider when deployed offline.
+    Designed to work as a drop-in for AutoSteer's LLMProvider when deployed offline.
     """
     try:
         client = _load_client()

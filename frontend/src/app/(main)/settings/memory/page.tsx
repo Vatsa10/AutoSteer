@@ -33,7 +33,7 @@ export default function MemoryPage() {
 
   useEffect(() => {
     // Load from localStorage for now (backend API later)
-    const stored = localStorage.getItem("raah_memory");
+    const stored = localStorage.getItem("AutoSteer_memory");
     if (stored) {
       try {
         const m = JSON.parse(stored);
@@ -46,7 +46,7 @@ export default function MemoryPage() {
   }, []);
 
   const persist = useCallback((f: MemoryFact[], d: MemoryDocument[], s: string) => {
-    localStorage.setItem("raah_memory", JSON.stringify({ facts: f, documents: d, summary: s }));
+    localStorage.setItem("AutoSteer_memory", JSON.stringify({ facts: f, documents: d, summary: s }));
     setFacts(f);
     setDocuments(d);
     setSummary(s);
@@ -117,7 +117,7 @@ export default function MemoryPage() {
     <div className="max-w-2xl px-8 py-8 space-y-10">
       <div>
         <h2 className="text-base font-semibold text-slate-800 mb-1">Memory & Context</h2>
-        <p className="text-sm text-slate-500">What Raah remembers about you and your conversations.</p>
+        <p className="text-sm text-slate-500">What AutoSteer remembers about you and your conversations.</p>
       </div>
 
       {/* Memory Health */}
@@ -148,7 +148,7 @@ export default function MemoryPage() {
             const data = JSON.stringify({ facts, documents, summary, exported_at: new Date().toISOString() }, null, 2);
             const blob = new Blob([data], { type: "application/json" });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement("a"); a.href = url; a.download = "Raah-memory.json"; a.click();
+            const a = document.createElement("a"); a.href = url; a.download = "AutoSteer-memory.json"; a.click();
             URL.revokeObjectURL(url);
             addToast("Memory exported", "success");
           }}
@@ -167,7 +167,7 @@ export default function MemoryPage() {
                 try {
                   const imported = JSON.parse(reader.result as string);
                   if (imported.facts && imported.documents) {
-                    localStorage.setItem("raah_memory", JSON.stringify({ facts: imported.facts, documents: imported.documents, summary: imported.summary || "" }));
+                    localStorage.setItem("AutoSteer_memory", JSON.stringify({ facts: imported.facts, documents: imported.documents, summary: imported.summary || "" }));
                     setFacts(imported.facts);
                     setDocuments(imported.documents);
                     setSummary(imported.summary || "");

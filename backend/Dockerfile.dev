@@ -1,5 +1,5 @@
 # =============================================================================
-# Raah Backend — Development Dockerfile
+# AutoSteer Backend — Development Dockerfile
 # =============================================================================
 # Lightweight image used only in dev mode (docker-compose.dev.yml).
 # Source code is mounted as a volume, so we only need the runtime + deps

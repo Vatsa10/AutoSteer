@@ -3,7 +3,7 @@ from pathlib import Path
 from rich.console import Console
 from cli.display import show_workflow_table, show_agent_table
 
-app = typer.Typer(help="Raah — multi-agent orchestration CLI")
+app = typer.Typer(help="AutoSteer — multi-agent orchestration CLI")
 console = Console()
 
 
