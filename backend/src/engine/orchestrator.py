@@ -3,6 +3,13 @@ import json as _json
 import uuid
 from collections.abc import AsyncGenerator
 from typing import Any
+import time as _time
+import logging
+
+logger = logging.getLogger(__name__)
+
+# Single configurable model for all classification/routing calls
+ROUTER_MODEL = "gpt-4o-mini"
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -132,7 +139,7 @@ Respond: {{"agent": "<agent_role>"}}"""
             resp = await self.llm.complete(
                 messages=[LLMMessage(role="user", content=prompt)],
                 system_prompt="Agent selection classifier. Return JSON only.",
-                temperature=0.0, max_tokens=80, model="gpt-4o-mini",
+                temperature=0.0, max_tokens=80, model=ROUTER_MODEL,
             )
             data = _json.loads(resp.content)
             agent = data.get("agent", "")
@@ -167,7 +174,7 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                 system_prompt="Classify user intent for agent coordination. Return JSON only.",
                 temperature=0.0,
                 max_tokens=150,
-                model="gpt-4o-mini",
+                model=ROUTER_MODEL,
             )
             import json as _json
             return _json.loads(response.content)
@@ -261,7 +268,7 @@ Available agents: {', '.join(list(self.agents.keys()))}"""
             resp = await self.llm.complete(
                 messages=[LLMMessage(role="user", content=prompt)],
                 system_prompt="Task decomposition classifier. Return JSON only.",
-                temperature=0.0, max_tokens=300, model="gpt-4o-mini",
+                temperature=0.0, max_tokens=300, model=ROUTER_MODEL,
             )
             plan = _json.loads(resp.content)
             if not plan.get("multi_step") or not plan.get("subtasks"):
@@ -602,7 +609,7 @@ User request: {user_message}"""
                     if in_degree[s["id"]] == 0:
                         ready.append(s["id"])
 
-        yield {"type": "metadata", "conversation_id": conversation_id, "agent": f"workflow:{wf_name}", "department": "workflow", "model": "gpt-4o-mini"}
+        yield {"type": "metadata", "conversation_id": conversation_id, "agent": f"workflow:{wf_name}", "department": "workflow", "model": ROUTER_MODEL}
 
     async def process_message(
         self,
@@ -827,7 +834,7 @@ User request: {user_message}"""
                         fallback = await self.llm.complete(
                             messages=[LLMMessage(role="user", content=effective_message)],
                             system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
-                            temperature=0.7, max_tokens=1024, model="gpt-4o-mini",
+                            temperature=0.7, max_tokens=1024, model=ROUTER_MODEL,
                         )
                         yield {"type": "token", "content": fallback.content}
                         yield {"type": "metadata", "conversation_id": conversation_id, "agent": "fallback", "department": "direct", "model": fallback.model, "usage": fallback.usage}

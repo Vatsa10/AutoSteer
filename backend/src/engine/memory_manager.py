@@ -47,9 +47,10 @@ class ContextBudget:
 class MemoryManager:
     """Coordinates working, summary, semantic, and structured memory tiers."""
 
-    def __init__(self, conversation_id: str, session=None):
+    def __init__(self, conversation_id: str, session=None, llm_provider=None):
         self.conversation_id = conversation_id
         self.session = session
+        self._llm_provider = llm_provider
         self.working: list[dict] = []
         self.summary: str = ""
         self.documents: list[dict] = []
@@ -136,8 +137,13 @@ class MemoryManager:
         if self._turn_count % self._fact_extract_interval != 0 or len(self.working) < 3:
             return
         try:
-            from src.engine.llm import LLMMessage, LLMProvider
-            llm = LLMProvider(default_model="gpt-4o-mini")
+            from src.engine.llm import LLMMessage
+            llm = self._llm_provider  # ponytail: injected by engine, falls back below
+            if llm is None:
+                from src.engine.llm import LLMProvider
+                from src.config import get_settings
+                s = get_settings()
+                llm = LLMProvider(default_model=s.default_llm_model, openai_api_key=s.openai_api_key)
             recent = "\n".join(
                 f"[{m['role']}]: {m['content'][:300]}" for m in self.working[-5:]
             )

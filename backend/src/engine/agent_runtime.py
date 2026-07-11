@@ -31,7 +31,7 @@ class AgentRuntime:
     # Memory tier limits
     MAX_WORKING_MESSAGES = 8     # Keep last 8 in full text
     SUMMARY_MAX_CHARS = 1500     # Rolling summary preserves meaning
-    MAX_CONTEXT_TOKENS = 5000    # Trigger compaction above this
+    MAX_CONTEXT_TOKENS = 100_000  # 80% of gpt-4o-mini 128K window
 
     def __init__(
         self,
@@ -75,8 +75,16 @@ class AgentRuntime:
             self._compress_history()
 
     def _token_estimate(self) -> int:
-        """Rough token count: ~4 chars per token."""
-        return (len(self._system_prompt) + sum(len(m.content) for m in self.conversation_history)) // 4
+        """Accurate token count via tiktoken (falls back to char/4 heuristic)."""
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")  # gpt-4o-mini encoding
+            total = len(enc.encode(self._system_prompt))
+            for m in self.conversation_history:
+                total += len(enc.encode(m.content)) + 4  # ~4 tokens per message overhead
+            return total
+        except ImportError:
+            return (len(self._system_prompt) + sum(len(m.content) for m in self.conversation_history)) // 4
 
     def _compress_history(self):
         """Compact: keep recent messages in full, summarize older meaningfully."""
@@ -395,7 +403,7 @@ Format:
         follow_up = await self.llm.complete(
             messages=[LLMMessage(role="user", content=synthesis_msg)],
             system_prompt=sub_prompt,
-            model="gpt-4o-mini",
+            model=self.llm.default_model,
             temperature=0.3, max_tokens=1024,
         )
 

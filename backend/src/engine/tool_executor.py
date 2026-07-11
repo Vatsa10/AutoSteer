@@ -160,8 +160,9 @@ async def execute_tool(
     tool_name: str,
     arguments: dict[str, Any],
     timeout_seconds: float = 30.0,
+    cache_ttl: int | None = None,
 ) -> ToolResult:
-    """Execute a tool by name (aliases resolved) with timeout and error handling."""
+    """Execute a tool by name (aliases resolved) with timeout + Redis caching."""
     canonical = registry.resolve(tool_name)
     fn = registry.get(tool_name)
     if fn is None:
@@ -175,13 +176,41 @@ async def execute_tool(
         return ToolResult(success=False, output="", error=f"Unknown tool: {tool_name}")
 
     ctx = get_tool_context()
-    # Context (session, workspace_id) is read by integration wrappers — not passed as kwargs.
+    # ponytail: Redis cache for idempotent tools (search, fetch, read). TTL per tool type.
+    _CACHE_TTL: dict[str, int] = {
+        "web_search": 120, "ddg_search": 60, "arxiv_search": 300,
+        "url_fetch": 180, "web_crawl": 300,
+    }
+    ttl = cache_ttl or _CACHE_TTL.get(canonical, 0)
+    cache_key = ""
+    if ttl > 0:
+        import hashlib, json
+        cache_key = f"tool:{canonical}:{hashlib.sha256(json.dumps(arguments,sort_keys=True).encode()).hexdigest()[:12]}"
+        try:
+            from src.config import get_settings
+            redis_url = get_settings().redis_dsn or "redis://localhost:6379/0"
+            r = _redis.from_url(redis_url, decode_responses=True)
+            cached = await r.get(cache_key)
+            if cached:
+                return ToolResult(success=True, output=cached, metadata={"cached": True})
+        except Exception:
+            pass
 
     try:
         result = await asyncio.wait_for(
             _call_tool(fn, arguments), timeout=timeout_seconds
         )
-        return ToolResult(success=True, output=str(result))
+        output = str(result)
+        if ttl > 0 and cache_key:
+            try:
+                import redis.asyncio as _redis
+                from src.config import get_settings
+                redis_url = get_settings().redis_dsn or "redis://localhost:6379/0"
+                r = _redis.from_url(redis_url, decode_responses=True)
+                await r.setex(cache_key, ttl, output)
+            except Exception:
+                pass
+        return ToolResult(success=True, output=output)
     except asyncio.TimeoutError:
         return ToolResult(
             success=False, output="", error=f"Tool '{canonical}' timed out after {timeout_seconds}s"
