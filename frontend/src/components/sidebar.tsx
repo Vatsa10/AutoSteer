@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { UserButton } from "@clerk/nextjs";
 import {
   MessageSquare,
   Users,
@@ -171,7 +170,13 @@ export function Sidebar({
           <div className="w-1.5 h-1.5 rounded-full bg-green-600" />
           43 agents
         </div>
-        <UserButton />
+        <button
+          onClick={() => { localStorage.removeItem("autosteer_token"); localStorage.removeItem("autosteer_user"); window.location.href = "/"; }}
+          className="text-slate-400 hover:text-slate-600 transition-colors"
+          title="Sign out"
+        >
+          <PanelLeftClose className="w-4 h-4" />
+        </button>
       </div>
     </aside>
   );

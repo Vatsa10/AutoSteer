@@ -6,9 +6,9 @@ export async function authHeaders(): Promise<Record<string, string>> {
   if (API_KEY) {
     headers["X-API-Key"] = API_KEY;
   }
-  // Send Clerk session token for auth
+  // Use our own auth token (DB-based sign-in, not Clerk)
   try {
-    const token = await (window as any).Clerk?.session?.getToken();
+    const token = localStorage.getItem("autosteer_token");
     if (token) headers["Authorization"] = `Bearer ${token}`;
   } catch {}
   return headers;

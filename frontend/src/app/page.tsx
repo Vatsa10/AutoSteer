@@ -2,7 +2,6 @@
 
 import { useState, memo, type ReactNode } from "react";
 import { Plus, ArrowUpRight, Menu, X } from "lucide-react";
-import { ClerkProvider, SignInButton, SignUpButton, useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, MotionConfig } from "motion/react";
 
@@ -14,10 +13,14 @@ function Crosshair({ className = "" }: { className?: string }) {
   return <Plus className={`w-3 h-3 text-ink/40 ${className}`} strokeWidth={2} aria-hidden />;
 }
 
+function isAuthed() {
+  try { return !!localStorage.getItem("autosteer_token"); } catch { return false; }
+}
+
 function HazardButton({ children }: { children: ReactNode }) {
-  const { isSignedIn } = useUser();
   const router = useRouter();
-  if (isSignedIn) {
+  const signedIn = isAuthed();
+  if (signedIn) {
     return (
       <button onClick={() => router.push("/chat")} className="font-tele text-xs bg-[#e61919] text-[#f4f4f0] px-5 py-3 transition-transform active:scale-[0.98] hover:bg-[#0a0a0a]">
         [ {children} ]
@@ -25,11 +28,9 @@ function HazardButton({ children }: { children: ReactNode }) {
     );
   }
   return (
-    <SignUpButton mode="modal">
-      <button className="font-tele text-xs bg-[#e61919] text-[#f4f4f0] px-5 py-3 transition-transform active:scale-[0.98] hover:bg-[#0a0a0a]">
-        [ {children} ]
-      </button>
-    </SignUpButton>
+    <button onClick={() => router.push("/sign-in")} className="font-tele text-xs bg-[#e61919] text-[#f4f4f0] px-5 py-3 transition-transform active:scale-[0.98] hover:bg-[#0a0a0a]">
+      [ {children} ]
+    </button>
   );
 }
 
@@ -133,9 +134,9 @@ function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }
 
 // ── Nav ──────────────────────────────────────────────────────
 function Nav() {
-  const { isSignedIn } = useUser();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const signedIn = isAuthed();
   return (
     <nav className="fixed inset-x-0 top-0 z-50 h-[68px] border-b-2 border-[#0a0a0a] bg-[#f4f4f0]">
       <div className="max-w-[1400px] mx-auto h-full px-6 flex items-center justify-between">
@@ -147,16 +148,12 @@ function Nav() {
           <a href={GITHUB} target="_blank" rel="noopener" className="font-tele text-xs text-ink/60 hover:text-[#0a0a0a] transition-colors flex items-center gap-1">
             GITHUB <ArrowUpRight className="w-3 h-3" strokeWidth={2} />
           </a>
-          {isSignedIn ? (
-            <button onClick={() => router.push("/chat")} className="font-tele text-xs hover:text-[#e61919] transition-colors">
-              DASHBOARD
-            </button>
+          {signedIn ? (
+            <button onClick={() => router.push("/chat")} className="font-tele text-xs hover:text-[#e61919] transition-colors">DASHBOARD</button>
           ) : (
-            <SignInButton mode="modal">
-              <button className="font-tele text-xs hover:text-[#e61919] transition-colors">SIGN IN</button>
-            </SignInButton>
+            <button onClick={() => router.push("/sign-in")} className="font-tele text-xs hover:text-[#e61919] transition-colors">SIGN IN</button>
           )}
-          <HazardButton>{isSignedIn ? "OPEN CHAT" : "GET STARTED"}</HazardButton>
+          <HazardButton>{signedIn ? "OPEN CHAT" : "GET STARTED"}</HazardButton>
         </div>
 
         <button className="md:hidden" onClick={() => setOpen((v) => !v)} aria-label="Menu">
@@ -167,12 +164,12 @@ function Nav() {
       {open && (
         <div className="md:hidden border-b-2 border-[#0a0a0a] bg-[#f4f4f0] px-6 py-5 flex flex-col gap-4">
           <a href={GITHUB} target="_blank" rel="noopener" className="font-tele text-xs text-ink/60">GITHUB ›</a>
-          {isSignedIn ? (
+          {signedIn ? (
             <button onClick={() => router.push("/chat")} className="font-tele text-xs text-left">DASHBOARD</button>
           ) : (
-            <SignInButton mode="modal"><button className="font-tele text-xs text-left">SIGN IN</button></SignInButton>
+            <button onClick={() => router.push("/sign-in")} className="font-tele text-xs text-left">SIGN IN</button>
           )}
-          <HazardButton>{isSignedIn ? "OPEN CHAT" : "GET STARTED"}</HazardButton>
+          <HazardButton>{signedIn ? "OPEN CHAT" : "GET STARTED"}</HazardButton>
         </div>
       )}
     </nav>
@@ -434,19 +431,17 @@ function Footer() {
 // ── Page ─────────────────────────────────────────────────────
 export default function LandingPage() {
   return (
-    <ClerkProvider>
-      <MotionConfig reducedMotion="user">
-          <div className="grain bg-[#f4f4f0] text-[#0a0a0a]">
-            <Nav />
-            <Hero />
-            <Telemetry />
-            <Ledger />
-            <Numerals />
-            <Registry />
-            <CTA />
-            <Footer />
-          </div>
-        </MotionConfig>
-    </ClerkProvider>
+    <MotionConfig reducedMotion="user">
+      <div className="grain bg-[#f4f4f0] text-[#0a0a0a]">
+        <Nav />
+        <Hero />
+        <Telemetry />
+        <Ledger />
+        <Numerals />
+        <Registry />
+        <CTA />
+        <Footer />
+      </div>
+    </MotionConfig>
   );
 }
