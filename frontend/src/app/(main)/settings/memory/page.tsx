@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Search, Plus, Trash2, Check, X, FileText, Upload, Brain, Clock, Loader2, Download, UploadCloud, Activity } from "lucide-react";
 import { useToastStore } from "@/lib/store";
+import { getMemory, uploadMemoryDocument, deleteMemoryDocument } from "@/lib/api";
 
 interface MemoryFact {
   id: string;
@@ -32,17 +33,27 @@ export default function MemoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Load from localStorage for now (backend API later)
-    const stored = localStorage.getItem("autosteer_memory");
-    if (stored) {
+    // Backend is source of truth (the LLM reads user:documents); localStorage is a fallback cache.
+    (async () => {
       try {
-        const m = JSON.parse(stored);
+        const m = await getMemory();
         setFacts(m.facts || []);
         setDocuments(m.documents || []);
         setSummary(m.summary || "");
+        setLoading(false);
+        return;
       } catch {}
-    }
-    setLoading(false);
+      const stored = localStorage.getItem("autosteer_memory");
+      if (stored) {
+        try {
+          const m = JSON.parse(stored);
+          setFacts(m.facts || []);
+          setDocuments(m.documents || []);
+          setSummary(m.summary || "");
+        } catch {}
+      }
+      setLoading(false);
+    })();
   }, []);
 
   const persist = useCallback((f: MemoryFact[], d: MemoryDocument[], s: string) => {
@@ -85,21 +96,23 @@ export default function MemoryPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = (reader.result as string).slice(0, 500);
-      const doc: MemoryDocument = {
-        filename: file.name, preview: text, char_count: file.size,
-      };
+    try {
+      // Backend extracts full text (PDF/DOCX/txt) and persists to user:documents.
+      const { document: doc } = await uploadMemoryDocument(file);
       persist(facts, [...documents, doc], summary);
-      setUploading(false);
       addToast("Document added to context", "success");
-    };
-    reader.readAsText(file);
-    if (e.target) e.target.value = "";
+    } catch (err) {
+      addToast(err instanceof Error ? err.message : "Upload failed", "error");
+    } finally {
+      setUploading(false);
+      if (e.target) e.target.value = "";
+    }
   }
 
-  function removeDocument(index: number) {
+  async function removeDocument(index: number) {
+    try {
+      await deleteMemoryDocument(index);
+    } catch {}
     const updated = documents.filter((_, i) => i !== index);
     persist(facts, updated, summary);
     addToast("Document removed", "info");

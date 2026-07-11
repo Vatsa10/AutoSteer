@@ -750,6 +750,20 @@ User request: {user_message}"""
             except Exception:
                 pass
 
+        # Load persistent user documents (resume, etc.) saved via Settings > Memory
+        if session is not None:
+            try:
+                from sqlalchemy import select as _sa_ud
+                from src.models.shared_state import SharedState as _SSud
+                r = await session.execute(_sa_ud(_SSud).where(_SSud.workspace_id == workspace_id, _SSud.key == "user:documents"))
+                docs_row = r.scalar_one_or_none()
+                if docs_row and docs_row.value:
+                    for d in docs_row.value.get("documents", []):
+                        if d.get("text"):
+                            file_context_parts.append(f"[User document: {d.get('filename','document')}]\n{d['text']}")
+            except Exception:
+                pass
+
         if file_ids:
             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
             import json as _json2
@@ -801,14 +815,16 @@ User request: {user_message}"""
                     await session.commit()
                 except Exception:
                     pass
-            if file_context_parts:
-                print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
-                effective_message = (
-                    "\n\n".join(file_context_parts)
-                    + f"\n\n---\n{user_message}"
-                )
-            else:
+            if not file_context_parts:
                 print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
+
+        # Inject any file/document context (uploaded files + persistent user docs)
+        if file_context_parts:
+            print(f"[orchestrator] loaded {len(file_context_parts)} file context(s)")
+            effective_message = (
+                "\n\n".join(file_context_parts)
+                + f"\n\n---\n{effective_message}"
+            )
 
         # Load conversation history for multi-turn context (runs BEFORE routing)
         if session is not None and conversation_id:

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query, Request
+import json
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,6 +109,84 @@ async def update_fact(
         fact.fact_type = body.fact_type
         return {"ok": True}
     return {"ok": False, "error": "Fact not found"}
+
+
+@router.delete("/memory/documents/{index}")
+async def delete_document(
+    index: int,
+    request: Request,
+    workspace_id: str = Query(default="default"),
+    session: AsyncSession = Depends(get_db),
+):
+    from datetime import datetime, timezone
+    r = await session.execute(
+        select(SharedState).where(
+            SharedState.workspace_id == workspace_id, SharedState.key == DOCS_KEY
+        )
+    )
+    row = r.scalar_one_or_none()
+    if not row or not row.value:
+        return {"ok": True}
+    docs = row.value.get("documents", [])
+    if 0 <= index < len(docs):
+        docs.pop(index)
+    row.value = {"documents": docs, "summary": row.value.get("summary", "")}
+    row.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+    return {"ok": True}
+
+
+@router.post("/memory/documents/upload")
+async def upload_document(
+    request: Request,
+    file: UploadFile = File(...),
+    workspace_id: str = Query(default="default"),
+    session: AsyncSession = Depends(get_db),
+):
+    """Upload a document (resume, etc.), extract its full text, and persist it
+    to user:documents so every chat has it in context."""
+    from datetime import datetime, timezone
+    from src.integrations.files import save_upload, file_upload_read
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Filename required")
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+
+    meta = save_upload(file.filename, content)
+    # Extract full text (PDF/DOCX/text) — quick_scan off, large cap for whole resume.
+    extracted = json.loads(await file_upload_read(meta["file_id"], max_chars=20000, quick_scan=False))
+    text = extracted.get("text", "")
+    if not text:
+        raise HTTPException(status_code=400, detail="Could not extract text from this file type")
+
+    doc = {
+        "filename": meta["filename"],
+        "stored_as": meta["stored_as"],
+        "text": text,
+        "preview": text[:300],
+        "char_count": len(text),
+    }
+
+    r = await session.execute(
+        select(SharedState).where(
+            SharedState.workspace_id == workspace_id, SharedState.key == DOCS_KEY
+        )
+    )
+    row = r.scalar_one_or_none()
+    if row and row.value:
+        docs = row.value.get("documents", []) + [doc]
+        row.value = {"documents": docs, "summary": row.value.get("summary", "")}
+        row.updated_at = datetime.now(timezone.utc)
+    else:
+        session.add(SharedState(
+            workspace_id=workspace_id, key=DOCS_KEY,
+            value={"documents": [doc], "summary": ""},
+            owner="user", updated_at=datetime.now(timezone.utc),
+        ))
+    await session.commit()
+    return {"ok": True, "document": {k: v for k, v in doc.items() if k != "text"}}
 
 
 @router.put("/memory/documents")

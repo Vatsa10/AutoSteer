@@ -185,6 +185,24 @@ export async function saveMemoryDocuments(data: { documents: unknown[]; summary:
   await apiFetch("/api/memory/documents", { method: "PUT", body: JSON.stringify(data) });
 }
 
+export async function deleteMemoryDocument(index: number): Promise<void> {
+  await apiFetch(`/api/memory/documents/${index}`, { method: "DELETE" });
+}
+
+export async function uploadMemoryDocument(file: File): Promise<{ ok: boolean; document: { filename: string; preview: string; char_count: number } }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const headers: Record<string, string> = {};
+  if (API_KEY) headers["X-API-Key"] = API_KEY;
+  try {
+    const token = localStorage.getItem("autosteer_token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  } catch {}
+  const res = await fetch(`${API_URL}/api/memory/documents/upload`, { method: "POST", headers, body: formData });
+  if (!res.ok) throw new Error(`Upload failed (${res.status}): ${await res.text()}`);
+  return res.json();
+}
+
 // Status
 export interface SystemStatus {
   total_agents: number;
