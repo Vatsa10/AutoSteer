@@ -36,6 +36,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if request.headers.get("upgrade", "").lower() == "websocket":
             return await call_next(request)
+        # Allow Bearer token auth (DB-based signin) to bypass API key check
+        if request.headers.get("Authorization", "").startswith("Bearer "):
+            return await call_next(request)
         provided_key = request.headers.get("X-API-Key", "")
         if not provided_key or provided_key != self.api_key:
             return JSONResponse(

@@ -184,7 +184,7 @@ class WorkflowExecutor:
             f"based on the context above. Be concise and focused on your area."
         )
 
-        agent = self.agents[selected_agent]
+        agent = self.agents[selected_agent].copy_for_request()
         response = await agent.process(workflow_message)
 
         # Record Task in DB

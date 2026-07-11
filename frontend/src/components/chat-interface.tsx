@@ -181,8 +181,11 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
           );
         },
         onClose: (error) => {
-          // Only reset streaming if the WS closed unexpectedly (not after a clean "done" event).
-          if (error) { setIsStreaming(false); setRoutingStage(""); setWsMode(false); }
+          if (error) {
+            setIsStreaming(false); setRoutingStage("");
+            // Auto-retry once before degrading to REST
+            setTimeout(() => { if (!wsRef.current) setWsMode(true); }, 1500);
+          }
         },
       });
       wsRef.current = ws;

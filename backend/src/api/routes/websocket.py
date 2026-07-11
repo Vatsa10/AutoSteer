@@ -97,8 +97,13 @@ async def websocket_chat(websocket: WebSocket):
                         preferences=preferences,
                     ):
                         await websocket.send_json(event)
+            except WebSocketDisconnect:
+                raise  # let the outer handler clean up the connection
             except Exception as e:
-                await websocket.send_json({"type": "error", "message": str(e)})
+                try:
+                    await websocket.send_json({"type": "error", "message": str(e)})
+                except Exception:
+                    pass
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 

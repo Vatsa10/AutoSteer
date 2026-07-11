@@ -192,8 +192,8 @@ Return: [{{"type":"preference|decision|entity|constraint|goal","key":"...","valu
     async def _embed(self, text: str) -> list[float]:
         """Generate embedding via OpenAI."""
         import httpx
-        import os
-        key = os.environ.get("OPENAI_API_KEY", "")
+        from src.config import get_settings
+        key = get_settings().openai_api_key
         if not key:
             return [0.0] * 1536
         async with httpx.AsyncClient(timeout=10.0) as client:

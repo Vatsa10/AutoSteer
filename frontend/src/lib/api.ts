@@ -50,9 +50,15 @@ export interface FileUploadResult {
 export async function uploadFile(file: File): Promise<FileUploadResult> {
   const formData = new FormData();
   formData.append("file", file);
+  const headers: Record<string, string> = {};
+  if (API_KEY) headers["X-API-Key"] = API_KEY;
+  try {
+    const token = localStorage.getItem("autosteer_token");
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+  } catch {}
   const res = await fetch(`${API_URL}/api/files/upload`, {
     method: "POST",
-    headers: API_KEY ? { "X-API-Key": API_KEY } : {},
+    headers,
     body: formData,
   });
   if (!res.ok) {
