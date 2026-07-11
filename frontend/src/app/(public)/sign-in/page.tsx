@@ -1,51 +1,120 @@
 "use client";
 
-import { SignIn } from "@clerk/nextjs";
-import Link from "next/link";
-import { Network } from "lucide-react";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowRight, Plus } from "lucide-react";
 
-export default function SignInPage() {
+const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+export default function AuthPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setError("");
+    if (!email.trim() || !password.trim()) { setError("Email and password required."); return; }
+    if (mode === "signup" && !username.trim()) { setError("Username required."); return; }
+    setBusy(true);
+    try {
+      const endpoint = mode === "signin" ? "/api/auth/signin" : "/api/auth/signup";
+      const body: Record<string, string> = { email: email.trim(), password };
+      if (mode === "signup") body.username = username.trim();
+      const res = await fetch(`${API}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Authentication failed");
+      localStorage.setItem("autosteer_token", data.token);
+      localStorage.setItem("autosteer_user", JSON.stringify(data.user));
+      router.push("/chat");
+    } catch (e: any) {
+      setError(e.message || "Something went wrong");
+    } finally { setBusy(false); }
+  }
+
   return (
-    <div className="min-h-screen flex">
-      <div className="hidden lg:flex w-1/2 bg-zinc-900 items-center justify-center p-16 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,_var(--tw-gradient-stops))] from-blue-900/30 via-transparent to-transparent" />
-        <div className="relative max-w-md">
-          <Link href="/landing" className="flex items-center gap-2.5 mb-12">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center">
-              <Network className="w-4 h-4 text-blue-400" />
-            </div>
-            <span className="text-lg font-semibold tracking-tight text-zinc-100">AutoSteer</span>
-          </Link>
-          <blockquote className="text-2xl font-medium text-zinc-300 leading-relaxed">
-            One interface for research, writing, coding, analysis, and document generation.
-          </blockquote>
-          <div className="mt-8 flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-blue-600/20 border border-blue-500/30" />
-            <div>
-              <div className="text-sm font-medium text-zinc-200">43 AI agents</div>
-              <div className="text-xs text-zinc-500">12 departments. 47 tools.</div>
-            </div>
+    <div className="min-h-screen bg-[#F4F4F0] flex items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        {/* Brand */}
+        <div className="text-center mb-12">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <Plus className="w-4 h-4 text-[#0A0A0A]/40" />
+            <span className="font-tele text-sm font-bold tracking-[0.12em]">
+              AutoSteer<sup className="text-[0.6em] align-super">®</sup>
+            </span>
           </div>
+          <h1 className="font-display text-4xl md:text-5xl">
+            {mode === "signin" ? "SIGN IN" : "SIGN UP"}
+          </h1>
         </div>
-      </div>
-      <div className="flex-1 flex items-center justify-center p-8">
-        <SignIn
-          appearance={{
-            elements: {
-              rootBox: "w-full max-w-sm",
-              card: "bg-transparent shadow-none",
-              headerTitle: "text-zinc-100 text-xl font-semibold",
-              headerSubtitle: "text-zinc-500 text-sm",
-              formFieldLabel: "text-zinc-400 text-sm",
-              formFieldInput: "bg-zinc-900 border-zinc-700 text-zinc-100 rounded-lg focus:border-blue-500",
-              formButtonPrimary: "bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium",
-              footerActionLink: "text-blue-400 hover:text-blue-300",
-              dividerLine: "bg-zinc-800",
-              dividerText: "text-zinc-600",
-              socialButtonsBlockButton: "bg-zinc-900 border-zinc-700 text-zinc-300 hover:bg-zinc-800 rounded-lg",
-            },
-          }}
-        />
+
+        {/* Toggle */}
+        <div className="grid grid-cols-2 border-2 border-[#0A0A0A] mb-8">
+          <button
+            onClick={() => setMode("signin")}
+            className={`font-tele text-xs py-3 transition-colors ${
+              mode === "signin" ? "bg-[#0A0A0A] text-[#F4F4F0]" : "hover:bg-[#0A0A0A]/[0.04]"
+            }`}
+          >[ SIGN IN ]</button>
+          <button
+            onClick={() => setMode("signup")}
+            className={`font-tele text-xs py-3 border-l-2 border-[#0A0A0A] transition-colors ${
+              mode === "signup" ? "bg-[#0A0A0A] text-[#F4F4F0]" : "hover:bg-[#0A0A0A]/[0.04]"
+            }`}
+          >[ SIGN UP ]</button>
+        </div>
+
+        {/* Form */}
+        <div className="space-y-4">
+          {mode === "signup" && (
+            <div>
+              <label className="font-tele text-[10px] text-ink/60 block mb-1">USERNAME</label>
+              <input
+                type="text" value={username} onChange={(e) => setUsername(e.target.value)}
+                placeholder="yourname"
+                className="w-full bg-transparent border-2 border-[#0A0A0A] px-4 py-3 font-tele text-sm placeholder:text-ink/20 focus:outline-none focus:border-[#E61919]"
+              />
+            </div>
+          )}
+          <div>
+            <label className="font-tele text-[10px] text-ink/60 block mb-1">EMAIL</label>
+            <input
+              type="text" value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="w-full bg-transparent border-2 border-[#0A0A0A] px-4 py-3 font-tele text-sm placeholder:text-ink/20 focus:outline-none focus:border-[#E61919]"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="font-tele text-[10px] text-ink/60 block mb-1">PASSWORD</label>
+            <input
+              type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              placeholder="········"
+              className="w-full bg-transparent border-2 border-[#0A0A0A] px-4 py-3 font-tele text-sm placeholder:text-ink/20 focus:outline-none focus:border-[#E61919]"
+              onKeyDown={(e) => e.key === "Enter" && submit()}
+            />
+          </div>
+
+          {error && (
+            <p className="font-tele text-[10px] text-[#E61919]">{error}</p>
+          )}
+
+          <button
+            onClick={submit}
+            disabled={busy}
+            className="w-full font-tele text-xs bg-[#E61919] text-[#F4F4F0] py-4 hover:bg-[#0A0A0A] transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            {busy ? "..." : `[ ${mode === "signin" ? "SIGN IN" : "CREATE ACCOUNT"} ]`}
+            {!busy && <ArrowRight className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
     </div>
   );
