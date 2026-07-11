@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LayoutShell } from "@/components/layout-shell";
 import { Providers } from "@/lib/query-provider";
 import { ToastContainer } from "@/components/toast";
+import { ServerWakeGate } from "@/components/server-wake-gate";
 
 function isAuthed() {
   try { return !!localStorage.getItem("autosteer_token"); } catch { return false; }
@@ -25,6 +26,7 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
   return (
     <Providers>
+      <ServerWakeGate />
       <LayoutShell>{children}</LayoutShell>
       <ToastContainer />
     </Providers>

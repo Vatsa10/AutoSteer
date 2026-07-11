@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, memo, type ReactNode } from "react";
+import { useState, useEffect, memo, type ReactNode } from "react";
 import { Plus, ArrowUpRight, Menu, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { motion, useReducedMotion, MotionConfig } from "motion/react";
@@ -13,13 +13,19 @@ function Crosshair({ className = "" }: { className?: string }) {
   return <Plus className={`w-3 h-3 text-ink/40 ${className}`} strokeWidth={2} aria-hidden />;
 }
 
-function isAuthed() {
-  try { return !!localStorage.getItem("autosteer_token"); } catch { return false; }
+// Mount-gated auth check — returns false on SSR + first client render (matching
+// server output), then updates after mount. Prevents hydration mismatch (React #418).
+function useAuthed() {
+  const [authed, setAuthed] = useState(false);
+  useEffect(() => {
+    try { setAuthed(!!localStorage.getItem("autosteer_token")); } catch {}
+  }, []);
+  return authed;
 }
 
 function HazardButton({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const signedIn = isAuthed();
+  const signedIn = useAuthed();
   if (signedIn) {
     return (
       <button onClick={() => router.push("/chat")} className="font-tele text-xs bg-[#e61919] text-[#f4f4f0] px-5 py-3 transition-transform active:scale-[0.98] hover:bg-[#0a0a0a]">
@@ -136,7 +142,7 @@ function Reveal({ children, delay = 0 }: { children: ReactNode; delay?: number }
 function Nav() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const signedIn = isAuthed();
+  const signedIn = useAuthed();
   return (
     <nav className="fixed inset-x-0 top-0 z-50 h-[68px] border-b-2 border-[#0a0a0a] bg-[#f4f4f0]">
       <div className="max-w-[1400px] mx-auto h-full px-6 flex items-center justify-between">

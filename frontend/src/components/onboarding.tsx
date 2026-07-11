@@ -36,14 +36,17 @@ const STEPS = [
 export function Onboarding({ onComplete }: Props) {
   const [step, setStep] = useState(0);
   const [role, setRole] = useState("");
-  const [done, setDone] = useState(false);
+  const [done, setDone] = useState(true); // start hidden; effect reveals on client only
   const [uploadedFile, setUploadedFile] = useState<{ name: string; id: string } | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
-    if (localStorage.getItem("autosteer_onboarded")) setDone(true);
+    // Only show onboarding on the client, after checking localStorage — avoids
+    // SSR/client hydration mismatch (React #418).
+    if (!localStorage.getItem("autosteer_onboarded")) setDone(false);
   }, []);
 
   if (done) return null;
@@ -61,8 +64,6 @@ export function Onboarding({ onComplete }: Props) {
     }
     setUploading(false);
   }
-
-  const [processing, setProcessing] = useState(false);
 
   async function finish() {
     if (processing) return;

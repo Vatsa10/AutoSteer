@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Save, Loader2 } from "lucide-react";
 import { useToastStore } from "@/lib/store";
+import { getPreferences, savePreferences } from "@/lib/api";
 
 export default function PreferencesPage() {
   const addToast = useToastStore((s) => s.addToast);
@@ -12,24 +13,39 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("autosteer_preferences");
-    if (stored) {
+    // Load from backend (source of truth for the LLM); fall back to localStorage cache.
+    (async () => {
       try {
-        const p = JSON.parse(stored);
+        const p = await getPreferences();
         setAbout(p.about || "");
         setResponseStyle(p.responseStyle || "");
         setDefaultAgent(p.defaultAgent || "auto");
+        return;
       } catch {}
-    }
+      try {
+        const stored = localStorage.getItem("autosteer_preferences");
+        if (stored) {
+          const p = JSON.parse(stored);
+          setAbout(p.about || "");
+          setResponseStyle(p.responseStyle || "");
+          setDefaultAgent(p.defaultAgent || "auto");
+        }
+      } catch {}
+    })();
   }, []);
 
   async function handleSave() {
     setSaving(true);
     const prefs = { about, responseStyle, defaultAgent };
-    localStorage.setItem("autosteer_preferences", JSON.stringify(prefs));
-    await new Promise((r) => setTimeout(r, 300));
-    setSaving(false);
-    addToast("Preferences saved", "success");
+    try {
+      await savePreferences(prefs); // persist to DB so the LLM sees it
+      localStorage.setItem("autosteer_preferences", JSON.stringify(prefs)); // cache
+      addToast("Preferences saved", "success");
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Failed to save", "error");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (

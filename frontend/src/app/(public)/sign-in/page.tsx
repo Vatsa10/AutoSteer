@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
@@ -15,6 +15,13 @@ export default function AuthPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Already signed in? Skip auth, go to chat.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("autosteer_token")) router.replace("/chat");
+    } catch {}
+  }, [router]);
 
   async function submit() {
     setError("");
