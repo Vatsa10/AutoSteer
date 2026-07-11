@@ -84,7 +84,10 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "https://tryAutoSteer.online"],
+        allow_origins=[
+            "http://localhost:3000",
+            "https://autosteer.vercel.app",
+        ],
         allow_origin_regex=r"https://.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
@@ -111,6 +114,18 @@ def create_app() -> FastAPI:
     # Setup auth (no-op if AutoSteer_API_KEY is not set)
     auth_enabled = setup_auth(app)
     app.state.auth_enabled = auth_enabled
+
+    @app.get("/")
+    async def root():
+        engine = app.state.engine
+        return {
+            "name": "AutoSteer",
+            "version": "0.1.0",
+            "agents": len(engine.list_agents()) if engine else 0,
+            "departments": len(engine.list_departments()) if engine else 0,
+            "docs": "/docs",
+            "health": "/api/health",
+        }
 
     @app.get("/api/health")
     async def health():
