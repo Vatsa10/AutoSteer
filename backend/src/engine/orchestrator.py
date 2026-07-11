@@ -803,6 +803,18 @@ User request: {user_message}"""
                     break
             yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
         else:
+            # Check for workflow trigger BEFORE routing
+            wf_trigger = self._detect_workflow_trigger(user_message)
+            if wf_trigger:
+                yield {"type": "routing", "stage": "processing", "department": "workflow", "agent": wf_trigger["name"]}
+                async for event in self._execute_workflow_stream(
+                    wf_trigger["name"], wf_trigger["def"],
+                    user_message, conversation_id, session,
+                ):
+                    yield event
+                yield {"type": "done"}
+                return
+
             dept_result = await self._route_department(user_message)
             if not dept_result:
                 # Check for YAML workflow trigger before falling back
@@ -857,9 +869,21 @@ User request: {user_message}"""
                     # Dynamic fallback: let LLM pick best agent for this request
                     agent_role = await self._llm_pick_agent(user_message, effective_message)
                     if not agent_role:
-                        yield {"type": "error", "message": "No suitable agent found for your request."}
-                        yield {"type": "done"}
-                        return
+                        # Fallback to direct LLM instead of erroring out
+                        try:
+                            fallback = await self.llm.complete(
+                                messages=[LLMMessage(role="user", content=effective_message)],
+                                system_prompt="You are a helpful AI assistant. Answer the user's question directly and concisely.",
+                                temperature=0.7, max_tokens=1024, model=ROUTER_MODEL,
+                            )
+                            yield {"type": "token", "content": fallback.content}
+                            yield {"type": "metadata", "conversation_id": conversation_id, "agent": "fallback", "department": "direct", "model": fallback.model, "usage": fallback.usage}
+                            yield {"type": "done"}
+                            return
+                        except Exception as exc:
+                            yield {"type": "error", "message": f"No suitable agent found. {exc}"}
+                            yield {"type": "done"}
+                            return
                     for dept_name, agent_list in self.department_agents.items():
                         if agent_role in agent_list:
                             department = self._dept_to_dir.get(dept_name, dept_name)

@@ -15,6 +15,7 @@ SKIP_AUTH_PATHS = {
     "/api/health",
     "/api/status",
     "/api/billing/webhook",
+    "/api/workflows",
     "/api/auth/signup",
     "/api/auth/signin",
     "/",
