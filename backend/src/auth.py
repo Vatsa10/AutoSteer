@@ -12,6 +12,7 @@ from starlette.types import ASGIApp
 from src.config import get_settings
 
 SKIP_AUTH_PATHS = {
+    "/api/auth/onboard",
     "/api/health",
     "/api/status",
     "/api/billing/webhook",

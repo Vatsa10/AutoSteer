@@ -43,7 +43,7 @@ export function Onboarding({ onComplete }: Props) {
   const addToast = useToastStore((s) => s.addToast);
 
   useEffect(() => {
-    if (localStorage.getItem("AutoSteer_onboarded")) setDone(true);
+    if (localStorage.getItem("autosteer_onboarded")) setDone(true);
   }, []);
 
   if (done) return null;
@@ -62,19 +62,34 @@ export function Onboarding({ onComplete }: Props) {
     setUploading(false);
   }
 
-  function finish() {
-    localStorage.setItem("AutoSteer_onboarded", "true");
-    if (role.trim()) {
-      let prefs: Record<string, string> = {};
+  const [processing, setProcessing] = useState(false);
+
+  async function finish() {
+    if (processing) return;
+    const text = role.trim();
+    setProcessing(true);
+
+    let about = text;
+    if (text) {
       try {
-        const existing = localStorage.getItem("AutoSteer_preferences");
-        prefs = existing ? JSON.parse(existing) : {};
-      } catch { prefs = {}; }
-      prefs.about = `The user described their work as: ${role.trim()}`;
-      localStorage.setItem("AutoSteer_preferences", JSON.stringify(prefs));
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/auth/onboard`,
+          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ role_text: text }) }
+        );
+        const data = await res.json();
+        if (data.ok && data.about) about = data.about;
+      } catch {}
+      // Fallback: store raw text if LLM call fails
+      let prefs: Record<string, string> = {};
+      try { const existing = localStorage.getItem("autosteer_preferences"); prefs = existing ? JSON.parse(existing) : {}; } catch { prefs = {}; }
+      prefs.about = about;
+      localStorage.setItem("autosteer_preferences", JSON.stringify(prefs));
     }
+
+    localStorage.setItem("autosteer_onboarded", "true");
     setDone(true);
-    onComplete({ role: role.trim(), about: role.trim() ? role : "" });
+    setProcessing(false);
+    onComplete({ role: text, about });
   }
 
   const s = STEPS[step];
@@ -152,6 +167,7 @@ export function Onboarding({ onComplete }: Props) {
                 </button>
               )}
               <p className="text-xs text-slate-400">Supports PDF, Word, images, text files</p>
+              <button onClick={() => setStep(2)} className="text-xs text-slate-400 hover:text-slate-600 mt-2">Skip upload</button>
             </div>
           )}
 
@@ -163,7 +179,7 @@ export function Onboarding({ onComplete }: Props) {
                 <button
                   key={i}
                   onClick={() => {
-                    sessionStorage.setItem("AutoSteer_template_prompt", sg);
+                    sessionStorage.setItem("autosteer_template_prompt", sg);
                     finish();
                   }}
                   className="w-full text-left text-sm text-slate-600 hover:text-blue-700 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-200 rounded-lg px-4 py-3 transition-all"
@@ -171,6 +187,7 @@ export function Onboarding({ onComplete }: Props) {
                   {sg}
                 </button>
               ))}
+              <button onClick={finish} className="text-xs text-slate-400 hover:text-slate-600 mt-2 block w-full text-center">Skip for now</button>
             </div>
           )}
         </div>
@@ -193,10 +210,11 @@ export function Onboarding({ onComplete }: Props) {
           ) : (
             <button
               onClick={finish}
-              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-6 py-2.5 text-sm font-medium transition-colors"
+              disabled={processing}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl px-6 py-2.5 text-sm font-medium transition-colors disabled:opacity-50"
             >
-              <Check className="w-4 h-4" />
-              Get started
+              {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+              {processing ? "Processing..." : "Get started"}
             </button>
           )}
         </div>

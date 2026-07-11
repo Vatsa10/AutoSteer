@@ -62,7 +62,7 @@ interface FileAttachment { filename: string; content: string; mime_type: string;
 
 function getPreferences(): Record<string, unknown> | null {
   try {
-    const stored = localStorage.getItem("AutoSteer_preferences");
+    const stored = localStorage.getItem("autosteer_preferences");
     return stored ? JSON.parse(stored) : null;
   } catch { return null; }
 }

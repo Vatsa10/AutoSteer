@@ -12,7 +12,7 @@ export default function PreferencesPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("AutoSteer_preferences");
+    const stored = localStorage.getItem("autosteer_preferences");
     if (stored) {
       try {
         const p = JSON.parse(stored);
@@ -26,7 +26,7 @@ export default function PreferencesPage() {
   async function handleSave() {
     setSaving(true);
     const prefs = { about, responseStyle, defaultAgent };
-    localStorage.setItem("AutoSteer_preferences", JSON.stringify(prefs));
+    localStorage.setItem("autosteer_preferences", JSON.stringify(prefs));
     await new Promise((r) => setTimeout(r, 300));
     setSaving(false);
     addToast("Preferences saved", "success");

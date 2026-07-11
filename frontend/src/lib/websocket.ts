@@ -67,7 +67,7 @@ export function sendWSMessage(
   files?: { filename: string; content: string; mime_type: string }[],
 ) {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  const prefs = (() => { try { const s = localStorage.getItem("AutoSteer_preferences"); return s ? JSON.parse(s) : null; } catch { return null; } })();
+  const prefs = (() => { try { const s = localStorage.getItem("autosteer_preferences"); return s ? JSON.parse(s) : null; } catch { return null; } })();
   ws.send(
     JSON.stringify({
       message,

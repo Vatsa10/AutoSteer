@@ -33,7 +33,7 @@ export default function MemoryPage() {
 
   useEffect(() => {
     // Load from localStorage for now (backend API later)
-    const stored = localStorage.getItem("AutoSteer_memory");
+    const stored = localStorage.getItem("autosteer_memory");
     if (stored) {
       try {
         const m = JSON.parse(stored);
@@ -46,7 +46,7 @@ export default function MemoryPage() {
   }, []);
 
   const persist = useCallback((f: MemoryFact[], d: MemoryDocument[], s: string) => {
-    localStorage.setItem("AutoSteer_memory", JSON.stringify({ facts: f, documents: d, summary: s }));
+    localStorage.setItem("autosteer_memory", JSON.stringify({ facts: f, documents: d, summary: s }));
     setFacts(f);
     setDocuments(d);
     setSummary(s);
@@ -167,7 +167,7 @@ export default function MemoryPage() {
                 try {
                   const imported = JSON.parse(reader.result as string);
                   if (imported.facts && imported.documents) {
-                    localStorage.setItem("AutoSteer_memory", JSON.stringify({ facts: imported.facts, documents: imported.documents, summary: imported.summary || "" }));
+                    localStorage.setItem("autosteer_memory", JSON.stringify({ facts: imported.facts, documents: imported.documents, summary: imported.summary || "" }));
                     setFacts(imported.facts);
                     setDocuments(imported.documents);
                     setSummary(imported.summary || "");

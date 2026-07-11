@@ -19,6 +19,68 @@ router = APIRouter(tags=["auth"])
 SALT_BYTES = 16
 
 
+class OnboardBody(BaseModel):
+    role_text: str
+
+
+@router.post("/auth/onboard")
+async def onboard(body: OnboardBody, request: Request, session: AsyncSession = Depends(get_db)):
+    """Process onboarding role text through LLM and store preferences."""
+    settings = get_settings()
+    api_key = settings.openai_api_key
+    if not api_key:
+        return {"ok": False, "error": "LLM not configured"}
+
+    # Use LLM to create a structured "about" from raw role text
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [{
+                        "role": "system",
+                        "content": "Rewrite the user's role description into a concise, professional 'About Me' section (max 100 words). Write in first person. Do NOT include phrases like 'the user said' or 'they described themselves as'. Just write the polished about section directly."
+                    }, {
+                        "role": "user",
+                        "content": body.role_text
+                    }],
+                    "max_tokens": 200,
+                    "temperature": 0.3,
+                },
+            )
+            data = resp.json()
+            about = data["choices"][0]["message"]["content"].strip()
+    except Exception as exc:
+        return {"ok": False, "error": f"LLM call failed: {exc}"}
+
+    # Store preferences
+    from src.models.shared_state import SharedState
+    from datetime import datetime, timezone
+    workspace_id = getattr(request.state, "workspace_id", "default")
+    now = datetime.now(timezone.utc)
+    r = await session.execute(
+        select(SharedState).where(
+            SharedState.workspace_id == workspace_id,
+            SharedState.key == "user:preferences",
+        )
+    )
+    row = r.scalar_one_or_none()
+    prefs = {"about": about, "responseStyle": "", "defaultAgent": "auto"}
+    if row:
+        row.value = prefs
+        row.updated_at = now
+    else:
+        session.add(SharedState(
+            workspace_id=workspace_id, key="user:preferences",
+            value=prefs, owner="user", updated_at=now,
+        ))
+    await session.flush()
+    return {"ok": True, "about": about, "original": body.role_text}
+
+
 class SignUpBody(BaseModel):
     email: str
     username: str

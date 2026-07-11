@@ -60,10 +60,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       loadedOnce.current = true;
       setConversationId(initialConversationId);
     }
-    const templatePrompt = sessionStorage.getItem("AutoSteer_template_prompt");
+    const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
     if (templatePrompt) {
       setInput(templatePrompt);
-      sessionStorage.removeItem("AutoSteer_template_prompt");
+      sessionStorage.removeItem("autosteer_template_prompt");
     }
   }, [initialConversationId, setConversationId, setInput]);
 
@@ -116,10 +116,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       setAttachments((prev) => [...prev, { filename: file.name, content: base64, mime_type: file.type || "application/octet-stream" }]);
       // Sync document to memory store
       try {
-        const stored = localStorage.getItem("AutoSteer_memory");
+        const stored = localStorage.getItem("autosteer_memory");
         const mem = stored ? JSON.parse(stored) : { facts: [], documents: [], summary: "" };
         mem.documents.push({ filename: file.name, preview: "", char_count: file.size });
-        localStorage.setItem("AutoSteer_memory", JSON.stringify(mem));
+        localStorage.setItem("autosteer_memory", JSON.stringify(mem));
       } catch {}
     } catch (err) {
       addToast(err instanceof Error ? err.message : "Failed to read file", "error");
@@ -233,9 +233,14 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       <Onboarding
         onComplete={({ about }) => {
           if (about) {
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            try {
+              const token = localStorage.getItem("autosteer_token");
+              if (token) headers["Authorization"] = `Bearer ${token}`;
+            } catch {}
             fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"}/api/preferences`, {
               method: "PUT",
-              headers: { "Content-Type": "application/json" },
+              headers,
               body: JSON.stringify({ about, responseStyle: "", defaultAgent: "auto" }),
             }).catch(() => {});
           }
