@@ -29,11 +29,11 @@ async def test_health_check(app):
 
 
 @pytest.mark.asyncio
-async def test_list_agents(app):
+async def test_list_agents(app, auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/agents")
+        response = await client.get("/api/agents", headers=auth_headers)
     assert response.status_code == 200
     agents = response.json()
     assert isinstance(agents, list)

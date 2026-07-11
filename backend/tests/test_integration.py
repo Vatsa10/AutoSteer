@@ -90,6 +90,7 @@ async def test_full_chat_flow():
                 response = await client.post(
                     "/api/chat",
                     json={"message": "Research the latest transformer architectures"},
+                    headers={"X-API-Key": "dev-secret-change-me-in-production"},
                 )
 
             assert response.status_code == 200
