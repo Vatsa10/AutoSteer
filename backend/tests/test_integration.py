@@ -94,6 +94,19 @@ async def test_full_chat_flow():
                 )
 
             assert response.status_code == 200
-            data = response.json()
-            assert data["conversation_id"] is not None
-            assert data["response"] is not None
+
+            # Parse SSE events from the streaming response
+            events = []
+            for line in response.text.strip().split("\n"):
+                if line.startswith("data: "):
+                    payload = line[6:]
+                    if payload == "[DONE]":
+                        break
+                    import json as _j
+                    events.append(_j.loads(payload))
+
+            # Verify we got routing + metadata events
+            assert any(e["type"] == "routing" for e in events)
+            metadata_events = [e for e in events if e["type"] == "metadata"]
+            assert len(metadata_events) >= 1
+            assert metadata_events[-1]["conversation_id"] is not None

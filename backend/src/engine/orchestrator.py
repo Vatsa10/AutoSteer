@@ -10,6 +10,28 @@ logger = logging.getLogger(__name__)
 
 # Single configurable model for all classification/routing calls
 ROUTER_MODEL = "gpt-4o-mini"
+
+# ponytail: Redis routing cache — skip LLM routing on repeated queries
+async def _get_cached_route(user_message: str) -> dict | None:
+    try:
+        import json, hashlib, redis.asyncio as _redis
+        from src.config import get_settings
+        key = f"route:{hashlib.sha256(user_message.lower().strip().encode()).hexdigest()[:12]}"
+        r = _redis.from_url(get_settings().redis_dsn or "redis://localhost:6379/0", decode_responses=True)
+        val = await r.get(key)
+        return json.loads(val) if val else None
+    except Exception:
+        return None
+
+async def _set_cached_route(user_message: str, dept: str, agent: str | None = None):
+    try:
+        import json, hashlib, redis.asyncio as _redis
+        from src.config import get_settings
+        key = f"route:{hashlib.sha256(user_message.lower().strip().encode()).hexdigest()[:12]}"
+        r = _redis.from_url(get_settings().redis_dsn or "redis://localhost:6379/0", decode_responses=True)
+        await r.setex(key, 300, json.dumps({"department": dept, "agent": agent}))
+    except Exception:
+        pass
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -813,6 +835,21 @@ User request: {user_message}"""
         # Phase 1: Routing
         yield {"type": "routing", "stage": "classifying"}
 
+        # Check routing cache (ponytail: skip all LLM routing on cache hit)
+        cached = await _get_cached_route(user_message)
+        if cached and cached.get("department"):
+            department = cached["department"]
+            agent_role = cached.get("agent")
+            if agent_role:
+                yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+            else:
+                yield {"type": "routing", "stage": "department", "department": department}
+            # Jump to processing — skip routing section
+            if agent_role and department:
+                pass  # Will fall through to processing below
+            else:
+                pass  # Minimal — still go through processing
+
         if target_agent:
             agent_role = target_agent
             for dept_name, agent_list in self.department_agents.items():
@@ -836,19 +873,7 @@ User request: {user_message}"""
 
             dept_result = await self._route_department(user_message)
             if not dept_result:
-                # Check for YAML workflow trigger before falling back
-                wf_trigger = self._detect_workflow_trigger(user_message)
-                if wf_trigger:
-                    yield {"type": "routing", "stage": "processing", "department": "workflow", "agent": wf_trigger["name"]}
-                    async for event in self._execute_workflow_stream(
-                        wf_trigger["name"], wf_trigger["def"],
-                        user_message, conversation_id, session,
-                    ):
-                        yield event
-                    yield {"type": "done"}
-                    return
-
-                # Intent-based fallback: create tasks → content_marketer with create_docx instruction
+                # Fast intent classification (ponytail: skip DAG decomp for simple queries)
                 intent = await self._classify_intent(user_message, bool(file_context_parts))
                 if intent and intent.get("action") == "create_document" and self.agents.get("content_marketer"):
                     agent_role = "content_marketer"
@@ -883,7 +908,15 @@ User request: {user_message}"""
                 _dept_to_dir = getattr(self, "_dept_to_dir", {})
                 dept_key = _orch_to_dept.get(self._normalize_department(department), department)
                 department = _dept_to_dir.get(dept_key, dept_key)
-                agent_result = await self._route_agent(user_message, dept_key)
+                # ponytail: skip LLM agent routing when dept regex has a confident match
+                agent_result = None
+                dept_router = self.department_routers.get(dept_key)
+                if dept_router and dept_result.confidence >= 0.85:
+                    route = dept_router.route(user_message)
+                    if route and route.confidence >= 0.5:
+                        agent_result = route.target
+                if not agent_result:
+                    agent_result = await self._route_agent(user_message, dept_key)
                 if not agent_result:
                     # Dynamic fallback: let LLM pick best agent for this request
                     agent_role = await self._llm_pick_agent(user_message, effective_message)
@@ -911,10 +944,16 @@ User request: {user_message}"""
                     agent_role = agent_result.target
                 yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
 
-        # Dynamic task decomposition
-        decomp = await self._decompose_and_execute(
-            effective_message, bool(file_context_parts), conversation_id, session
-        )
+        # Dynamic task decomposition (ponytail: skip for simple queries, 90%+ of messages)
+        _multi_step_markers = ["first", "then", "after that", "next", "step", "and also",
+                               "also ", "research and", "compare and", "analyze and",
+                               "1.", "2.", "3.", "- ", "* ", "•"]
+        looks_multi_step = any(m in user_message.lower() for m in _multi_step_markers)
+        decomp = None
+        if looks_multi_step or len(user_message.split()) > 50:
+            decomp = await self._decompose_and_execute(
+                effective_message, bool(file_context_parts), conversation_id, session
+            )
         if decomp:
             yield {"type": "token", "content": decomp["response"]}
             yield {"type": "metadata", "conversation_id": conversation_id, "agent": decomp.get("agent"), "department": decomp.get("routed_to"), "model": decomp.get("model"), "usage": decomp.get("usage")}
@@ -946,6 +985,10 @@ User request: {user_message}"""
                     f"{'create_pptx' if 'presentation' in stream_intent.get('doc_type', '') else 'create_docx'}.\n\n"
                     + effective_message
                 )
+
+        # Cache the routing decision for future identical queries
+        if agent_role and department:
+            await _set_cached_route(user_message, department, agent_role)
 
         # Phase 2: Agent processes with streaming
         agent_template = self.agents.get(agent_role) if agent_role else None

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,7 +40,7 @@ class ChatResponse(BaseModel):
     structured: dict | None = None
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("/chat")
 async def chat(
     request: Request,
     body: ChatRequest,
@@ -69,12 +70,24 @@ async def chat(
                 print(f"[chat] inline file error: {exc}")
     print(f"[chat] final file_ids: {all_file_ids}")
 
-    result = await engine.process_message(
-        user_message=body.message,
-        conversation_id=body.conversation_id,
-        target_agent=body.target_agent,
-        session=session,
-        file_ids=all_file_ids if all_file_ids else None,
-        preferences=body.preferences,
+    async def event_stream():
+        import json as _j
+        async for event in engine.process_message_stream(
+            user_message=body.message,
+            conversation_id=body.conversation_id,
+            target_agent=body.target_agent,
+            session=session,
+            file_ids=all_file_ids if all_file_ids else None,
+            preferences=body.preferences,
+        ):
+            yield f"data: {_j.dumps(event)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
     )
-    return ChatResponse(**result)
