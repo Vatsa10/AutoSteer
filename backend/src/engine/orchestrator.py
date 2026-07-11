@@ -788,6 +788,25 @@ User request: {user_message}"""
             else:
                 print(f"[orchestrator] WARNING: file_ids provided but no context extracted")
 
+        # Load conversation history for multi-turn context (runs BEFORE routing)
+        if session is not None and conversation_id:
+            try:
+                from sqlalchemy import select as _hs
+                from src.models.message import Message as _HM
+                from src.models.message import MessageType as _HMT
+                hist_r = await session.execute(
+                    _hs(_HM).where(_HM.conversation_id == conversation_id).order_by(_HM.created_at.asc()).limit(10)
+                )
+                history = hist_r.scalars().all()
+                if history:
+                    ctx = "## Previous conversation\n" + "\n".join(
+                        f"[{m.message_type.value if hasattr(m.message_type,'value') else str(m.message_type)}]: {m.content[:300]}"
+                        for m in history
+                    )
+                    effective_message = ctx + f"\n\n---\nNew message:\n{effective_message}"
+            except Exception:
+                pass
+
         department: str | None = None
         agent_role: str | None = None
 
