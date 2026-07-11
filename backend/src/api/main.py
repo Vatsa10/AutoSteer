@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import agents, approvals, billing, chat, conversations, custom_agents, files, integrations, memory, preferences, prompts, tools, websocket, workflows
+from src.api.routes import agents, approvals, auth, billing, chat, conversations, custom_agents, files, integrations, memory, preferences, prompts, tools, websocket, workflows
 from src.auth import setup_auth
 from src.config import get_settings
 from src.database import get_engine, init_db
@@ -92,6 +92,7 @@ def create_app() -> FastAPI:
         expose_headers=["X-API-Key"],
     )
 
+    app.include_router(auth.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
     app.include_router(agents.router, prefix="/api")
     app.include_router(conversations.router, prefix="/api")

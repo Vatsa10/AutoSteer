@@ -1,8 +1,7 @@
 """
-Authentication: API key and optional Clerk workspace auth.
+Authentication: API key middleware.
 
-- AutoSteer_api_key: protects /api/* with X-API-Key header
-- CLERK_SECRET_KEY: validates Clerk JWT; sets request.state.workspace_id from org claim
+- autosteer_api_key: protects /api/* with X-API-Key header
 """
 
 from fastapi import FastAPI, Request
@@ -12,18 +11,12 @@ from starlette.types import ASGIApp
 
 from src.config import get_settings
 
-try:
-    from jose import jwt, JWTError
-    HAS_JOSE = True
-except ImportError:
-    jwt = None  # type: ignore
-    JWTError = Exception  # type: ignore
-    HAS_JOSE = False
-
 SKIP_AUTH_PATHS = {
     "/api/health",
     "/api/status",
     "/api/billing/webhook",
+    "/api/auth/signup",
+    "/api/auth/signin",
     "/",
     "/docs",
     "/openapi.json",
@@ -55,71 +48,15 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-class ClerkAuthMiddleware(BaseHTTPMiddleware):
-    """Optional Clerk JWT validation — sets workspace_id from org claim."""
-
-    def __init__(self, app: ASGIApp, secret_key: str):
-        super().__init__(app)
-        self.secret_key = secret_key
-
-    async def dispatch(self, request: Request, call_next):
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            try:
-                if self.secret_key and HAS_JOSE:
-                    try:
-                        payload = jwt.decode(
-                            token,
-                            self.secret_key,
-                            algorithms=["HS256"],
-                            options={"verify_aud": False},
-                        )
-                    except JWTError:
-                        import base64
-                        import json
-                        parts = token.split(".")
-                        if len(parts) >= 2:
-                            padded = parts[1] + "=" * (-len(parts[1]) % 4)
-                            payload = json.loads(base64.urlsafe_b64decode(padded))
-                        else:
-                            payload = {"sub": "default"}
-                else:
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        "CLERK_SECRET_KEY not set — JWT verification disabled"
-                    )
-                    import base64
-                    import json
-                    parts = token.split(".")
-                    if len(parts) >= 2:
-                        padded = parts[1] + "=" * (-len(parts[1]) % 4)
-                        payload = json.loads(base64.urlsafe_b64decode(padded))
-                    else:
-                        payload = {"sub": "default"}
-                org_id = payload.get("org_id") or payload.get("sub", "default")
-                request.state.workspace_id = str(org_id)
-                request.state.clerk_user_id = payload.get("sub")
-            except Exception:
-                request.state.workspace_id = "default"
-        else:
-            request.state.workspace_id = getattr(request.state, "workspace_id", "default")
-        return await call_next(request)
-
-
 def get_workspace_id(request: Request) -> str:
-    """Resolve workspace_id from Clerk auth or default."""
+    """Resolve workspace_id from request or default."""
     return getattr(request.state, "workspace_id", "default")
 
 
 def setup_auth(app: FastAPI) -> bool:
     """Configure auth middleware. Returns True if API key auth is enabled."""
     settings = get_settings()
-    api_key = getattr(settings, "AutoSteer_api_key", "") or ""
-    clerk_key = getattr(settings, "clerk_secret_key", "") or ""
-
-    if clerk_key:
-        app.add_middleware(ClerkAuthMiddleware, secret_key=clerk_key)
+    api_key = getattr(settings, "autosteer_api_key", "") or ""
 
     if api_key:
         app.add_middleware(APIKeyMiddleware, api_key=api_key)

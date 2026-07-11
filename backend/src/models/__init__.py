@@ -2,6 +2,7 @@ from .agent import Agent
 from .approval import ApprovalRequest
 from .base import Base
 from .conversation import Conversation
+from .user import User
 from .document_chunk import DocumentChunk
 from .integration_connection import IntegrationConnection
 from .memory_embedding import MemoryEmbedding

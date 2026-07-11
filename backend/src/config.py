@@ -20,7 +20,19 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        return self.neon_db_url or self.database_url
+        url = self.neon_db_url or self.database_url
+        if not url:
+            return ""
+        # Neon pooler: postgresql:// → postgresql+asyncpg://
+        if "+asyncpg" not in url:
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        # asyncpg doesn't support psycopg2 query params — strip + convert
+        for key in ("sslmode", "channel_binding"):
+            url = __import__("re").sub(rf"[?&]{key}=[^&]*", "", url)
+        # asyncpg always uses SSL when ?ssl=require is present; add it
+        if "?ssl=" not in url:
+            url = url.rstrip("&") + "&ssl=require" if "?" in url else url + "?ssl=require"
+        return url
 
     @property
     def redis_dsn(self) -> str:
@@ -48,9 +60,7 @@ class Settings(BaseSettings):
     max_parallel: int = 3
 
     # Auth
-    AutoSteer_api_key: str = ""
-    clerk_secret_key: str = ""
-    clerk_publishable_key: str = ""
+    autosteer_api_key: str = ""
 
     # Integration platform (global fallbacks; workspace tokens stored encrypted in DB)
     integration_encryption_key: str = "dev-change-me-in-production-use-openssl-rand"

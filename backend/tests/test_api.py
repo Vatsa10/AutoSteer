@@ -4,12 +4,17 @@ from httpx import ASGITransport, AsyncClient
 from src.api.main import create_app
 
 
+API_KEY = "dev-secret-change-me-in-production"
+
 @pytest.fixture
 def app():
     application = create_app()
-    # Set engine to None so endpoints work without lifespan running
     application.state.engine = None
     return application
+
+@pytest.fixture
+def auth_headers():
+    return {"X-API-Key": API_KEY}
 
 
 @pytest.mark.asyncio
@@ -35,11 +40,11 @@ async def test_list_agents(app):
 
 
 @pytest.mark.asyncio
-async def test_list_departments(app):
+async def test_list_departments(app, auth_headers):
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        response = await client.get("/api/departments")
+        response = await client.get("/api/departments", headers=auth_headers)
     assert response.status_code == 200
     departments = response.json()
     assert isinstance(departments, list)

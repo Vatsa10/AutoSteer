@@ -329,26 +329,26 @@ Agents can call tools during processing. The system includes an extensible tool 
 
 **Built-in & integration tools (17 registered, Phase A/B):**
 
-| Tool | Tier | Description | Parameters |
-|------|------|-------------|------------|
-| `web_search` | Live | Tavily web search | `query`, `max_results` |
-| `url_fetch` | Live | Extract text from URLs | `url`, `max_chars` |
-| `notion_export` | Live | Create Notion pages | `title`, `content`, `parent_page_id` |
-| `gdocs_export` | Beta | Google Docs (requires creds) | `title`, `content` |
-| `slack_post` | Live | Post Slack messages | `channel`, `text` |
-| `slack_read` | Live | Read Slack channel history | `channel`, `limit` |
-| `github_read` | Live | GitHub issues/PRs/files | `action`, `repo`, `query`, `path` |
-| `github_issue_create` | Live | Create GitHub issues | `repo`, `title`, `body` |
-| `email_draft` | Live | Structured email draft (no send) | `to`, `subject`, `body` |
-| `file_upload_read` | Live | Read uploaded files | `file_id` |
-| `linear_read` | Live | List Linear issues | `team_id`, `query_filter` |
-| `linear_create` | Live | Create Linear issues | `team_id`, `title`, `description` |
-| `api_tester` | Live | HTTP request tester | `url`, `method`, `headers`, `body` |
-| `spreadsheet_export` | Beta | CSV/Sheets export | `filename`, `rows`, `format` |
-| `calculator` | Live | Safe math evaluation | `expression` |
-| `datetime` | Live | Current UTC time | `format_str` |
-| `json_parse` | Live | Parse + pretty-print JSON | `text` |
-| `text_stats` | Live | Text statistics | `text` |
+| Tool                    | Tier | Description                      | Parameters                                 |
+| ----------------------- | ---- | -------------------------------- | ------------------------------------------ |
+| `web_search`          | Live | Tavily web search                | `query`, `max_results`                 |
+| `url_fetch`           | Live | Extract text from URLs           | `url`, `max_chars`                     |
+| `notion_export`       | Live | Create Notion pages              | `title`, `content`, `parent_page_id` |
+| `gdocs_export`        | Beta | Google Docs (requires creds)     | `title`, `content`                     |
+| `slack_post`          | Live | Post Slack messages              | `channel`, `text`                      |
+| `slack_read`          | Live | Read Slack channel history       | `channel`, `limit`                     |
+| `github_read`         | Live | GitHub issues/PRs/files          | `action`, `repo`, `query`, `path`  |
+| `github_issue_create` | Live | Create GitHub issues             | `repo`, `title`, `body`              |
+| `email_draft`         | Live | Structured email draft (no send) | `to`, `subject`, `body`              |
+| `file_upload_read`    | Live | Read uploaded files              | `file_id`                                |
+| `linear_read`         | Live | List Linear issues               | `team_id`, `query_filter`              |
+| `linear_create`       | Live | Create Linear issues             | `team_id`, `title`, `description`    |
+| `api_tester`          | Live | HTTP request tester              | `url`, `method`, `headers`, `body` |
+| `spreadsheet_export`  | Beta | CSV/Sheets export                | `filename`, `rows`, `format`         |
+| `calculator`          | Live | Safe math evaluation             | `expression`                             |
+| `datetime`            | Live | Current UTC time                 | `format_str`                             |
+| `json_parse`          | Live | Parse + pretty-print JSON        | `text`                                   |
+| `text_stats`          | Live | Text statistics                  | `text`                                   |
 
 YAML tool names (e.g. `slack_notifier`, `document_editor`, `project_tracker`) resolve to canonical tools via alias map. See [docs/integrations.md](docs/integrations.md).
 
@@ -387,18 +387,18 @@ Optional API key authentication via `X-API-Key` header.
 
 ## Configuration
 
-| Variable                       | Default                    | Description                              |
-| ------------------------------ | -------------------------- | ---------------------------------------- |
+| Variable                       | Default                    | Description                                       |
+| ------------------------------ | -------------------------- | ------------------------------------------------- |
 | `DATABASE_URL`               | *(required)*             | PostgreSQL connection string (default port: 5433) |
-| `REDIS_URL`                  | *(required)*             | Redis connection string                  |
-| `ANTHROPIC_API_KEY`          | `""`                     | Anthropic API key                        |
-| `OPENAI_API_KEY`             | `""`                     | OpenAI API key                           |
-| `DEFAULT_LLM_PROVIDER`       | `openai`                 | `anthropic`, `openai`, or `ollama`       |
-| `DEFAULT_LLM_MODEL`          | `gpt-4o`                 | Default model                            |
-| `AGENTS_DIR`                 | `src/agents/definitions` | Path to YAML definitions                 |
-| `MAX_CONCURRENT_DEPARTMENTS` | `5`                      | Max parallel departments                 |
-| `AutoSteer_api_key`          | `""`                     | API key for auth (empty = no auth)       |
-| `DEBUG`                      | `false`                  | Enable debug logging                     |
+| `REDIS_URL`                  | *(required)*             | Redis connection string                           |
+| `ANTHROPIC_API_KEY`          | `""`                     | Anthropic API key                                 |
+| `OPENAI_API_KEY`             | `""`                     | OpenAI API key                                    |
+| `DEFAULT_LLM_PROVIDER`       | `openai`                 | `anthropic`, `openai`, or `ollama`          |
+| `DEFAULT_LLM_MODEL`          | `gpt-4o`                 | Default model                                     |
+| `AGENTS_DIR`                 | `src/agents/definitions` | Path to YAML definitions                          |
+| `MAX_CONCURRENT_DEPARTMENTS` | `5`                      | Max parallel departments                          |
+| `AutoSteer_api_key`          | `""`                     | API key for auth (empty = no auth)                |
+| `DEBUG`                      | `false`                  | Enable debug logging                              |
 
 **Provider examples:**
 
@@ -557,13 +557,13 @@ Handoffs are transparent to the user — the final response comes from the best-
 
 5 predefined workflows in `master_orchestrator.yaml`:
 
-| Workflow | Trigger Keywords | Departments Involved |
-|----------|-----------------|---------------------|
-| `product_launch` | launch, go to market, ship | product → engineering/design → marketing/sales |
-| `incident_response` | incident, outage, p0, emergency | engineering → operations → trust_safety |
-| `quarterly_planning` | quarterly planning, Q1-Q4 | executive → product → engineering → finance_legal |
-| `new_hire_onboarding` | onboard, new hire, joining | people_talent → engineering → operations |
-| `fundraise` | fundraise, series a/b, investor | executive → finance_legal → operations |
+| Workflow                | Trigger Keywords                | Departments Involved                                 |
+| ----------------------- | ------------------------------- | ---------------------------------------------------- |
+| `product_launch`      | launch, go to market, ship      | product → engineering/design → marketing/sales     |
+| `incident_response`   | incident, outage, p0, emergency | engineering → operations → trust_safety            |
+| `quarterly_planning`  | quarterly planning, Q1-Q4       | executive → product → engineering → finance_legal |
+| `new_hire_onboarding` | onboard, new hire, joining      | people_talent → engineering → operations           |
+| `fundraise`           | fundraise, series a/b, investor | executive → finance_legal → operations             |
 
 Workflows execute departments in sequence with parallel phases via `asyncio.gather`. Each department runs its best-matching agent. Results are synthesized by LLM for multi-department outputs.
 
@@ -648,18 +648,18 @@ AutoSteer/
 
 White background with blue accent colors and black text.
 
-| Element | Color |
-|---------|-------|
-| Background | White (`#ffffff`) |
-| Surface cards | Slate-50/100 |
-| Borders | Slate-200/300 |
-| Primary text | Slate-900 (near black) |
-| Secondary text | Slate-600/700 |
-| Muted text | Slate-400/500 |
-| Accent (buttons, icons) | Blue-500/600 |
-| Accent hover | Blue-400/500 |
-| Accent backgrounds | Blue-50/100 |
-| Dark accent | Blue-700/800 |
+| Element                 | Color                  |
+| ----------------------- | ---------------------- |
+| Background              | White (`#ffffff`)    |
+| Surface cards           | Slate-50/100           |
+| Borders                 | Slate-200/300          |
+| Primary text            | Slate-900 (near black) |
+| Secondary text          | Slate-600/700          |
+| Muted text              | Slate-400/500          |
+| Accent (buttons, icons) | Blue-500/600           |
+| Accent hover            | Blue-400/500           |
+| Accent backgrounds      | Blue-50/100            |
+| Dark accent             | Blue-700/800           |
 
 ---
 
@@ -695,11 +695,11 @@ User: "Research Vatsa Joshi, create a resume and a presentation about his work"
 
 Hybrid 4-tier memory inspired by ChatGPT's Dreaming V3 architecture:
 
-| Tier | Retention | Mechanism |
-|------|-----------|-----------|
-| Working | Last 8 messages | Full text in context window |
-| Summary | Older messages | 1500-char rolling compression |
-| Semantic | Full history | pgvector embeddings, cosine similarity search |
+| Tier       | Retention         | Mechanism                                            |
+| ---------- | ----------------- | ---------------------------------------------------- |
+| Working    | Last 8 messages   | Full text in context window                          |
+| Summary    | Older messages    | 1500-char rolling compression                        |
+| Semantic   | Full history      | pgvector embeddings, cosine similarity search        |
 | Structured | Facts/preferences | Extracted by LLM every 5 turns, stored in PostgreSQL |
 
 Token-aware compaction keeps context under 5000 tokens. Document context persists across turns via SharedState.
@@ -708,11 +708,11 @@ Token-aware compaction keeps context under 5000 tokens. Document context persist
 
 Three architectural shifts reduce LLM costs by ~50-60%:
 
-| Shift | What | Savings |
-|-------|------|---------|
-| Code workflows | Simple messages ("hey", "thanks") skip LLM entirely via `_is_simple_message()` | ~15% |
-| Aggressive compaction | 8-msg window, proactive token budgeting, SubAgent (gpt-4o-mini) for tool synthesis | ~30% |
-| Sub-Agent dispatch | gpt-4o-mini for intent, routing, decomposition. gpt-4o for complex answers only | ~10x on tool calls |
+| Shift                 | What                                                                               | Savings            |
+| --------------------- | ---------------------------------------------------------------------------------- | ------------------ |
+| Code workflows        | Simple messages ("hey", "thanks") skip LLM entirely via`_is_simple_message()`    | ~15%               |
+| Aggressive compaction | 8-msg window, proactive token budgeting, SubAgent (gpt-4o-mini) for tool synthesis | ~30%               |
+| Sub-Agent dispatch    | gpt-4o-mini for intent, routing, decomposition. gpt-4o for complex answers only    | ~10x on tool calls |
 
 ## Document Generation
 
@@ -738,20 +738,20 @@ User-facing settings hub at `/settings`:
 
 ### Done ✓
 
-- [x] Regex routing with confidence scoring (3-level: Master → Dept → Agent)
-- [x] LLM-based intent classification fallback for unmatched regex patterns
-- [x] Multi-department workflow execution (5 workflows, parallel phases)
-- [x] Persistent conversation memory in PostgreSQL (6 models, async SQLAlchemy)
-- [x] Agent-to-agent handoffs with context transfer (Redis bus + DB persistence)
-- [x] Streaming token-by-token via WebSocket (routing events + tokens + metadata)
-- [x] Tool execution engine (17+ tools, YAML alias map, per-agent allowlist)
-- [x] Integration platform (encrypted workspace tokens, hub UI, connect/test API)
-- [x] API key authentication (optional, X-API-Key header)
-- [x] TanStack Query v5 + Zustand state management
-- [x] Toast notification system
-- [x] Conversation history loading + search
-- [x] Auto-refreshing sidebar
-- [x] White + blue UI theme
+- [X] Regex routing with confidence scoring (3-level: Master → Dept → Agent)
+- [X] LLM-based intent classification fallback for unmatched regex patterns
+- [X] Multi-department workflow execution (5 workflows, parallel phases)
+- [X] Persistent conversation memory in PostgreSQL (6 models, async SQLAlchemy)
+- [X] Agent-to-agent handoffs with context transfer (Redis bus + DB persistence)
+- [X] Streaming token-by-token via WebSocket (routing events + tokens + metadata)
+- [X] Tool execution engine (17+ tools, YAML alias map, per-agent allowlist)
+- [X] Integration platform (encrypted workspace tokens, hub UI, connect/test API)
+- [X] API key authentication (optional, X-API-Key header)
+- [X] TanStack Query v5 + Zustand state management
+- [X] Toast notification system
+- [X] Conversation history loading + search
+- [X] Auto-refreshing sidebar
+- [X] White + blue UI theme
 
 ### Next
 
