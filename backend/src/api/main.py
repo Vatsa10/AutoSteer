@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
         app.state.db_initialized = False
 
     # 2. Initialize MessageBus (Redis)
-    message_bus = MessageBus(redis_url=settings.redis_url)
+    message_bus = MessageBus(redis_url=settings.redis_dsn)
     app.state.message_bus = message_bus
     message_bus_task = asyncio.create_task(message_bus.start_listening())
     app.state.message_bus_task = message_bus_task

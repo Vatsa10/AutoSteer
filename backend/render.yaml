@@ -1,6 +1,6 @@
 # =============================================================================
 # AutoSteer — Render Blueprint (render.com)
-# Auto-provisions: Python web service + PostgreSQL (pgvector) + Redis
+# Auto-provisions: Python web service. DB/Redis via Neon + Upstash (set as env vars).
 # =============================================================================
 
 services:
@@ -14,16 +14,14 @@ services:
     healthCheckPath: /api/health
 
     envVars:
-      # Database & Redis (auto-provisioned by Render)
-      - key: DATABASE_URL
-        fromDatabase:
-          name: AutoSteer-db
-          property: connectionString
-      - key: REDIS_URL
-        fromService:
-          name: AutoSteer-redis
-          type: redis
-          property: connectionString
+      # Database — Neon serverless PostgreSQL
+      - key: NEON_DB_URL
+        sync: false
+      # Redis — Upstash serverless
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false
 
       # LLM providers (set these AFTER creating the service in Render Dashboard)
       - key: ANTHROPIC_API_KEY
@@ -152,17 +150,3 @@ services:
   #         property: connectionString
   #     - fromGroup: AutoSteer-backend-env
 
-# Databases -------------------------------------------------------------------
-databases:
-  - name: AutoSteer-db
-    databaseName: AutoSteer
-    user: AutoSteer
-    plan: starter
-    # After creation, go to Render Dashboard → AutoSteer-db → Shell:
-    #   psql -c "CREATE EXTENSION IF NOT EXISTS vector;"
-    # pgvector is available on all Render PostgreSQL plans.
-
-  - name: AutoSteer-redis
-    ipAllowList: []
-    plan: free
-    maxmemoryPolicy: noeviction

@@ -19,7 +19,7 @@ def get_engine():
     if _db_engine is None:
         settings = get_settings()
         _db_engine = create_async_engine(
-            settings.database_url,
+            settings.db_url,
             echo=settings.debug,
             pool_size=5,
             max_overflow=10,

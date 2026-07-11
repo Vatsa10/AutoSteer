@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -7,9 +8,32 @@ class Settings(BaseSettings):
     app_name: str = "AutoSteer"
     debug: bool = False
 
-    # Database
-    database_url: str
-    redis_url: str
+    # Database — Neon serverless PostgreSQL
+    neon_db_url: str = ""
+    # Redis — Upstash serverless Redis (REST)
+    upstash_redis_rest_url: str = ""
+    upstash_redis_rest_token: str = ""
+
+    # Legacy names kept for local dev / Docker fallback
+    database_url: str = ""
+    redis_url: str = ""
+
+    @property
+    def db_url(self) -> str:
+        return self.neon_db_url or self.database_url
+
+    @property
+    def redis_dsn(self) -> str:
+        """Return a redis:// URL. Upstash REST converts to redis:// scheme."""
+        if self.redis_url:
+            return self.redis_url
+        if self.upstash_redis_rest_url and self.upstash_redis_rest_token:
+            # Convert REST URL to redis:// URL
+            # upstash_redis_rest_url looks like https://us1-xxx.upstash.io
+            import re
+            host = self.upstash_redis_rest_url.replace("https://", "").replace("http://", "").rstrip("/")
+            return f"redis://default:{self.upstash_redis_rest_token}@{host}:6379"
+        return ""
 
     # LLM
     default_llm_provider: str = "openai"
