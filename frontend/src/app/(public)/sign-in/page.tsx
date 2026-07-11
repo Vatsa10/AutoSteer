@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowLeft, ArrowRight, Plus } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -41,6 +42,9 @@ export default function AuthPage() {
 
   return (
     <div className="min-h-screen bg-[#F4F4F0] flex items-center justify-center p-6">
+      <Link href="/" className="absolute top-6 left-6 font-tele text-[11px] hover:text-[#E61919] transition-colors flex items-center gap-1">
+        <ArrowLeft className="w-3 h-3" /> BACK TO HOME
+      </Link>
       <div className="w-full max-w-md">
         {/* Brand */}
         <div className="text-center mb-12">
