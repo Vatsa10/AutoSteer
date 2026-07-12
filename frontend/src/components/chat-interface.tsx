@@ -28,6 +28,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const setMessages = useChatStore((s) => s.setMessages);
   const addMessage = useChatStore((s) => s.addMessage);
   const appendContent = useChatStore((s) => s.appendContent);
+  const replaceLastContent = useChatStore((s) => s.replaceLastContent);
   const conversationId = useChatStore((s) => s.conversationId);
   const setConversationId = useChatStore((s) => s.setConversationId);
   const targetAgent = useChatStore((s) => s.targetAgent);
@@ -161,6 +162,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               addRoutingEvent({ type: event.stage as RoutingEvent["type"], label: event.stage || "", detail: event.department || event.agent });
               break;
             case "token": appendContent(event.content); break;
+            case "final": replaceLastContent(event.content); break;
             case "tool_call":
               addToolTrace({ name: event.name, status: event.status, result_summary: event.result_summary, duration_ms: event.duration_ms });
               break;
