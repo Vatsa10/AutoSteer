@@ -50,3 +50,19 @@ def test_build_step_event_shape():
 def test_build_step_event_default_label():
     ev = build_step_event("s1", "ok")
     assert ev["label"] == ""
+
+
+from src.engine.orchestrator import should_emit_final
+
+
+def test_should_emit_final_true_when_different():
+    assert should_emit_final("raw TOOL_CALL_START...END text", "Clean synthesized answer.") is True
+
+
+def test_should_emit_final_false_when_same():
+    assert should_emit_final("same text", "same text") is False
+    assert should_emit_final("  same text \n", "same text") is False
+
+
+def test_should_emit_final_false_when_display_empty():
+    assert should_emit_final("streamed", "") is False

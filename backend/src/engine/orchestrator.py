@@ -67,6 +67,11 @@ def build_step_event(step_id: str, status: str, label: str = "") -> dict:
     return {"type": "step", "id": step_id, "status": status, "label": label}
 
 
+def should_emit_final(streamed: str, display: str) -> bool:
+    """Emit a `final` replacement only when the synthesized answer differs from streamed tokens."""
+    return bool(display) and display.strip() != (streamed or "").strip()
+
+
 @dataclass
 class Subtask:
     id: str
@@ -1079,19 +1084,26 @@ User request: {user_message}"""
             except Exception:
                 pass
 
+        streamed_content = ""
+        display_content = ""
         async for event in agent_runtime.process_stream(effective_message):
             if event["type"] == "token":
-                full_content += event["content"]
+                streamed_content += event["content"]
                 yield {"type": "token", "content": event["content"]}
             elif event["type"] == "metadata":
                 model_name = event.get("model", "")
                 usage = event.get("usage", {})
                 handoff_data = event.get("handoff")
-                full_content = event.get("display_content", full_content)
+                display_content = event.get("display_content", "") or ""
             elif event["type"] == "done":
                 pass
             else:
                 yield event  # forward tool_call / other trace events
+
+        # Replace raw streamed text (may contain TOOL_CALL markers) with the clean answer.
+        if should_emit_final(streamed_content, display_content):
+            yield {"type": "final", "content": display_content}
+        full_content = display_content or streamed_content
 
         # Phase 3: Persist to DB (non-blocking for stream)
         content = full_content
