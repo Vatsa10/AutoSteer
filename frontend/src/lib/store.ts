@@ -28,12 +28,21 @@ export const useToastStore = create<ToastStore>((set) => ({
 
 // ── Chat state ───────────────────────────────────────────────────
 
+export interface ToolTrace { name: string; status: string; result_summary: string; duration_ms: number }
+export interface SourceTrace { filename: string; chunk_index: number; score: number; snippet: string }
+export interface StepTrace { id: string; status: string; label: string }
+export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
+
 export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   agent?: string | null;
   department?: string | null;
   model?: string | null;
+  tools?: ToolTrace[];
+  sources?: SourceTrace[];
+  steps?: StepTrace[];
+  artifacts?: ArtifactRef[];
 }
 
 export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
@@ -56,6 +65,10 @@ interface ChatStore {
   clearRoutingEvents: () => void;
   setIsStreaming: (v: boolean) => void;
   reset: () => void;
+  addToolTrace: (t: ToolTrace) => void;
+  addSourceTrace: (s: SourceTrace) => void;
+  addStepTrace: (s: StepTrace) => void;
+  addArtifactRef: (a: ArtifactRef) => void;
 }
 
 export interface RoutingEvent {
@@ -85,6 +98,45 @@ export const useChatStore = create<ChatStore>((set) => ({
       const last = msgs[msgs.length - 1];
       if (last && last.role === "assistant") {
         msgs[msgs.length - 1] = { ...last, content: last.content + content };
+      }
+      return { messages: msgs };
+    }),
+  addToolTrace: (t) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = { ...last, tools: [...(last.tools || []), t] };
+      }
+      return { messages: msgs };
+    }),
+  addSourceTrace: (src) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = { ...last, sources: [...(last.sources || []), src] };
+      }
+      return { messages: msgs };
+    }),
+  addStepTrace: (st) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        const steps = [...(last.steps || [])];
+        const i = steps.findIndex((x) => x.id === st.id);
+        if (i >= 0) steps[i] = st; else steps.push(st);  // update status in place
+        msgs[msgs.length - 1] = { ...last, steps };
+      }
+      return { messages: msgs };
+    }),
+  addArtifactRef: (a) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = { ...last, artifacts: [...(last.artifacts || []), a] };
       }
       return { messages: msgs };
     }),

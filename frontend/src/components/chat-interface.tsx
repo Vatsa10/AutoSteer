@@ -5,6 +5,7 @@ import { Send, Network, Loader2, Paperclip, X, FileText, Image } from "lucide-re
 import ReactMarkdown from "react-markdown";
 import { useQueryClient } from "@tanstack/react-query";
 import { RoutingPath } from "@/components/routing-path";
+import { ChatTrace } from "@/components/chat-trace";
 import { AgentSelector } from "@/components/agent-selector";
 import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store";
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
@@ -36,6 +37,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const routingEvents = useChatStore((s) => s.routingEvents);
   const addRoutingEvent = useChatStore((s) => s.addRoutingEvent);
   const clearRoutingEvents = useChatStore((s) => s.clearRoutingEvents);
+  const addToolTrace = useChatStore((s) => s.addToolTrace);
+  const addSourceTrace = useChatStore((s) => s.addSourceTrace);
+  const addStepTrace = useChatStore((s) => s.addStepTrace);
+  const addArtifactRef = useChatStore((s) => s.addArtifactRef);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
   const reset = useChatStore((s) => s.reset);
@@ -156,6 +161,18 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               addRoutingEvent({ type: event.stage as RoutingEvent["type"], label: event.stage || "", detail: event.department || event.agent });
               break;
             case "token": appendContent(event.content); break;
+            case "tool_call":
+              addToolTrace({ name: event.name, status: event.status, result_summary: event.result_summary, duration_ms: event.duration_ms });
+              break;
+            case "source":
+              addSourceTrace({ filename: event.filename, chunk_index: event.chunk_index, score: event.score, snippet: event.snippet });
+              break;
+            case "step":
+              addStepTrace({ id: event.id, status: event.status, label: event.label });
+              break;
+            case "artifact":
+              addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
+              break;
             case "metadata":
               if (event.conversation_id && !convId) setConversationId(event.conversation_id);
               break;
@@ -298,6 +315,21 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
                     <span className="inline-block w-1.5 h-4 bg-blue-600 ml-0.5 animate-pulse align-middle" />
                   )}
                 </div>
+                {msg.role === "assistant" && (
+                  <ChatTrace tools={msg.tools} sources={msg.sources} steps={msg.steps} />
+                )}
+                {msg.role === "assistant" && msg.artifacts && msg.artifacts.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {msg.artifacts.map((art) => (
+                      <a key={art.id} href={`/artifacts?open=${art.id}`}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
+                        <span className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">{art.kind}</span>
+                        <span className="text-sm text-slate-700 truncate flex-1">{art.title}</span>
+                        <span className="text-[11px] text-blue-600">View →</span>
+                      </a>
+                    ))}
+                  </div>
+                )}
                 {msg.role === "assistant" && msg.model && <p className="text-[10px] text-slate-400 mt-2">via {msg.model}</p>}
               </div>
             </div>

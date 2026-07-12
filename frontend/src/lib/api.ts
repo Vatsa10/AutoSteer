@@ -369,3 +369,31 @@ export async function resolveApproval(
     body: JSON.stringify(resolution),
   });
 }
+
+// ── Artifacts ─────────────────────────────────────────────────────
+
+export interface ArtifactSummary {
+  id: string; title: string; kind: string; status: string;
+  version: number; filename: string | null; conversation_id: string | null; created_at: string | null;
+}
+
+export async function getArtifacts(): Promise<{ artifacts: ArtifactSummary[] }> {
+  const res = await apiFetch("/api/artifacts");
+  return res.json();
+}
+
+export async function getArtifact(id: string): Promise<{
+  artifact: { id: string; title: string; kind: string; status: string; content: string; filename: string | null; version: number; created_at: string | null };
+  versions: { id: string; version: number; status: string; created_at: string | null }[];
+}> {
+  const res = await apiFetch(`/api/artifacts/${id}`);
+  return res.json();
+}
+
+export async function approveArtifact(id: string): Promise<void> {
+  await apiFetch(`/api/artifacts/${id}/approve`, { method: "POST" });
+}
+
+export async function rejectArtifact(id: string): Promise<void> {
+  await apiFetch(`/api/artifacts/${id}/reject`, { method: "POST" });
+}

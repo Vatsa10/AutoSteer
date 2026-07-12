@@ -51,6 +51,22 @@ from src.models.conversation import Conversation
 from src.models.message import Message as MessageModel
 
 
+def build_source_event(hit: dict) -> dict:
+    """Structured trace event for a retrieved document chunk cited in context."""
+    return {
+        "type": "source",
+        "filename": hit.get("title") or hit.get("source") or "document",
+        "chunk_index": hit.get("chunk_index", 0),
+        "score": hit.get("score", 0.0),
+        "snippet": (hit.get("snippet") or "")[:300],
+    }
+
+
+def build_step_event(step_id: str, status: str, label: str = "") -> dict:
+    """Structured trace event for a workflow/DAG step."""
+    return {"type": "step", "id": step_id, "status": status, "label": label}
+
+
 @dataclass
 class Subtask:
     id: str
@@ -547,6 +563,7 @@ User request: {user_message}"""
             step_type = step.get("type", "agent_call")
 
             yield {"type": "routing", "stage": "processing", "department": "workflow", "agent": f"{wf_name}/{sid}"}
+            yield build_step_event(sid, "running")
             yield {"type": "token", "content": f">>> Step: {sid}\n"}
 
             if step_type == "agent_call":
@@ -559,12 +576,15 @@ User request: {user_message}"""
                         resp = await agent.process(prompt)
                         results[sid] = getattr(resp, "content", str(resp))
                         yield {"type": "token", "content": results[sid][:3000] + "\n\n"}
+                        yield build_step_event(sid, "ok")
                     except Exception as exc:
                         results[sid] = f"Error: {exc}"
                         yield {"type": "token", "content": f"Error: {exc}\n\n"}
+                        yield build_step_event(sid, "error")
                 else:
                     results[sid] = f"Agent '{agent_role}' not available"
                     yield {"type": "token", "content": f"Skipped: {results[sid]}\n\n"}
+                    yield build_step_event(sid, "skipped")
 
             elif step_type == "tool_call":
                 tool_name = step.get("tool", "")
@@ -751,6 +771,7 @@ User request: {user_message}"""
                 pass
 
         # Load persistent user documents (resume, etc.) saved via Settings > Memory
+        _source_events: list[dict] = []
         if session is not None:
             try:
                 from sqlalchemy import select as _sa_ud
@@ -774,8 +795,12 @@ User request: {user_message}"""
                             file_context_parts.append(
                                 f"[From {h['source']}/{h.get('title','doc')} — chunk {h['chunk_index']}]\n{h['snippet']}"
                             )
+                            _source_events.append(build_source_event(h))
             except Exception:
                 pass
+
+        for _ev in _source_events:
+            yield _ev
 
         if file_ids:
             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
@@ -1065,6 +1090,8 @@ User request: {user_message}"""
                 full_content = event.get("display_content", full_content)
             elif event["type"] == "done":
                 pass
+            else:
+                yield event  # forward tool_call / other trace events
 
         # Phase 3: Persist to DB (non-blocking for stream)
         content = full_content
