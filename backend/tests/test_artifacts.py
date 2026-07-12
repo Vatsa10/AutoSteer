@@ -105,3 +105,9 @@ async def test_savepoint_isolates_failed_persist():
         good = await create_artifact(s, title="good.docx", kind="doc", filename="good.docx")
         await s.commit()
         assert (await s.get(Artifact, good.id)) is not None
+
+
+def test_approval_has_artifact_id():
+    from src.models.approval import ApprovalRequest
+    a = ApprovalRequest(id="ap1", workflow_run_id="r1", step_id="s1", prompt="ok", artifact_id="art1")
+    assert a.artifact_id == "art1"

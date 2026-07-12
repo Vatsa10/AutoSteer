@@ -22,6 +22,7 @@ class ApprovalRequest(Base):
     context: Mapped[str | None] = mapped_column(Text, nullable=True)
     resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    artifact_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
