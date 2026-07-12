@@ -60,27 +60,6 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   // Stable ref to avoid sendMessageMutation recreating sendViaWebSocket every render.
   const sendMutationRef = useRef<ReturnType<typeof useSendMessage> | null>(null);
 
-  // ── Deep-link + template prompt ──────────────────────────────
-  useEffect(() => {
-    if (initialConversationId && !loadedOnce.current) {
-      loadedOnce.current = true;
-      setConversationId(initialConversationId);
-    }
-    const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
-    if (templatePrompt) {
-      sessionStorage.removeItem("autosteer_template_prompt");
-      if (/^run\s+\S/i.test(templatePrompt)) {
-        // Outcome launch: auto-send so the workflow starts immediately.
-        setInput(templatePrompt);
-        setTimeout(() => {
-          document.getElementById("chat-send-btn")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-        }, 60);
-      } else {
-        setInput(templatePrompt);
-      }
-    }
-  }, [initialConversationId, setConversationId, setInput]);
-
   // ── Load conversation history ────────────────────────────────
   const { data: historyMessages, isLoading: isLoadingHistory } =
     useConversationMessages(conversationId);
@@ -220,35 +199,63 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient],
   );
 
+  // ── Submit (extracted so it can be called with explicit text, bypassing
+  //     async `input` state — used by the outcome-launch auto-send below) ──
+  const submitText = useCallback(
+    (rawText: string, attach: FileAttachment[] = []) => {
+      if ((!rawText.trim() && attach.length === 0) || isStreaming || sendMessageMutation.isPending) return;
+      const userMessage = rawText.trim() || "Analyze the attached files.";
+      const currentAttachments = [...attach];
+      const attachLabel = currentAttachments.length > 0 ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]` : "";
+      setInput(""); setAttachments([]);
+      addMessage({ role: "user", content: userMessage + attachLabel });
+
+      if (wsMode) {
+        addMessage({ role: "assistant", content: "", agent: targetAgent });
+        sendViaWebSocket(userMessage, [], conversationId, targetAgent ?? undefined, currentAttachments);
+      } else {
+        setIsStreaming(true); setRoutingStage("classifying");
+        addMessage({ role: "assistant", content: "" });
+        sendMessageMutation.mutate(
+          { message: userMessage, conversationId, targetAgent: targetAgent ?? undefined, files: currentAttachments.length > 0 ? currentAttachments : undefined },
+          {
+            onSuccess: (data) => {
+              setIsStreaming(false); setRoutingStage("");
+              setMessages(useChatStore.getState().messages.slice(0, -1).concat({ role: "assistant", content: data.response, agent: data.agent, department: data.routed_to, model: data.model }));
+              if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
+            },
+            onError: () => { setIsStreaming(false); setRoutingStage(""); },
+          },
+        );
+      }
+    },
+    [wsMode, conversationId, targetAgent, isStreaming, sendMessageMutation, sendViaWebSocket, addMessage, setInput, setAttachments, setConversationId, setIsStreaming, setRoutingStage, setMessages],
+  );
+
   // ── Submit ───────────────────────────────────────────────────
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if ((!input.trim() && attachments.length === 0) || isStreaming || sendMessageMutation.isPending) return;
-    const userMessage = input.trim() || "Analyze the attached files.";
-    const currentAttachments = [...attachments];
-    const attachLabel = currentAttachments.length > 0 ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]` : "";
-    setInput(""); setAttachments([]);
-    addMessage({ role: "user", content: userMessage + attachLabel });
-
-    if (wsMode) {
-      addMessage({ role: "assistant", content: "", agent: targetAgent });
-      sendViaWebSocket(userMessage, [], conversationId, targetAgent ?? undefined, currentAttachments);
-    } else {
-      setIsStreaming(true); setRoutingStage("classifying");
-      addMessage({ role: "assistant", content: "" });
-      sendMessageMutation.mutate(
-        { message: userMessage, conversationId, targetAgent: targetAgent ?? undefined, files: currentAttachments.length > 0 ? currentAttachments : undefined },
-        {
-          onSuccess: (data) => {
-            setIsStreaming(false); setRoutingStage("");
-            setMessages(useChatStore.getState().messages.slice(0, -1).concat({ role: "assistant", content: data.response, agent: data.agent, department: data.routed_to, model: data.model }));
-            if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
-          },
-          onError: () => { setIsStreaming(false); setRoutingStage(""); },
-        },
-      );
-    }
+    submitText(input, attachments);
   }
+
+  // ── Deep-link + template prompt ──────────────────────────────
+  useEffect(() => {
+    if (initialConversationId && !loadedOnce.current) {
+      loadedOnce.current = true;
+      setConversationId(initialConversationId);
+    }
+    const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
+    if (templatePrompt) {
+      sessionStorage.removeItem("autosteer_template_prompt");
+      if (/^run\s+\S/i.test(templatePrompt)) {
+        // Outcome launch: send directly, bypassing async `input` state so the
+        // workflow starts immediately without racing the disabled submit button.
+        submitText(templatePrompt, []);
+      } else {
+        setInput(templatePrompt);
+      }
+    }
+  }, [initialConversationId, setConversationId, setInput, submitText]);
 
   function handleNewConversation() {
     if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
@@ -425,7 +432,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               placeholder={targetAgent ? "Send a message directly to this agent…" : "Send a message to the orchestration system…"}
               className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300 transition-all"
               autoFocus disabled={isStreaming || sendMessageMutation.isPending} />
-            <button id="chat-send-btn" type="submit" disabled={isStreaming || sendMessageMutation.isPending || (!input.trim() && attachments.length === 0)}
+            <button type="submit" disabled={isStreaming || sendMessageMutation.isPending || (!input.trim() && attachments.length === 0)}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-2.5 transition-all duration-150 flex items-center gap-2 font-medium text-sm">
               {isStreaming || sendMessageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
