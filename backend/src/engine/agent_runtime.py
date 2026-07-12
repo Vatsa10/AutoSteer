@@ -22,6 +22,11 @@ def build_tool_event(name: str, status: str, result_text: str, duration_ms: int)
     }
 
 
+def build_artifact_event(artifact_id: str, title: str, kind: str, filename: str | None) -> dict:
+    """Structured stream event announcing a persisted artifact."""
+    return {"type": "artifact", "id": artifact_id, "title": title, "kind": kind, "filename": filename}
+
+
 @dataclass
 class HandoffInfo:
     target_agent: str
@@ -396,6 +401,21 @@ Format:
                             f"\n\n**Download link (include this in your response):** "
                             f"[Download {fname}](/api/files/download/{fname})"
                         )
+                        # Persist as a durable artifact (best-effort)
+                        try:
+                            from src.engine.tool_executor import get_tool_context
+                            from src.api.routes.artifacts import create_artifact
+                            _ctx = get_tool_context()
+                            _sess = _ctx.get("session")
+                            if _sess is not None:
+                                _kind = "doc" if tool_name == "create_docx" else "sheet"
+                                _art = await create_artifact(
+                                    _sess, title=fname, kind=_kind, filename=fname,
+                                    workspace_id=_ctx.get("workspace_id", "default"),
+                                )
+                                tool_events.append(build_artifact_event(_art.id, fname, _kind, fname))
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                 tool_results.append(

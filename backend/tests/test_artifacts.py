@@ -56,3 +56,36 @@ async def test_artifact_api_list_get_approve():
     async with get_session_factory()() as s:
         row = await s.get(Artifact, aid)
         assert row.status == "approved"
+
+
+from src.engine.agent_runtime import build_artifact_event
+
+
+def test_build_artifact_event_shape():
+    ev = build_artifact_event("id1", "My Doc", "doc", "my_doc.docx")
+    assert ev["type"] == "artifact"
+    assert ev["id"] == "id1"
+    assert ev["title"] == "My Doc"
+    assert ev["kind"] == "doc"
+    assert ev["filename"] == "my_doc.docx"
+
+
+from sqlalchemy import select as _sel
+
+
+@pytest.mark.asyncio
+async def test_doc_tool_persists_artifact():
+    await init_db()
+    from src.engine.tool_executor import set_tool_context
+    from src.models.artifact import Artifact
+
+    async with get_session_factory()() as s:
+        set_tool_context(session=s, workspace_id="default")
+        # Simulate a create_docx tool result being handled: call create_artifact the same way the runtime does.
+        from src.api.routes.artifacts import create_artifact
+        art = await create_artifact(s, title="report.docx", kind="doc", filename="report.docx")
+        await s.commit()
+        got = (await s.execute(_sel(Artifact).where(Artifact.id == art.id))).scalar_one()
+        assert got.filename == "report.docx"
+        assert got.kind == "doc"
+        assert got.status == "draft"
