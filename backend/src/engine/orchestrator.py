@@ -51,6 +51,17 @@ from src.models.conversation import Conversation
 from src.models.message import Message as MessageModel
 
 
+def build_source_event(hit: dict) -> dict:
+    """Structured trace event for a retrieved document chunk cited in context."""
+    return {
+        "type": "source",
+        "filename": hit.get("title") or hit.get("source") or "document",
+        "chunk_index": hit.get("chunk_index", 0),
+        "score": hit.get("score", 0.0),
+        "snippet": (hit.get("snippet") or "")[:300],
+    }
+
+
 @dataclass
 class Subtask:
     id: str
@@ -751,6 +762,7 @@ User request: {user_message}"""
                 pass
 
         # Load persistent user documents (resume, etc.) saved via Settings > Memory
+        _source_events: list[dict] = []
         if session is not None:
             try:
                 from sqlalchemy import select as _sa_ud
@@ -774,8 +786,12 @@ User request: {user_message}"""
                             file_context_parts.append(
                                 f"[From {h['source']}/{h.get('title','doc')} — chunk {h['chunk_index']}]\n{h['snippet']}"
                             )
+                            _source_events.append(build_source_event(h))
             except Exception:
                 pass
+
+        for _ev in _source_events:
+            yield _ev
 
         if file_ids:
             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")

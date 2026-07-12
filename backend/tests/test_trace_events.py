@@ -14,3 +14,23 @@ def test_build_tool_event_error_status():
     ev = build_tool_event("bad_tool", "error", "boom", 5)
     assert ev["status"] == "error"
     assert ev["result_summary"] == "boom"
+
+
+from src.engine.orchestrator import build_source_event
+
+
+def test_build_source_event_shape():
+    hit = {"document_id": "d1", "title": "handbook.pdf", "source": "memory",
+           "chunk_index": 12, "score": 0.83, "snippet": "y" * 500}
+    ev = build_source_event(hit)
+    assert ev["type"] == "source"
+    assert ev["filename"] == "handbook.pdf"
+    assert ev["chunk_index"] == 12
+    assert ev["score"] == 0.83
+    assert len(ev["snippet"]) <= 300
+
+
+def test_build_source_event_falls_back_to_source():
+    hit = {"title": "", "source": "upload", "chunk_index": 0, "score": 0.1, "snippet": "z"}
+    ev = build_source_event(hit)
+    assert ev["filename"] == "upload"
