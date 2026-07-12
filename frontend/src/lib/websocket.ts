@@ -7,6 +7,9 @@ export type WSEvent =
   | { type: "metadata"; conversation_id: string; agent?: string; department?: string; model?: string }
   | { type: "error"; message: string }
   | { type: "approval"; approval_id: string; step_id: string; prompt: string; context?: string }
+  | { type: "tool_call"; name: string; status: string; result_summary: string; duration_ms: number }
+  | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
+  | { type: "step"; id: string; status: string; label: string }
   | { type: "done" };
 
 interface WSCallbacks {
