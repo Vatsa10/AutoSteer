@@ -21,6 +21,11 @@ export function ArtifactList() {
     getArtifacts().then((d) => setItems(d.artifacts)).catch(() => {}).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const open = params.get("open");
+    if (open) setOpenId(open);
+  }, []);
 
   if (loading) return <div className="flex justify-center py-12"><Loader2 className="w-5 h-5 text-blue-600 animate-spin" /></div>;
 

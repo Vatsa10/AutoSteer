@@ -409,10 +409,11 @@ Format:
                             _sess = _ctx.get("session")
                             if _sess is not None:
                                 _kind = "doc" if tool_name == "create_docx" else "sheet"
-                                _art = await create_artifact(
-                                    _sess, title=fname, kind=_kind, filename=fname,
-                                    workspace_id=_ctx.get("workspace_id", "default"),
-                                )
+                                async with _sess.begin_nested():   # SAVEPOINT: isolate failure
+                                    _art = await create_artifact(
+                                        _sess, title=fname, kind=_kind, filename=fname,
+                                        workspace_id=_ctx.get("workspace_id", "default"),
+                                    )
                                 tool_events.append(build_artifact_event(_art.id, fname, _kind, fname))
                         except Exception:
                             pass

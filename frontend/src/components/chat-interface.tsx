@@ -321,7 +321,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
                 {msg.role === "assistant" && msg.artifacts && msg.artifacts.length > 0 && (
                   <div className="mt-2 space-y-1.5">
                     {msg.artifacts.map((art) => (
-                      <a key={art.id} href="/artifacts"
+                      <a key={art.id} href={`/artifacts?open=${art.id}`}
                         className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
                         <span className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">{art.kind}</span>
                         <span className="text-sm text-slate-700 truncate flex-1">{art.title}</span>

@@ -89,3 +89,19 @@ async def test_doc_tool_persists_artifact():
         assert got.filename == "report.docx"
         assert got.kind == "doc"
         assert got.status == "draft"
+
+
+@pytest.mark.asyncio
+async def test_savepoint_isolates_failed_persist():
+    await init_db()
+    async with get_session_factory()() as s:
+        try:
+            async with s.begin_nested():
+                s.add(Artifact(id="bad-artifact", title="x"))
+                raise RuntimeError("simulated flush failure")
+        except RuntimeError:
+            pass
+        from src.api.routes.artifacts import create_artifact
+        good = await create_artifact(s, title="good.docx", kind="doc", filename="good.docx")
+        await s.commit()
+        assert (await s.get(Artifact, good.id)) is not None
