@@ -130,3 +130,25 @@ async def test_approval_gate_sets_artifact_pending():
         got = await s.get(Artifact, art.id)
         assert got.status == "pending_approval"
         assert (await s.get(ApprovalRequest, "apx")).artifact_id == art.id
+
+
+@pytest.mark.asyncio
+async def test_resolve_approval_flips_artifact():
+    await init_db()
+    from src.api.routes.artifacts import create_artifact
+    from src.models.artifact import Artifact
+    from src.models.approval import ApprovalRequest
+    async with get_session_factory()() as s:
+        art = await create_artifact(s, title="gate.docx", kind="doc", filename="gate.docx", status="pending_approval")
+        s.add(ApprovalRequest(id="apr1", workflow_run_id="rr", step_id="seek_approval",
+                              prompt="approve?", status="pending", artifact_id=art.id))
+        await s.commit()
+        aid = art.id
+
+    app = create_app(); app.state.engine = None
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/api/approvals/apr1/resolve", headers=_headers(), json={"action": "approved"})
+        assert r.status_code == 200
+
+    async with get_session_factory()() as s:
+        assert (await s.get(Artifact, aid)).status == "approved"

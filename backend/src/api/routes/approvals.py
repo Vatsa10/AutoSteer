@@ -108,6 +108,15 @@ async def resolve_approval(
 
     # The workflow executor polls for resolution — no need to push
 
+    if approval.artifact_id:
+        try:
+            from src.models.artifact import Artifact
+            art = await session.get(Artifact, approval.artifact_id)
+            if art is not None:
+                art.status = "approved" if body.action == "approved" else "rejected"
+        except Exception:
+            pass
+
     return {
         "ok": True,
         "approval_id": approval_id,
