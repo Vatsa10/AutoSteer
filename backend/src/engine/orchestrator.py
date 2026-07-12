@@ -621,6 +621,10 @@ User request: {user_message}"""
                                     )
                                 latest_artifact_id = _art.id
                                 yield build_artifact_event(_art.id, _fname, _kind, _fname)
+                                try:
+                                    await session.commit()
+                                except Exception:
+                                    pass
                         except Exception:
                             pass
                 except Exception as exc:

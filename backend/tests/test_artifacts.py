@@ -167,3 +167,14 @@ async def test_contract_redline_validates():
         r = await c.post("/api/workflows/validate", headers=_headers(), json={"yaml_content": yaml_text})
         assert r.status_code == 200
         assert r.json()["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_content_approval_validates():
+    app = create_app(); app.state.engine = None
+    import pathlib
+    yaml_text = pathlib.Path("src/workflows/content_approval.yaml").read_text(encoding="utf-8")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/api/workflows/validate", headers=_headers(), json={"yaml_content": yaml_text})
+        assert r.status_code == 200
+        assert r.json()["valid"] is True
