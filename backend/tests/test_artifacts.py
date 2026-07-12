@@ -123,13 +123,15 @@ async def test_approval_gate_sets_artifact_pending():
         art = await create_artifact(s, title="wf.docx", kind="doc", filename="wf.docx")
         # Simulate the approval-gate wiring: mark artifact pending + link approval
         art.status = "pending_approval"
-        ap = ApprovalRequest(id="apx", workflow_run_id="rx", step_id="seek_approval",
+        import uuid as _uuid
+        ap_id = _uuid.uuid4().hex[:16]
+        ap = ApprovalRequest(id=ap_id, workflow_run_id="rx", step_id="seek_approval",
                              prompt="approve?", artifact_id=art.id)
         s.add(ap)
         await s.commit()
         got = await s.get(Artifact, art.id)
         assert got.status == "pending_approval"
-        assert (await s.get(ApprovalRequest, "apx")).artifact_id == art.id
+        assert (await s.get(ApprovalRequest, ap_id)).artifact_id == art.id
 
 
 @pytest.mark.asyncio
@@ -140,14 +142,16 @@ async def test_resolve_approval_flips_artifact():
     from src.models.approval import ApprovalRequest
     async with get_session_factory()() as s:
         art = await create_artifact(s, title="gate.docx", kind="doc", filename="gate.docx", status="pending_approval")
-        s.add(ApprovalRequest(id="apr1", workflow_run_id="rr", step_id="seek_approval",
+        import uuid as _uuid
+        ap_id = _uuid.uuid4().hex[:16]
+        s.add(ApprovalRequest(id=ap_id, workflow_run_id="rr", step_id="seek_approval",
                               prompt="approve?", status="pending", artifact_id=art.id))
         await s.commit()
         aid = art.id
 
     app = create_app(); app.state.engine = None
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        r = await c.post("/api/approvals/apr1/resolve", headers=_headers(), json={"action": "approved"})
+        r = await c.post(f"/api/approvals/{ap_id}/resolve", headers=_headers(), json={"action": "approved"})
         assert r.status_code == 200
 
     async with get_session_factory()() as s:
