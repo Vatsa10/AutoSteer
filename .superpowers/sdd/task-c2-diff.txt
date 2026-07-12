@@ -1,0 +1,60 @@
+diff --git a/frontend/src/components/chat-interface.tsx b/frontend/src/components/chat-interface.tsx
+index 35022d2..6a4645f 100644
+--- a/frontend/src/components/chat-interface.tsx
++++ b/frontend/src/components/chat-interface.tsx
+@@ -28,6 +28,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const setMessages = useChatStore((s) => s.setMessages);
+   const addMessage = useChatStore((s) => s.addMessage);
+   const appendContent = useChatStore((s) => s.appendContent);
++  const replaceLastContent = useChatStore((s) => s.replaceLastContent);
+   const conversationId = useChatStore((s) => s.conversationId);
+   const setConversationId = useChatStore((s) => s.setConversationId);
+   const targetAgent = useChatStore((s) => s.targetAgent);
+@@ -161,6 +162,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+               addRoutingEvent({ type: event.stage as RoutingEvent["type"], label: event.stage || "", detail: event.department || event.agent });
+               break;
+             case "token": appendContent(event.content); break;
++            case "final": replaceLastContent(event.content); break;
+             case "tool_call":
+               addToolTrace({ name: event.name, status: event.status, result_summary: event.result_summary, duration_ms: event.duration_ms });
+               break;
+diff --git a/frontend/src/lib/store.ts b/frontend/src/lib/store.ts
+index 5358b8d..a467d44 100644
+--- a/frontend/src/lib/store.ts
++++ b/frontend/src/lib/store.ts
+@@ -58,6 +58,7 @@ interface ChatStore {
+   setMessages: (messages: ChatMessage[]) => void;
+   addMessage: (message: ChatMessage) => void;
+   appendContent: (content: string) => void;
++  replaceLastContent: (content: string) => void;
+   setConversationId: (id: string | undefined) => void;
+   setTargetAgent: (agent: string | null) => void;
+   setRoutingStage: (stage: RoutingStage) => void;
+@@ -101,6 +102,15 @@ export const useChatStore = create<ChatStore>((set) => ({
+       }
+       return { messages: msgs };
+     }),
++  replaceLastContent: (content) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, content };
++      }
++      return { messages: msgs };
++    }),
+   addToolTrace: (t) =>
+     set((s) => {
+       const msgs = [...s.messages];
+diff --git a/frontend/src/lib/websocket.ts b/frontend/src/lib/websocket.ts
+index 8858ee0..a9f3667 100644
+--- a/frontend/src/lib/websocket.ts
++++ b/frontend/src/lib/websocket.ts
+@@ -11,6 +11,7 @@ export type WSEvent =
+   | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
+   | { type: "step"; id: string; status: string; label: string }
+   | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
++  | { type: "final"; content: string }
+   | { type: "done" };
+ 
+ interface WSCallbacks {

@@ -1,0 +1,908 @@
+### COMMITS
+33e7b5a fix(chat): remove setTimeout race in outcome Run launch auto-send
+04962d0 feat(outcomes): gallery cards launch flagship workflows
+cfae4ab @ test(artifacts): use unique IDs so approval tests are rerun-idempotent
+cdf6d90 feat(workflows): add contract_redline flagship workflow
+90af27c feat(approvals): resolving an approval flips its linked artifact status
+df4770c feat(approvals): persist workflow doc artifacts and gate them on approval steps
+ea7a789 feat(approvals): add artifact_id link column
+c50088e feat(chat): replace streamed tokens with synthesized final answer
+0ad0875 feat(chat): emit final event with synthesized answer (no raw tool markers)
+7de1827 @ docs: add Plan C implementation plan (make it real)
+2fd57a6 @ docs: add Make It Real spec (clean output + approval gates + outcome gallery)
+98564d3 @ feat(landing): reposition from chatbot to Outcome OS
+
+### STAT
+ backend/src/api/routes/approvals.py                |   9 +
+ backend/src/database.py                            |   1 +
+ backend/src/engine/orchestrator.py                 |  47 +-
+ backend/src/models/approval.py                     |   1 +
+ backend/src/workflows/contract_redline.yaml        |  39 ++
+ backend/tests/test_artifacts.py                    |  62 +++
+ backend/tests/test_trace_events.py                 |  16 +
+ .../plans/2026-07-12-plan-c-make-it-real.md        | 613 +++++++++++++++++++++
+ .../specs/2026-07-12-make-it-real-design.md        | 176 ++++++
+ frontend/src/app/(main)/templates/page.tsx         |  48 +-
+ frontend/src/app/page.tsx                          |  32 +-
+ frontend/src/components/chat-interface.tsx         |  91 +--
+ frontend/src/lib/store.ts                          |  10 +
+ frontend/src/lib/websocket.ts                      |   1 +
+ 14 files changed, 1090 insertions(+), 56 deletions(-)
+
+### FULL DIFF
+diff --git a/backend/src/api/routes/approvals.py b/backend/src/api/routes/approvals.py
+index c59326b..a8d2daa 100644
+--- a/backend/src/api/routes/approvals.py
++++ b/backend/src/api/routes/approvals.py
+@@ -103,13 +103,22 @@ async def resolve_approval(
+ 
+     approval.status = body.action
+     approval.resolved_by = body.resolved_by
+     approval.resolution_note = body.note
+     approval.resolved_at = datetime.now(timezone.utc)
+ 
+     # The workflow executor polls for resolution — no need to push
+ 
++    if approval.artifact_id:
++        try:
++            from src.models.artifact import Artifact
++            art = await session.get(Artifact, approval.artifact_id)
++            if art is not None:
++                art.status = "approved" if body.action == "approved" else "rejected"
++        except Exception:
++            pass
++
+     return {
+         "ok": True,
+         "approval_id": approval_id,
+         "status": body.action,
+     }
+diff --git a/backend/src/database.py b/backend/src/database.py
+index 41ff258..3e58bbc 100644
+--- a/backend/src/database.py
++++ b/backend/src/database.py
+@@ -100,16 +100,17 @@ async def init_db():
+     # Existing DBs won't have the embedding column (create_all skips existing
+     # tables), so add it and the search indexes best-effort in isolated txns.
+     ddl_statements = [
+         "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding vector(1536)",
+         "CREATE INDEX IF NOT EXISTS document_chunks_fts_idx "
+         "ON document_chunks USING GIN (to_tsvector('english', content))",
+         "CREATE INDEX IF NOT EXISTS document_chunks_vec_idx "
+         "ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)",
++        "ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS artifact_id varchar(36)",
+     ]
+     for stmt in ddl_statements:
+         try:
+             async with engine.begin() as conn:
+                 await conn.execute(text(stmt))
+         except Exception as exc:
+             logger.warning("Hybrid-search DDL skipped (%s): %s", stmt.split()[0:3], exc)
+ 
+diff --git a/backend/src/engine/orchestrator.py b/backend/src/engine/orchestrator.py
+index 743c5d4..e7aeaf4 100644
+--- a/backend/src/engine/orchestrator.py
++++ b/backend/src/engine/orchestrator.py
+@@ -62,16 +62,21 @@ def build_source_event(hit: dict) -> dict:
+     }
+ 
+ 
+ def build_step_event(step_id: str, status: str, label: str = "") -> dict:
+     """Structured trace event for a workflow/DAG step."""
+     return {"type": "step", "id": step_id, "status": status, "label": label}
+ 
+ 
++def should_emit_final(streamed: str, display: str) -> bool:
++    """Emit a `final` replacement only when the synthesized answer differs from streamed tokens."""
++    return bool(display) and display.strip() != (streamed or "").strip()
++
++
+ @dataclass
+ class Subtask:
+     id: str
+     agent: str
+     description: str
+     dependencies: list[str] = field(default_factory=list)
+     result: str = ""
+ 
+@@ -544,16 +549,17 @@ User request: {user_message}"""
+         conversation_id: str,
+         session: Any = None,
+     ):
+         """Stream a YAML workflow's steps through the chat as they execute.
+         Handles agent_call, tool_call, condition, and approval step types."""
+         import uuid as _uuid
+         steps = wf_def.get("steps", [])
+         results: dict[str, str] = {}
++        latest_artifact_id: str | None = None
+         step_by_id = {s["id"]: s for s in steps}
+ 
+         # Topological sort by dependencies
+         in_degree = {s["id"]: len(s.get("dependencies", [])) for s in steps}
+         ready = [sid for sid, d in in_degree.items() if d == 0]
+ 
+         yield {"type": "token", "content": f"[ Workflow: {wf_name} · {len(steps)} steps ]\n\n"}
+ 
+@@ -593,16 +599,35 @@ User request: {user_message}"""
+                 try:
+                     from src.engine.tool_executor import get_tool_registry, execute_tool, set_tool_context
+                     set_tool_context(session=session, workspace_id="default")
+                     registry = get_tool_registry()
+                     tool_args = {**tool_config, "text": dep_ctx or user_message}
+                     result = await execute_tool(registry, tool_name, tool_args)
+                     results[sid] = result.output if result.success else f"Error: {result.error}"
+                     yield {"type": "token", "content": f"[ Tool: {tool_name} ] → {str(results[sid])[:1000]}\n\n"}
++
++                    if result.success and tool_name in ("create_docx", "create_pptx"):
++                        try:
++                            import json as _jart
++                            _meta = _jart.loads(result.output)
++                            _fname = _meta.get("filename", "document")
++                            _kind = "doc" if tool_name == "create_docx" else "sheet"
++                            if session is not None:
++                                from src.api.routes.artifacts import create_artifact
++                                from src.engine.agent_runtime import build_artifact_event
++                                async with session.begin_nested():
++                                    _art = await create_artifact(
++                                        session, title=_fname, kind=_kind, filename=_fname,
++                                        conversation_id=conversation_id,
++                                    )
++                                latest_artifact_id = _art.id
++                                yield build_artifact_event(_art.id, _fname, _kind, _fname)
++                        except Exception:
++                            pass
+                 except Exception as exc:
+                     results[sid] = f"Tool error: {exc}"
+                     yield {"type": "token", "content": f"Tool error: {exc}\n\n"}
+ 
+             elif step_type == "approval":
+                 prompt = step.get("config", {}).get("prompt", "Approve this step?")
+                 context_str = results.get(step.get("dependencies", [None])[0], "") if step.get("dependencies") else ""
+                 # Create DB approval request
+@@ -618,16 +643,27 @@ User request: {user_message}"""
+                             step_id=sid,
+                             workspace_id="default",
+                             status="pending",
+                             prompt=prompt,
+                             context=context_str[:2000] if context_str else None,
+                             created_at=now,
+                         )
+                         session.add(approval)
++
++                        if latest_artifact_id and approval is not None and session is not None:
++                            try:
++                                from src.models.artifact import Artifact as _Art
++                                approval.artifact_id = latest_artifact_id
++                                _a = await session.get(_Art, latest_artifact_id)
++                                if _a is not None:
++                                    _a.status = "pending_approval"
++                            except Exception:
++                                pass
++
+                         await session.commit()
+                     except Exception:
+                         pass
+                 approval_id = approval.id if approval else sid
+                 yield {"type": "approval", "approval_id": approval_id, "step_id": sid, "prompt": prompt, "context": context_str[:1000]}
+                 yield {"type": "token", "content": f"\n[ ⏳ AWAITING APPROVAL: {sid} ]\n{prompt}\n\n"}
+                 # Store result placeholder — real result comes when approval resolves via API
+                 results[sid] = f"Pending approval: {prompt}"
+@@ -1074,30 +1110,37 @@ User request: {user_message}"""
+                 r2 = await session.execute(_sa_s2(_SSx).where(_SSx.workspace_id == workspace_id, _SSx.key == f"conv:{conversation_id}:files"))
+                 ss = r2.scalar_one_or_none()
+                 if ss and ss.value:
+                     for fd in ss.value.get("files", []):
+                         agent_runtime.add_document_memory(fd.get("filename", "unknown"), fd.get("text", ""))
+             except Exception:
+                 pass
+ 
++        streamed_content = ""
++        display_content = ""
+         async for event in agent_runtime.process_stream(effective_message):
+             if event["type"] == "token":
+-                full_content += event["content"]
++                streamed_content += event["content"]
+                 yield {"type": "token", "content": event["content"]}
+             elif event["type"] == "metadata":
+                 model_name = event.get("model", "")
+                 usage = event.get("usage", {})
+                 handoff_data = event.get("handoff")
+-                full_content = event.get("display_content", full_content)
++                display_content = event.get("display_content", "") or ""
+             elif event["type"] == "done":
+                 pass
+             else:
+                 yield event  # forward tool_call / other trace events
+ 
++        # Replace raw streamed text (may contain TOOL_CALL markers) with the clean answer.
++        if should_emit_final(streamed_content, display_content):
++            yield {"type": "final", "content": display_content}
++        full_content = display_content or streamed_content
++
+         # Phase 3: Persist to DB (non-blocking for stream)
+         content = full_content
+         if session is not None:
+             try:
+                 from sqlalchemy import select as sa_select
+                 now = datetime.now(timezone.utc)
+ 
+                 result = await session.execute(
+diff --git a/backend/src/models/approval.py b/backend/src/models/approval.py
+index 74336f8..326b155 100644
+--- a/backend/src/models/approval.py
++++ b/backend/src/models/approval.py
+@@ -17,14 +17,15 @@ class ApprovalRequest(Base):
+     workspace_id: Mapped[str] = mapped_column(String(64), default="default", index=True)
+     status: Mapped[str] = mapped_column(
+         String(32), default="pending"
+     )  # pending | approved | rejected
+     prompt: Mapped[str] = mapped_column(Text, nullable=False)
+     context: Mapped[str | None] = mapped_column(Text, nullable=True)
+     resolved_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+     resolution_note: Mapped[str | None] = mapped_column(Text, nullable=True)
++    artifact_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+     created_at: Mapped[datetime] = mapped_column(
+         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+     )
+     resolved_at: Mapped[datetime | None] = mapped_column(
+         DateTime(timezone=True), nullable=True
+     )
+diff --git a/backend/src/workflows/contract_redline.yaml b/backend/src/workflows/contract_redline.yaml
+new file mode 100644
+index 0000000..778f49d
+--- /dev/null
++++ b/backend/src/workflows/contract_redline.yaml
+@@ -0,0 +1,39 @@
++# AutoSteer Workflow — Contract redline with legal approval
++name: contract_redline
++description: "Extract obligations from a contract, draft a redline, gate for legal approval, then ship a docx."
++schedule_cron: null
++
++inputs:
++  focus:
++    type: string
++    default: "obligations and liabilities"
++    description: "What to focus the redline on."
++
++steps:
++  - id: extract
++    type: agent_call
++    agent: web_researcher
++    description: "Extract key obligations, liabilities, and risky clauses from the uploaded contract using document context."
++    dependencies: []
++
++  - id: redline
++    type: agent_call
++    agent: legal_counsel
++    description: "Draft a redline with suggested edits and rationale for each flagged clause."
++    dependencies: [extract]
++
++  - id: legal_gate
++    type: approval
++    description: "Legal review: approve the redline before it ships."
++    dependencies: [redline]
++    config:
++      prompt: "Please review the following redline and approve or reject."
++      timeout_hours: 72
++
++  - id: make_doc
++    type: tool_call
++    tool: create_docx
++    description: "Generate the final approved redline document."
++    dependencies: [legal_gate]
++    config:
++      filename: "contract_redline.docx"
+diff --git a/backend/tests/test_artifacts.py b/backend/tests/test_artifacts.py
+index 5ab15e8..55effae 100644
+--- a/backend/tests/test_artifacts.py
++++ b/backend/tests/test_artifacts.py
+@@ -100,8 +100,70 @@ async def test_savepoint_isolates_failed_persist():
+                 s.add(Artifact(id="bad-artifact", title="x"))
+                 raise RuntimeError("simulated flush failure")
+         except RuntimeError:
+             pass
+         from src.api.routes.artifacts import create_artifact
+         good = await create_artifact(s, title="good.docx", kind="doc", filename="good.docx")
+         await s.commit()
+         assert (await s.get(Artifact, good.id)) is not None
++
++
++def test_approval_has_artifact_id():
++    from src.models.approval import ApprovalRequest
++    a = ApprovalRequest(id="ap1", workflow_run_id="r1", step_id="s1", prompt="ok", artifact_id="art1")
++    assert a.artifact_id == "art1"
++
++
++@pytest.mark.asyncio
++async def test_approval_gate_sets_artifact_pending():
++    await init_db()
++    from src.api.routes.artifacts import create_artifact
++    from src.models.artifact import Artifact
++    from src.models.approval import ApprovalRequest
++    async with get_session_factory()() as s:
++        art = await create_artifact(s, title="wf.docx", kind="doc", filename="wf.docx")
++        # Simulate the approval-gate wiring: mark artifact pending + link approval
++        art.status = "pending_approval"
++        import uuid as _uuid
++        ap_id = _uuid.uuid4().hex[:16]
++        ap = ApprovalRequest(id=ap_id, workflow_run_id="rx", step_id="seek_approval",
++                             prompt="approve?", artifact_id=art.id)
++        s.add(ap)
++        await s.commit()
++        got = await s.get(Artifact, art.id)
++        assert got.status == "pending_approval"
++        assert (await s.get(ApprovalRequest, ap_id)).artifact_id == art.id
++
++
++@pytest.mark.asyncio
++async def test_resolve_approval_flips_artifact():
++    await init_db()
++    from src.api.routes.artifacts import create_artifact
++    from src.models.artifact import Artifact
++    from src.models.approval import ApprovalRequest
++    async with get_session_factory()() as s:
++        art = await create_artifact(s, title="gate.docx", kind="doc", filename="gate.docx", status="pending_approval")
++        import uuid as _uuid
++        ap_id = _uuid.uuid4().hex[:16]
++        s.add(ApprovalRequest(id=ap_id, workflow_run_id="rr", step_id="seek_approval",
++                              prompt="approve?", status="pending", artifact_id=art.id))
++        await s.commit()
++        aid = art.id
++
++    app = create_app(); app.state.engine = None
++    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
++        r = await c.post(f"/api/approvals/{ap_id}/resolve", headers=_headers(), json={"action": "approved"})
++        assert r.status_code == 200
++
++    async with get_session_factory()() as s:
++        assert (await s.get(Artifact, aid)).status == "approved"
++
++
++@pytest.mark.asyncio
++async def test_contract_redline_validates():
++    app = create_app(); app.state.engine = None
++    import pathlib
++    yaml_text = pathlib.Path("src/workflows/contract_redline.yaml").read_text(encoding="utf-8")
++    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
++        r = await c.post("/api/workflows/validate", headers=_headers(), json={"yaml_content": yaml_text})
++        assert r.status_code == 200
++        assert r.json()["valid"] is True
+diff --git a/backend/tests/test_trace_events.py b/backend/tests/test_trace_events.py
+index 6ee90d2..2b693be 100644
+--- a/backend/tests/test_trace_events.py
++++ b/backend/tests/test_trace_events.py
+@@ -45,8 +45,24 @@ def test_build_step_event_shape():
+     assert ev["id"] == "draft"
+     assert ev["status"] == "running"
+     assert ev["label"] == "Draft the doc"
+ 
+ 
+ def test_build_step_event_default_label():
+     ev = build_step_event("s1", "ok")
+     assert ev["label"] == ""
++
++
++from src.engine.orchestrator import should_emit_final
++
++
++def test_should_emit_final_true_when_different():
++    assert should_emit_final("raw TOOL_CALL_START...END text", "Clean synthesized answer.") is True
++
++
++def test_should_emit_final_false_when_same():
++    assert should_emit_final("same text", "same text") is False
++    assert should_emit_final("  same text \n", "same text") is False
++
++
++def test_should_emit_final_false_when_display_empty():
++    assert should_emit_final("streamed", "") is False
+diff --git a/frontend/src/app/(main)/templates/page.tsx b/frontend/src/app/(main)/templates/page.tsx
+index 9fe881d..a3f8555 100644
+--- a/frontend/src/app/(main)/templates/page.tsx
++++ b/frontend/src/app/(main)/templates/page.tsx
+@@ -1,13 +1,21 @@
+ "use client";
+ 
++import { useEffect, useState } from "react";
+ import { useRouter } from "next/navigation";
+-import { FileText, Shield, PenLine, Search, BarChart3, Code, Briefcase, ArrowRight, Zap } from "lucide-react";
++import { FileText, Shield, PenLine, Search, BarChart3, Code, Briefcase, ArrowRight, Zap, Play } from "lucide-react";
+ import { useChatStore } from "@/lib/store";
++import { getWorkflows, type WorkflowDefinition } from "@/lib/api";
++
++const FLAGSHIP: { name: string; title: string; outcome: string; chips: string[] }[] = [
++  { name: "research_report", title: "Research → Report", outcome: "Research a topic, draft it, review, ship a Word doc.", chips: ["web_researcher", "content_marketer", "create_docx"] },
++  { name: "content_approval", title: "Content → Approval → Publish", outcome: "Draft content, gate for human approval, then publish.", chips: ["content_marketer", "approval", "publish"] },
++  { name: "contract_redline", title: "Contract → Redline → Legal", outcome: "Extract obligations, draft a redline, get legal approval, ship.", chips: ["legal_counsel", "approval", "create_docx"] },
++];
+ 
+ const templates = [
+   {
+     category: "Documents",
+     items: [
+       { icon: FileText, title: "Analyze this document", prompt: "Analyze the attached document and give me key insights, summary, and action items.", hint: "Attach a PDF, Word doc, or image" },
+       { icon: FileText, title: "Create a competitive battle card", prompt: "Research my competitor and create a structured battle card with strengths, weaknesses, and differentiation points.", hint: "Mention competitor name" },
+       { icon: PenLine, title: "Write a blog post", prompt: "Write an engaging blog post targeted at developers and technical founders.", hint: "Specify your topic" },
+@@ -28,34 +36,72 @@ const templates = [
+       { icon: Briefcase, title: "Draft a sales proposal", prompt: "Draft a professional sales proposal for Acme Corp that highlights our AI solutions and value proposition.", hint: "Customize with prospect details" },
+     ],
+   },
+ ];
+ 
+ export default function TemplatesPage() {
+   const router = useRouter();
+   const setConversationId = useChatStore((s) => s.setConversationId);
++  const [available, setAvailable] = useState<Set<string>>(new Set());
++
++  useEffect(() => {
++    getWorkflows()
++      .then((ws: WorkflowDefinition[]) => setAvailable(new Set(ws.map((w) => w.name))))
++      .catch(() => {});
++  }, []);
+ 
+   function useTemplate(prompt: string) {
+     setConversationId(undefined);
+     sessionStorage.setItem("autosteer_template_prompt", prompt);
+     router.push("/chat");
+   }
+ 
++  function runOutcome(name: string) {
++    setConversationId(undefined);
++    sessionStorage.setItem("autosteer_template_prompt", `run ${name}`);
++    router.push("/chat");
++  }
++
+   return (
+     <div className="h-full overflow-y-auto">
+       <div className="max-w-3xl mx-auto px-8 py-8 space-y-8">
+         <div>
+           <div className="flex items-center gap-2.5 mb-1">
+             <Zap className="w-5 h-5 text-blue-600" />
+             <h2 className="text-base font-semibold text-slate-800">Templates</h2>
+           </div>
+           <p className="text-sm text-slate-500">Click any template to start a conversation with a pre-built prompt.</p>
+         </div>
+ 
++        <div>
++          <h2 className="text-base font-semibold text-slate-800 mb-1">Outcomes</h2>
++          <p className="text-sm text-slate-500 mb-4">Launch a multi-step workflow and watch it run — agents, tools, approvals.</p>
++          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
++            {FLAGSHIP.map((f) => (
++              <div key={f.name} className="flex flex-col p-4 rounded-xl border border-slate-200 bg-white hover:border-blue-300 transition-colors">
++                <div className="text-sm font-semibold text-slate-800 mb-1">{f.title}</div>
++                <p className="text-xs text-slate-500 mb-3 flex-1">{f.outcome}</p>
++                <div className="flex flex-wrap gap-1 mb-3">
++                  {f.chips.map((c) => (
++                    <span key={c} className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">{c}</span>
++                  ))}
++                </div>
++                <button
++                  onClick={() => runOutcome(f.name)}
++                  disabled={available.size > 0 && !available.has(f.name)}
++                  className="flex items-center justify-center gap-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg px-3 py-2 hover:bg-blue-500 disabled:opacity-40"
++                >
++                  <Play className="w-3.5 h-3.5" /> Run outcome
++                </button>
++              </div>
++            ))}
++          </div>
++        </div>
++
+         {templates.map((section) => (
+           <section key={section.category} className="space-y-3">
+             <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider">{section.category}</h3>
+             <div className="grid gap-3">
+               {section.items.map((t) => {
+                 const Icon = t.icon;
+                 return (
+                   <button
+diff --git a/frontend/src/app/page.tsx b/frontend/src/app/page.tsx
+index 382ca2d..de381a4 100644
+--- a/frontend/src/app/page.tsx
++++ b/frontend/src/app/page.tsx
+@@ -191,21 +191,21 @@ function Hero() {
+         {/* Left: macro headline */}
+         <div className="lg:col-span-7 flex flex-col justify-center py-16 lg:pr-10">
+           <motion.p
+             initial={reduce ? false : { opacity: 0 }}
+             animate={{ opacity: 1 }}
+             transition={{ duration: 0.5 }}
+             className="font-tele text-[11px] text-[#e61919] mb-8"
+           >
+-            [ MULTI-AGENT ORCHESTRATION SYSTEM / REV 2.6 ]
++            [ AUTONOMOUS OUTCOME ENGINE / REV 2.7 ]
+           </motion.p>
+ 
+           <h1 className="font-display text-[clamp(2.75rem,9vw,7.5rem)]">
+-            {["EVERY AI TASK.", "ONE CONVERSATION."].map((line, i) => (
++            {["OUTCOMES.", "NOT ANSWERS."].map((line, i) => (
+               <motion.span
+                 key={line}
+                 initial={reduce ? false : { opacity: 0, y: 40 }}
+                 animate={{ opacity: 1, y: 0 }}
+                 transition={{ duration: 0.8, delay: 0.1 + i * 0.12, ease: EASE }}
+                 className="block"
+               >
+                 {line}
+@@ -214,17 +214,17 @@ function Hero() {
+           </h1>
+ 
+           <motion.p
+             initial={reduce ? false : { opacity: 0 }}
+             animate={{ opacity: 1 }}
+             transition={{ duration: 0.6, delay: 0.45 }}
+             className="font-tele text-xs text-ink/70 mt-8 max-w-md leading-relaxed"
+           >
+-            ONE REQUEST DECOMPOSED INTO A TASK GRAPH. AGENTS RUN IN PARALLEL. ONE COHERENT ANSWER RETURNED.
++            ONE REQUEST BECOMES A TASK GRAPH. AGENTS RUN, TOOLS EXECUTE, DOCUMENTS SHIP — AND YOU WATCH EVERY STEP, CITE EVERY SOURCE, APPROVE BEFORE IT ACTS.
+           </motion.p>
+ 
+           <motion.div
+             initial={reduce ? false : { opacity: 0, y: 12 }}
+             animate={{ opacity: 1, y: 0 }}
+             transition={{ duration: 0.5, delay: 0.6 }}
+             className="flex items-center gap-6 mt-10"
+           >
+@@ -240,31 +240,31 @@ function Hero() {
+           <div className="absolute top-6 left-6 lg:left-10 flex items-center gap-2 z-10">
+             <span className="w-2 h-2 bg-[#e61919] animate-breathe" aria-hidden />
+             <span className="font-tele text-[10px] text-ink/60">LIVE / UNIT D-01</span>
+           </div>
+           <Crosshair className="absolute top-6 right-6" />
+           <Crosshair className="absolute bottom-6 left-6 lg:left-10" />
+           <AgentGraph />
+           <p className="relative font-tele text-[10px] text-ink/50 mt-6 text-center z-10">
+-            43 AGENTS · 12 DEPARTMENTS · 1 RESPONSE
++            43 AGENTS · 47 TOOLS · 1 OUTCOME
+           </p>
+         </div>
+       </div>
+     </section>
+   );
+ }
+ 
+ // ── Telemetry strip ──────────────────────────────────────────
+ const LOG = [
+-  "CLASSIFY INTENT",
+   "ROUTE > DATA_ANALYTICS",
+-  "DECOMPOSE > 3 SUBTASKS",
+-  "SUB-AGENTS RUNNING ×3",
+-  "SYNTHESIZE RESULTS",
++  "TOOL > WEB_SEARCH ✓",
++  "CITE > 3 SOURCES",
++  "DRAFT > ARTIFACT v1",
++  "AWAIT APPROVAL",
+ ];
+ 
+ function Telemetry() {
+   const reduce = useReducedMotion();
+   return (
+     <section className="bg-[#0a0a0a] text-[#f4f4f0] border-b-2 border-[#0a0a0a]">
+       <div className="max-w-[1400px] mx-auto px-6 py-5 flex flex-col lg:flex-row lg:items-center gap-4 lg:gap-8">
+         <div className="flex items-center gap-3 shrink-0">
+@@ -302,23 +302,23 @@ const LEDGER = [
+   },
+   {
+     n: "02",
+     title: "RUN IN PARALLEL",
+     body: "Web researcher finds sources while content drafts while security reviews — concurrent sub-agents, one synthesized response.",
+   },
+   {
+     n: "03",
+-    title: "REMEMBER EVERYTHING",
+-    body: "Four-tier memory plus pgvector semantic recall. Uploaded PDFs, Word docs and images are extracted into persistent conversation context.",
++    title: "SEE EVERY STEP",
++    body: "No black box. Every answer shows the agent that ran, the tools it called, and the document chunks it cited — hybrid BM25 + vector recall over your files.",
+   },
+   {
+     n: "04",
+-    title: "GENERATE DOCUMENTS",
+-    body: "Native Word and PowerPoint output from any conversation — 8 slide layouts, 4 themes, download link in the response.",
++    title: "APPROVE & SHIP",
++    body: "Runs produce durable, versioned artifacts — not throwaway chat. Gate any step for human approval, then ship the Word doc, deck, or report you own.",
+   },
+ ];
+ 
+ function Ledger() {
+   return (
+     <section className="border-b-2 border-[#0a0a0a]">
+       <div className="max-w-[1400px] mx-auto px-6 py-24 md:py-32">
+         <Reveal>
+@@ -367,19 +367,19 @@ function Numerals() {
+         ))}
+       </div>
+     </section>
+   );
+ }
+ 
+ // ── Tool registry ────────────────────────────────────────────
+ const TOOLS = [
+-  "DDG_SEARCH", "WEB_CRAWL", "ARXIV_SEARCH", "SEMANTIC_SEARCH",
++  "DDG_SEARCH", "WEB_CRAWL", "ARXIV_SEARCH", "HYBRID_SEARCH",
+   "CREATE_DOCX", "CREATE_PPTX", "PDF_EXTRACT", "CODE_SANDBOX",
+-  "SLACK_POST", "GITHUB_ISSUE", "NOTION_SYNC", "FILE_UPLOAD",
++  "SLACK_POST", "GITHUB_ISSUE", "NOTION_SYNC", "GOOGLE_DOCS",
+ ];
+ 
+ function Registry() {
+   return (
+     <section className="border-b-2 border-[#0a0a0a]">
+       <div className="max-w-[1400px] mx-auto px-6 py-24 md:py-32">
+         <Reveal>
+           <p className="font-tele text-[11px] text-[#e61919] mb-4">[ TOOL REGISTRY / 47 INTEGRATED ]</p>
+@@ -404,17 +404,17 @@ function Registry() {
+ 
+ // ── CTA ──────────────────────────────────────────────────────
+ function CTA() {
+   return (
+     <section className="bg-[#0a0a0a] text-[#f4f4f0] border-b-2 border-[#0a0a0a]">
+       <div className="max-w-[1400px] mx-auto px-6 py-28 md:py-40">
+         <Reveal>
+           <h2 className="font-display text-[clamp(2.5rem,9vw,8rem)]">
+-            STOP<br />SWITCHING<br /><span className="text-[#e61919]">TABS.</span>
++            STOP CHATTING.<br /><span className="text-[#e61919]">START SHIPPING.</span>
+           </h2>
+           <div className="flex flex-col sm:flex-row sm:items-center gap-6 mt-12">
+             <HazardButton>GET STARTED</HazardButton>
+             <p className="font-tele text-[11px] text-paper/60">FREE TO START · OPEN SOURCE · SELF-HOST OR CLOUD</p>
+           </div>
+         </Reveal>
+       </div>
+     </section>
+@@ -424,17 +424,17 @@ function CTA() {
+ // ── Footer ───────────────────────────────────────────────────
+ function Footer() {
+   return (
+     <footer className="max-w-[1400px] mx-auto px-6 py-10 grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
+       <span className="font-tele text-xs font-bold tracking-[0.12em]">
+         AutoSteer<sup className="text-[0.6em] align-super">®</sup>
+       </span>
+       <p className="font-tele text-[10px] text-ink/50 sm:text-center">FASTAPI · NEXT.JS · POSTGRESQL · REDIS</p>
+-      <p className="font-tele text-[10px] text-ink/50 sm:text-right">REV 2.6 / © 2026</p>
++      <p className="font-tele text-[10px] text-ink/50 sm:text-right">REV 2.7 / © 2026</p>
+     </footer>
+   );
+ }
+ 
+ // ── Page ─────────────────────────────────────────────────────
+ export default function LandingPage() {
+   return (
+     <MotionConfig reducedMotion="user">
+diff --git a/frontend/src/components/chat-interface.tsx b/frontend/src/components/chat-interface.tsx
+index 35022d2..e6195f7 100644
+--- a/frontend/src/components/chat-interface.tsx
++++ b/frontend/src/components/chat-interface.tsx
+@@ -23,16 +23,17 @@ interface ChatInterfaceProps {
+ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const queryClient = useQueryClient();
+   const addToast = useToastStore((s) => s.addToast);
+ 
+   const messages = useChatStore((s) => s.messages);
+   const setMessages = useChatStore((s) => s.setMessages);
+   const addMessage = useChatStore((s) => s.addMessage);
+   const appendContent = useChatStore((s) => s.appendContent);
++  const replaceLastContent = useChatStore((s) => s.replaceLastContent);
+   const conversationId = useChatStore((s) => s.conversationId);
+   const setConversationId = useChatStore((s) => s.setConversationId);
+   const targetAgent = useChatStore((s) => s.targetAgent);
+   const setTargetAgent = useChatStore((s) => s.setTargetAgent);
+   const routingStage = useChatStore((s) => s.routingStage);
+   const setRoutingStage = useChatStore((s) => s.setRoutingStage);
+   const routingEvents = useChatStore((s) => s.routingEvents);
+   const addRoutingEvent = useChatStore((s) => s.addRoutingEvent);
+@@ -54,29 +55,16 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const wsRef = useRef<WebSocket | null>(null);
+   const messagesEndRef = useRef<HTMLDivElement>(null);
+   const inputRef = useRef<HTMLInputElement>(null);
+   const fileInputRef = useRef<HTMLInputElement>(null);
+   const loadedOnce = useRef(false);
+   // Stable ref to avoid sendMessageMutation recreating sendViaWebSocket every render.
+   const sendMutationRef = useRef<ReturnType<typeof useSendMessage> | null>(null);
+ 
+-  // ── Deep-link + template prompt ──────────────────────────────
+-  useEffect(() => {
+-    if (initialConversationId && !loadedOnce.current) {
+-      loadedOnce.current = true;
+-      setConversationId(initialConversationId);
+-    }
+-    const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
+-    if (templatePrompt) {
+-      setInput(templatePrompt);
+-      sessionStorage.removeItem("autosteer_template_prompt");
+-    }
+-  }, [initialConversationId, setConversationId, setInput]);
+-
+   // ── Load conversation history ────────────────────────────────
+   const { data: historyMessages, isLoading: isLoadingHistory } =
+     useConversationMessages(conversationId);
+ 
+   useEffect(() => {
+     if (historyMessages && historyMessages.length > 0 && conversationId) {
+       setMessages(
+         historyMessages.map((m) => ({
+@@ -156,16 +144,17 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+         onOpen: () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); },
+         onEvent: (event: WSEvent) => {
+           switch (event.type) {
+             case "routing":
+               setRoutingStage(event.stage as RoutingStage);
+               addRoutingEvent({ type: event.stage as RoutingEvent["type"], label: event.stage || "", detail: event.department || event.agent });
+               break;
+             case "token": appendContent(event.content); break;
++            case "final": replaceLastContent(event.content); break;
+             case "tool_call":
+               addToolTrace({ name: event.name, status: event.status, result_summary: event.result_summary, duration_ms: event.duration_ms });
+               break;
+             case "source":
+               addSourceTrace({ filename: event.filename, chunk_index: event.chunk_index, score: event.score, snippet: event.snippet });
+               break;
+             case "step":
+               addStepTrace({ id: event.id, status: event.status, label: event.label });
+@@ -205,45 +194,73 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+           }
+         },
+       });
+       wsRef.current = ws;
+     },
+     [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient],
+   );
+ 
++  // ── Submit (extracted so it can be called with explicit text, bypassing
++  //     async `input` state — used by the outcome-launch auto-send below) ──
++  const submitText = useCallback(
++    (rawText: string, attach: FileAttachment[] = []) => {
++      if ((!rawText.trim() && attach.length === 0) || isStreaming || sendMessageMutation.isPending) return;
++      const userMessage = rawText.trim() || "Analyze the attached files.";
++      const currentAttachments = [...attach];
++      const attachLabel = currentAttachments.length > 0 ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]` : "";
++      setInput(""); setAttachments([]);
++      addMessage({ role: "user", content: userMessage + attachLabel });
++
++      if (wsMode) {
++        addMessage({ role: "assistant", content: "", agent: targetAgent });
++        sendViaWebSocket(userMessage, [], conversationId, targetAgent ?? undefined, currentAttachments);
++      } else {
++        setIsStreaming(true); setRoutingStage("classifying");
++        addMessage({ role: "assistant", content: "" });
++        sendMessageMutation.mutate(
++          { message: userMessage, conversationId, targetAgent: targetAgent ?? undefined, files: currentAttachments.length > 0 ? currentAttachments : undefined },
++          {
++            onSuccess: (data) => {
++              setIsStreaming(false); setRoutingStage("");
++              setMessages(useChatStore.getState().messages.slice(0, -1).concat({ role: "assistant", content: data.response, agent: data.agent, department: data.routed_to, model: data.model }));
++              if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
++            },
++            onError: () => { setIsStreaming(false); setRoutingStage(""); },
++          },
++        );
++      }
++    },
++    [wsMode, conversationId, targetAgent, isStreaming, sendMessageMutation, sendViaWebSocket, addMessage, setInput, setAttachments, setConversationId, setIsStreaming, setRoutingStage, setMessages],
++  );
++
+   // ── Submit ───────────────────────────────────────────────────
+   async function handleSubmit(e: React.FormEvent) {
+     e.preventDefault();
+-    if ((!input.trim() && attachments.length === 0) || isStreaming || sendMessageMutation.isPending) return;
+-    const userMessage = input.trim() || "Analyze the attached files.";
+-    const currentAttachments = [...attachments];
+-    const attachLabel = currentAttachments.length > 0 ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]` : "";
+-    setInput(""); setAttachments([]);
+-    addMessage({ role: "user", content: userMessage + attachLabel });
++    submitText(input, attachments);
++  }
+ 
+-    if (wsMode) {
+-      addMessage({ role: "assistant", content: "", agent: targetAgent });
+-      sendViaWebSocket(userMessage, [], conversationId, targetAgent ?? undefined, currentAttachments);
+-    } else {
+-      setIsStreaming(true); setRoutingStage("classifying");
+-      addMessage({ role: "assistant", content: "" });
+-      sendMessageMutation.mutate(
+-        { message: userMessage, conversationId, targetAgent: targetAgent ?? undefined, files: currentAttachments.length > 0 ? currentAttachments : undefined },
+-        {
+-          onSuccess: (data) => {
+-            setIsStreaming(false); setRoutingStage("");
+-            setMessages(useChatStore.getState().messages.slice(0, -1).concat({ role: "assistant", content: data.response, agent: data.agent, department: data.routed_to, model: data.model }));
+-            if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
+-          },
+-          onError: () => { setIsStreaming(false); setRoutingStage(""); },
+-        },
+-      );
++  // ── Deep-link + template prompt ──────────────────────────────
++  useEffect(() => {
++    if (initialConversationId && !loadedOnce.current) {
++      loadedOnce.current = true;
++      setConversationId(initialConversationId);
+     }
+-  }
++    const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
++    if (templatePrompt) {
++      sessionStorage.removeItem("autosteer_template_prompt");
++      if (/^run\s+\S/i.test(templatePrompt)) {
++        // Outcome launch: send directly, bypassing async `input` state so the
++        // workflow starts immediately without racing the disabled submit button.
++        submitText(templatePrompt, []);
++      } else {
++        setInput(templatePrompt);
++      }
++    }
++  }, [initialConversationId, setConversationId, setInput, submitText]);
+ 
+   function handleNewConversation() {
+     if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
+     reset(); setInput("");
+   }
+ 
+   return (
+     <>
+diff --git a/frontend/src/lib/store.ts b/frontend/src/lib/store.ts
+index 5358b8d..a467d44 100644
+--- a/frontend/src/lib/store.ts
++++ b/frontend/src/lib/store.ts
+@@ -53,16 +53,17 @@ interface ChatStore {
+   targetAgent: string | null;
+   routingStage: RoutingStage;
+   routingEvents: RoutingEvent[];
+   isStreaming: boolean;
+ 
+   setMessages: (messages: ChatMessage[]) => void;
+   addMessage: (message: ChatMessage) => void;
+   appendContent: (content: string) => void;
++  replaceLastContent: (content: string) => void;
+   setConversationId: (id: string | undefined) => void;
+   setTargetAgent: (agent: string | null) => void;
+   setRoutingStage: (stage: RoutingStage) => void;
+   addRoutingEvent: (event: RoutingEvent) => void;
+   clearRoutingEvents: () => void;
+   setIsStreaming: (v: boolean) => void;
+   reset: () => void;
+   addToolTrace: (t: ToolTrace) => void;
+@@ -96,16 +97,25 @@ export const useChatStore = create<ChatStore>((set) => ({
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, content: last.content + content };
+       }
+       return { messages: msgs };
+     }),
++  replaceLastContent: (content) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, content };
++      }
++      return { messages: msgs };
++    }),
+   addToolTrace: (t) =>
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, tools: [...(last.tools || []), t] };
+       }
+       return { messages: msgs };
+diff --git a/frontend/src/lib/websocket.ts b/frontend/src/lib/websocket.ts
+index 8858ee0..a9f3667 100644
+--- a/frontend/src/lib/websocket.ts
++++ b/frontend/src/lib/websocket.ts
+@@ -6,16 +6,17 @@ export type WSEvent =
+   | { type: "token"; content: string }
+   | { type: "metadata"; conversation_id: string; agent?: string; department?: string; model?: string }
+   | { type: "error"; message: string }
+   | { type: "approval"; approval_id: string; step_id: string; prompt: string; context?: string }
+   | { type: "tool_call"; name: string; status: string; result_summary: string; duration_ms: number }
+   | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
+   | { type: "step"; id: string; status: string; label: string }
+   | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
++  | { type: "final"; content: string }
+   | { type: "done" };
+ 
+ interface WSCallbacks {
+   onEvent: (event: WSEvent) => void;
+   onOpen?: () => void;
+   onError?: (error: Event) => void;
+   onClose?: (error: boolean) => void;
+ }

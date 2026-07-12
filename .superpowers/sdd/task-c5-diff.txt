@@ -1,0 +1,50 @@
+diff --git a/backend/src/api/routes/approvals.py b/backend/src/api/routes/approvals.py
+index c59326b..a8d2daa 100644
+--- a/backend/src/api/routes/approvals.py
++++ b/backend/src/api/routes/approvals.py
+@@ -108,6 +108,15 @@ async def resolve_approval(
+ 
+     # The workflow executor polls for resolution — no need to push
+ 
++    if approval.artifact_id:
++        try:
++            from src.models.artifact import Artifact
++            art = await session.get(Artifact, approval.artifact_id)
++            if art is not None:
++                art.status = "approved" if body.action == "approved" else "rejected"
++        except Exception:
++            pass
++
+     return {
+         "ok": True,
+         "approval_id": approval_id,
+diff --git a/backend/tests/test_artifacts.py b/backend/tests/test_artifacts.py
+index 5676173..189b65d 100644
+--- a/backend/tests/test_artifacts.py
++++ b/backend/tests/test_artifacts.py
+@@ -130,3 +130,25 @@ async def test_approval_gate_sets_artifact_pending():
+         got = await s.get(Artifact, art.id)
+         assert got.status == "pending_approval"
+         assert (await s.get(ApprovalRequest, "apx")).artifact_id == art.id
++
++
++@pytest.mark.asyncio
++async def test_resolve_approval_flips_artifact():
++    await init_db()
++    from src.api.routes.artifacts import create_artifact
++    from src.models.artifact import Artifact
++    from src.models.approval import ApprovalRequest
++    async with get_session_factory()() as s:
++        art = await create_artifact(s, title="gate.docx", kind="doc", filename="gate.docx", status="pending_approval")
++        s.add(ApprovalRequest(id="apr1", workflow_run_id="rr", step_id="seek_approval",
++                              prompt="approve?", status="pending", artifact_id=art.id))
++        await s.commit()
++        aid = art.id
++
++    app = create_app(); app.state.engine = None
++    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
++        r = await c.post("/api/approvals/apr1/resolve", headers=_headers(), json={"action": "approved"})
++        assert r.status_code == 200
++
++    async with get_session_factory()() as s:
++        assert (await s.get(Artifact, aid)).status == "approved"

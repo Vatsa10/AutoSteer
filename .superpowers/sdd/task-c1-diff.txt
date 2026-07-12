@@ -1,0 +1,70 @@
+diff --git a/backend/src/engine/orchestrator.py b/backend/src/engine/orchestrator.py
+index 743c5d4..389b77c 100644
+--- a/backend/src/engine/orchestrator.py
++++ b/backend/src/engine/orchestrator.py
+@@ -67,6 +67,11 @@ def build_step_event(step_id: str, status: str, label: str = "") -> dict:
+     return {"type": "step", "id": step_id, "status": status, "label": label}
+ 
+ 
++def should_emit_final(streamed: str, display: str) -> bool:
++    """Emit a `final` replacement only when the synthesized answer differs from streamed tokens."""
++    return bool(display) and display.strip() != (streamed or "").strip()
++
++
+ @dataclass
+ class Subtask:
+     id: str
+@@ -1079,20 +1084,27 @@ User request: {user_message}"""
+             except Exception:
+                 pass
+ 
++        streamed_content = ""
++        display_content = ""
+         async for event in agent_runtime.process_stream(effective_message):
+             if event["type"] == "token":
+-                full_content += event["content"]
++                streamed_content += event["content"]
+                 yield {"type": "token", "content": event["content"]}
+             elif event["type"] == "metadata":
+                 model_name = event.get("model", "")
+                 usage = event.get("usage", {})
+                 handoff_data = event.get("handoff")
+-                full_content = event.get("display_content", full_content)
++                display_content = event.get("display_content", "") or ""
+             elif event["type"] == "done":
+                 pass
+             else:
+                 yield event  # forward tool_call / other trace events
+ 
++        # Replace raw streamed text (may contain TOOL_CALL markers) with the clean answer.
++        if should_emit_final(streamed_content, display_content):
++            yield {"type": "final", "content": display_content}
++        full_content = display_content or streamed_content
++
+         # Phase 3: Persist to DB (non-blocking for stream)
+         content = full_content
+         if session is not None:
+diff --git a/backend/tests/test_trace_events.py b/backend/tests/test_trace_events.py
+index 6ee90d2..2b693be 100644
+--- a/backend/tests/test_trace_events.py
++++ b/backend/tests/test_trace_events.py
+@@ -50,3 +50,19 @@ def test_build_step_event_shape():
+ def test_build_step_event_default_label():
+     ev = build_step_event("s1", "ok")
+     assert ev["label"] == ""
++
++
++from src.engine.orchestrator import should_emit_final
++
++
++def test_should_emit_final_true_when_different():
++    assert should_emit_final("raw TOOL_CALL_START...END text", "Clean synthesized answer.") is True
++
++
++def test_should_emit_final_false_when_same():
++    assert should_emit_final("same text", "same text") is False
++    assert should_emit_final("  same text \n", "same text") is False
++
++
++def test_should_emit_final_false_when_display_empty():
++    assert should_emit_final("streamed", "") is False
