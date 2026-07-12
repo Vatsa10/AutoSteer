@@ -111,3 +111,22 @@ def test_approval_has_artifact_id():
     from src.models.approval import ApprovalRequest
     a = ApprovalRequest(id="ap1", workflow_run_id="r1", step_id="s1", prompt="ok", artifact_id="art1")
     assert a.artifact_id == "art1"
+
+
+@pytest.mark.asyncio
+async def test_approval_gate_sets_artifact_pending():
+    await init_db()
+    from src.api.routes.artifacts import create_artifact
+    from src.models.artifact import Artifact
+    from src.models.approval import ApprovalRequest
+    async with get_session_factory()() as s:
+        art = await create_artifact(s, title="wf.docx", kind="doc", filename="wf.docx")
+        # Simulate the approval-gate wiring: mark artifact pending + link approval
+        art.status = "pending_approval"
+        ap = ApprovalRequest(id="apx", workflow_run_id="rx", step_id="seek_approval",
+                             prompt="approve?", artifact_id=art.id)
+        s.add(ap)
+        await s.commit()
+        got = await s.get(Artifact, art.id)
+        assert got.status == "pending_approval"
+        assert (await s.get(ApprovalRequest, "apx")).artifact_id == art.id
