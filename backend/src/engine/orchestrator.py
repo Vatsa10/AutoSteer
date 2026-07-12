@@ -1065,6 +1065,8 @@ User request: {user_message}"""
                 full_content = event.get("display_content", full_content)
             elif event["type"] == "done":
                 pass
+            else:
+                yield event  # forward tool_call / other trace events
 
         # Phase 3: Persist to DB (non-blocking for stream)
         content = full_content

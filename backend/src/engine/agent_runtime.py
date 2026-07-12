@@ -1,5 +1,6 @@
 import json
 import re
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 
@@ -7,6 +8,18 @@ from src.engine.llm import LLMMessage, LLMProvider, LLMResponse, LLMStreamChunk
 from src.engine.schemas import AgentConfig, SoulConfig
 from src.engine.tool_executor import ToolRegistry, execute_tool
 from src.engine.tool_aliases import resolve_tool_name
+
+
+def build_tool_event(name: str, status: str, result_text: str, duration_ms: int) -> dict:
+    """Structured trace event for a single tool execution."""
+    summary = (result_text or "")[:200]
+    return {
+        "type": "tool_call",
+        "name": name,
+        "status": status,
+        "result_summary": summary,
+        "duration_ms": duration_ms,
+    }
 
 
 @dataclass
@@ -294,7 +307,7 @@ Format:
         usage = response.usage
 
         # Execute tools if agent requested them
-        content, model, usage = await self._execute_tool_calls(content, model, usage)
+        content, model, usage, _tool_events = await self._execute_tool_calls(content, model, usage)
 
         # Parse handoff marker
         handoff = None
@@ -337,14 +350,15 @@ Format:
 
     async def _execute_tool_calls(
         self, content: str, model: str, usage: dict
-    ) -> tuple[str, str, dict]:
-        """Parse TOOL_CALL markers in content, execute tools, feed results back to LLM."""
+    ) -> tuple[str, str, dict, list[dict]]:
+        """Parse TOOL_CALL markers, execute tools, feed results back to LLM. Returns tool trace events too."""
+        tool_events: list[dict] = []
         if not self.tool_registry:
-            return content, model, usage
+            return content, model, usage, tool_events
 
         tool_calls = self._TOOL_CALL_RE.findall(content)
         if not tool_calls:
-            return content, model, usage
+            return content, model, usage, tool_events
 
         # Strip tool call markers from visible content
         clean_content = self._TOOL_CALL_RE.sub("", content).strip()
@@ -367,8 +381,11 @@ Format:
                         f"Tool [{tool_name}] blocked: not in agent allowlist "
                         f"(canonical: {canonical}). Use only listed tools."
                     )
+                    tool_events.append(build_tool_event(tool_name, "blocked", "not in allowlist", 0))
                     continue
+                _t0 = time.monotonic()
                 result = await execute_tool(self.tool_registry, tool_name, arguments)
+                _dur = int((time.monotonic() - _t0) * 1000)
                 result_text = result.output or result.error
                 # Inject download link for document generation tools
                 if result.success and tool_name in ("create_docx", "create_pptx"):
@@ -384,11 +401,15 @@ Format:
                 tool_results.append(
                     f"Tool [{tool_name}] result ({'success' if result.success else 'failed'}): {result_text}"
                 )
+                tool_events.append(build_tool_event(
+                    tool_name, "ok" if result.success else "error", result_text, _dur
+                ))
             except (json.JSONDecodeError, TypeError) as exc:
                 tool_results.append(f"Tool call parse error: {exc}")
+                tool_events.append(build_tool_event("unknown", "error", str(exc), 0))
 
         if not tool_results:
-            return clean_content, model, usage
+            return clean_content, model, usage, tool_events
 
         # Feed tool results back to LLM for synthesis (gpt-4o-mini with context)
         tool_output = "\n".join(tool_results)
@@ -407,7 +428,7 @@ Format:
             temperature=0.3, max_tokens=1024,
         )
 
-        return follow_up.content, follow_up.model, follow_up.usage
+        return follow_up.content, follow_up.model, follow_up.usage, tool_events
 
     # ── Auto-search triggers ──────────────────────────────────────
     _SEARCH_TRIGGERS = re.compile(
@@ -536,10 +557,14 @@ Format:
                 pass
 
         # Execute tools if agent emitted TOOL_CALL markers
+        tool_events: list[dict] = []
         if "TOOL_CALL_START" in full_content:
-            display_content, model_name, usage = await self._execute_tool_calls(full_content, model_name, usage)
+            display_content, model_name, usage, tool_events = await self._execute_tool_calls(full_content, model_name, usage)
         else:
             display_content = full_content
+
+        for _ev in tool_events:
+            yield _ev
 
         # Parse handoff from display_content (after tool execution)
         handoff = None
