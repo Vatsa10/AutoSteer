@@ -196,11 +196,11 @@ function Hero() {
             transition={{ duration: 0.5 }}
             className="font-tele text-[11px] text-[#e61919] mb-8"
           >
-            [ MULTI-AGENT ORCHESTRATION SYSTEM / REV 2.6 ]
+            [ AUTONOMOUS OUTCOME ENGINE / REV 2.7 ]
           </motion.p>
 
           <h1 className="font-display text-[clamp(2.75rem,9vw,7.5rem)]">
-            {["EVERY AI TASK.", "ONE CONVERSATION."].map((line, i) => (
+            {["OUTCOMES.", "NOT ANSWERS."].map((line, i) => (
               <motion.span
                 key={line}
                 initial={reduce ? false : { opacity: 0, y: 40 }}
@@ -219,7 +219,7 @@ function Hero() {
             transition={{ duration: 0.6, delay: 0.45 }}
             className="font-tele text-xs text-ink/70 mt-8 max-w-md leading-relaxed"
           >
-            ONE REQUEST DECOMPOSED INTO A TASK GRAPH. AGENTS RUN IN PARALLEL. ONE COHERENT ANSWER RETURNED.
+            ONE REQUEST BECOMES A TASK GRAPH. AGENTS RUN, TOOLS EXECUTE, DOCUMENTS SHIP — AND YOU WATCH EVERY STEP, CITE EVERY SOURCE, APPROVE BEFORE IT ACTS.
           </motion.p>
 
           <motion.div
@@ -245,7 +245,7 @@ function Hero() {
           <Crosshair className="absolute bottom-6 left-6 lg:left-10" />
           <AgentGraph />
           <p className="relative font-tele text-[10px] text-ink/50 mt-6 text-center z-10">
-            43 AGENTS · 12 DEPARTMENTS · 1 RESPONSE
+            43 AGENTS · 47 TOOLS · 1 OUTCOME
           </p>
         </div>
       </div>
@@ -255,11 +255,11 @@ function Hero() {
 
 // ── Telemetry strip ──────────────────────────────────────────
 const LOG = [
-  "CLASSIFY INTENT",
   "ROUTE > DATA_ANALYTICS",
-  "DECOMPOSE > 3 SUBTASKS",
-  "SUB-AGENTS RUNNING ×3",
-  "SYNTHESIZE RESULTS",
+  "TOOL > WEB_SEARCH ✓",
+  "CITE > 3 SOURCES",
+  "DRAFT > ARTIFACT v1",
+  "AWAIT APPROVAL",
 ];
 
 function Telemetry() {
@@ -307,13 +307,13 @@ const LEDGER = [
   },
   {
     n: "03",
-    title: "REMEMBER EVERYTHING",
-    body: "Four-tier memory plus pgvector semantic recall. Uploaded PDFs, Word docs and images are extracted into persistent conversation context.",
+    title: "SEE EVERY STEP",
+    body: "No black box. Every answer shows the agent that ran, the tools it called, and the document chunks it cited — hybrid BM25 + vector recall over your files.",
   },
   {
     n: "04",
-    title: "GENERATE DOCUMENTS",
-    body: "Native Word and PowerPoint output from any conversation — 8 slide layouts, 4 themes, download link in the response.",
+    title: "APPROVE & SHIP",
+    body: "Runs produce durable, versioned artifacts — not throwaway chat. Gate any step for human approval, then ship the Word doc, deck, or report you own.",
   },
 ];
 
@@ -372,9 +372,9 @@ function Numerals() {
 
 // ── Tool registry ────────────────────────────────────────────
 const TOOLS = [
-  "DDG_SEARCH", "WEB_CRAWL", "ARXIV_SEARCH", "SEMANTIC_SEARCH",
+  "DDG_SEARCH", "WEB_CRAWL", "ARXIV_SEARCH", "HYBRID_SEARCH",
   "CREATE_DOCX", "CREATE_PPTX", "PDF_EXTRACT", "CODE_SANDBOX",
-  "SLACK_POST", "GITHUB_ISSUE", "NOTION_SYNC", "FILE_UPLOAD",
+  "SLACK_POST", "GITHUB_ISSUE", "NOTION_SYNC", "GOOGLE_DOCS",
 ];
 
 function Registry() {
@@ -409,7 +409,7 @@ function CTA() {
       <div className="max-w-[1400px] mx-auto px-6 py-28 md:py-40">
         <Reveal>
           <h2 className="font-display text-[clamp(2.5rem,9vw,8rem)]">
-            STOP<br />SWITCHING<br /><span className="text-[#e61919]">TABS.</span>
+            STOP CHATTING.<br /><span className="text-[#e61919]">START SHIPPING.</span>
           </h2>
           <div className="flex flex-col sm:flex-row sm:items-center gap-6 mt-12">
             <HazardButton>GET STARTED</HazardButton>
@@ -429,7 +429,7 @@ function Footer() {
         AutoSteer<sup className="text-[0.6em] align-super">®</sup>
       </span>
       <p className="font-tele text-[10px] text-ink/50 sm:text-center">FASTAPI · NEXT.JS · POSTGRESQL · REDIS</p>
-      <p className="font-tele text-[10px] text-ink/50 sm:text-right">REV 2.6 / © 2026</p>
+      <p className="font-tele text-[10px] text-ink/50 sm:text-right">REV 2.7 / © 2026</p>
     </footer>
   );
 }

@@ -105,3 +105,76 @@ async def test_savepoint_isolates_failed_persist():
         good = await create_artifact(s, title="good.docx", kind="doc", filename="good.docx")
         await s.commit()
         assert (await s.get(Artifact, good.id)) is not None
+
+
+def test_approval_has_artifact_id():
+    from src.models.approval import ApprovalRequest
+    a = ApprovalRequest(id="ap1", workflow_run_id="r1", step_id="s1", prompt="ok", artifact_id="art1")
+    assert a.artifact_id == "art1"
+
+
+@pytest.mark.asyncio
+async def test_approval_gate_sets_artifact_pending():
+    await init_db()
+    from src.api.routes.artifacts import create_artifact
+    from src.models.artifact import Artifact
+    from src.models.approval import ApprovalRequest
+    async with get_session_factory()() as s:
+        art = await create_artifact(s, title="wf.docx", kind="doc", filename="wf.docx")
+        # Simulate the approval-gate wiring: mark artifact pending + link approval
+        art.status = "pending_approval"
+        import uuid as _uuid
+        ap_id = _uuid.uuid4().hex[:16]
+        ap = ApprovalRequest(id=ap_id, workflow_run_id="rx", step_id="seek_approval",
+                             prompt="approve?", artifact_id=art.id)
+        s.add(ap)
+        await s.commit()
+        got = await s.get(Artifact, art.id)
+        assert got.status == "pending_approval"
+        assert (await s.get(ApprovalRequest, ap_id)).artifact_id == art.id
+
+
+@pytest.mark.asyncio
+async def test_resolve_approval_flips_artifact():
+    await init_db()
+    from src.api.routes.artifacts import create_artifact
+    from src.models.artifact import Artifact
+    from src.models.approval import ApprovalRequest
+    async with get_session_factory()() as s:
+        art = await create_artifact(s, title="gate.docx", kind="doc", filename="gate.docx", status="pending_approval")
+        import uuid as _uuid
+        ap_id = _uuid.uuid4().hex[:16]
+        s.add(ApprovalRequest(id=ap_id, workflow_run_id="rr", step_id="seek_approval",
+                              prompt="approve?", status="pending", artifact_id=art.id))
+        await s.commit()
+        aid = art.id
+
+    app = create_app(); app.state.engine = None
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post(f"/api/approvals/{ap_id}/resolve", headers=_headers(), json={"action": "approved"})
+        assert r.status_code == 200
+
+    async with get_session_factory()() as s:
+        assert (await s.get(Artifact, aid)).status == "approved"
+
+
+@pytest.mark.asyncio
+async def test_contract_redline_validates():
+    app = create_app(); app.state.engine = None
+    import pathlib
+    yaml_text = pathlib.Path("src/workflows/contract_redline.yaml").read_text(encoding="utf-8")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/api/workflows/validate", headers=_headers(), json={"yaml_content": yaml_text})
+        assert r.status_code == 200
+        assert r.json()["valid"] is True
+
+
+@pytest.mark.asyncio
+async def test_content_approval_validates():
+    app = create_app(); app.state.engine = None
+    import pathlib
+    yaml_text = pathlib.Path("src/workflows/content_approval.yaml").read_text(encoding="utf-8")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.post("/api/workflows/validate", headers=_headers(), json={"yaml_content": yaml_text})
+        assert r.status_code == 200
+        assert r.json()["valid"] is True

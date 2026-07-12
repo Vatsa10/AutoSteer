@@ -38,21 +38,21 @@ steps:
         operator: contains
         value: "."
       branches:
-        then: "seek_approval"   # Draft has content — proceed
+        then: "make_doc"          # Draft has content — proceed
         else: "draft"             # Draft empty/failed — retry
+
+  - id: make_doc
+    type: tool_call
+    tool: create_docx
+    description: "Generate the draft document for review."
+    dependencies: [quality_gate]
+    config:
+      filename: "approved_content.docx"
 
   - id: seek_approval
     type: approval
     description: "Submit the draft for human review before publishing."
-    dependencies: [quality_gate]
+    dependencies: [make_doc]
     config:
       prompt: "Please review the following draft content and approve or reject."
       timeout_hours: 72   # Auto-reject after 3 days
-
-  - id: publish
-    type: tool_call
-    tool: create_docx
-    description: "Generate the final approved document."
-    dependencies: [seek_approval]
-    config:
-      filename: "approved_content.docx"

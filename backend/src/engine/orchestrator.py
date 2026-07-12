@@ -67,6 +67,11 @@ def build_step_event(step_id: str, status: str, label: str = "") -> dict:
     return {"type": "step", "id": step_id, "status": status, "label": label}
 
 
+def should_emit_final(streamed: str, display: str) -> bool:
+    """Emit a `final` replacement only when the synthesized answer differs from streamed tokens."""
+    return bool(display) and display.strip() != (streamed or "").strip()
+
+
 @dataclass
 class Subtask:
     id: str
@@ -549,6 +554,7 @@ User request: {user_message}"""
         import uuid as _uuid
         steps = wf_def.get("steps", [])
         results: dict[str, str] = {}
+        latest_artifact_id: str | None = None
         step_by_id = {s["id"]: s for s in steps}
 
         # Topological sort by dependencies
@@ -598,6 +604,29 @@ User request: {user_message}"""
                     result = await execute_tool(registry, tool_name, tool_args)
                     results[sid] = result.output if result.success else f"Error: {result.error}"
                     yield {"type": "token", "content": f"[ Tool: {tool_name} ] → {str(results[sid])[:1000]}\n\n"}
+
+                    if result.success and tool_name in ("create_docx", "create_pptx"):
+                        try:
+                            import json as _jart
+                            _meta = _jart.loads(result.output)
+                            _fname = _meta.get("filename", "document")
+                            _kind = "doc" if tool_name == "create_docx" else "sheet"
+                            if session is not None:
+                                from src.api.routes.artifacts import create_artifact
+                                from src.engine.agent_runtime import build_artifact_event
+                                async with session.begin_nested():
+                                    _art = await create_artifact(
+                                        session, title=_fname, kind=_kind, filename=_fname,
+                                        conversation_id=conversation_id,
+                                    )
+                                latest_artifact_id = _art.id
+                                yield build_artifact_event(_art.id, _fname, _kind, _fname)
+                                try:
+                                    await session.commit()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                 except Exception as exc:
                     results[sid] = f"Tool error: {exc}"
                     yield {"type": "token", "content": f"Tool error: {exc}\n\n"}
@@ -623,6 +652,17 @@ User request: {user_message}"""
                             created_at=now,
                         )
                         session.add(approval)
+
+                        if latest_artifact_id and approval is not None and session is not None:
+                            try:
+                                from src.models.artifact import Artifact as _Art
+                                approval.artifact_id = latest_artifact_id
+                                _a = await session.get(_Art, latest_artifact_id)
+                                if _a is not None:
+                                    _a.status = "pending_approval"
+                            except Exception:
+                                pass
+
                         await session.commit()
                     except Exception:
                         pass
@@ -1079,19 +1119,26 @@ User request: {user_message}"""
             except Exception:
                 pass
 
+        streamed_content = ""
+        display_content = ""
         async for event in agent_runtime.process_stream(effective_message):
             if event["type"] == "token":
-                full_content += event["content"]
+                streamed_content += event["content"]
                 yield {"type": "token", "content": event["content"]}
             elif event["type"] == "metadata":
                 model_name = event.get("model", "")
                 usage = event.get("usage", {})
                 handoff_data = event.get("handoff")
-                full_content = event.get("display_content", full_content)
+                display_content = event.get("display_content", "") or ""
             elif event["type"] == "done":
                 pass
             else:
                 yield event  # forward tool_call / other trace events
+
+        # Replace raw streamed text (may contain TOOL_CALL markers) with the clean answer.
+        if should_emit_final(streamed_content, display_content):
+            yield {"type": "final", "content": display_content}
+        full_content = display_content or streamed_content
 
         # Phase 3: Persist to DB (non-blocking for stream)
         content = full_content

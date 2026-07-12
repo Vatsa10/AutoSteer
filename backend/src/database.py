@@ -105,6 +105,7 @@ async def init_db():
         "ON document_chunks USING GIN (to_tsvector('english', content))",
         "CREATE INDEX IF NOT EXISTS document_chunks_vec_idx "
         "ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)",
+        "ALTER TABLE approval_requests ADD COLUMN IF NOT EXISTS artifact_id varchar(36)",
     ]
     for stmt in ddl_statements:
         try:

@@ -11,6 +11,7 @@ export type WSEvent =
   | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
   | { type: "step"; id: string; status: string; label: string }
   | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
+  | { type: "final"; content: string }
   | { type: "done" };
 
 interface WSCallbacks {

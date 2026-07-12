@@ -58,6 +58,7 @@ interface ChatStore {
   setMessages: (messages: ChatMessage[]) => void;
   addMessage: (message: ChatMessage) => void;
   appendContent: (content: string) => void;
+  replaceLastContent: (content: string) => void;
   setConversationId: (id: string | undefined) => void;
   setTargetAgent: (agent: string | null) => void;
   setRoutingStage: (stage: RoutingStage) => void;
@@ -98,6 +99,15 @@ export const useChatStore = create<ChatStore>((set) => ({
       const last = msgs[msgs.length - 1];
       if (last && last.role === "assistant") {
         msgs[msgs.length - 1] = { ...last, content: last.content + content };
+      }
+      return { messages: msgs };
+    }),
+  replaceLastContent: (content) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = { ...last, content };
       }
       return { messages: msgs };
     }),
