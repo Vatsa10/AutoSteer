@@ -68,8 +68,16 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     }
     const templatePrompt = sessionStorage.getItem("autosteer_template_prompt");
     if (templatePrompt) {
-      setInput(templatePrompt);
       sessionStorage.removeItem("autosteer_template_prompt");
+      if (/^run\s+\S/i.test(templatePrompt)) {
+        // Outcome launch: auto-send so the workflow starts immediately.
+        setInput(templatePrompt);
+        setTimeout(() => {
+          document.getElementById("chat-send-btn")?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        }, 60);
+      } else {
+        setInput(templatePrompt);
+      }
     }
   }, [initialConversationId, setConversationId, setInput]);
 
@@ -417,7 +425,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               placeholder={targetAgent ? "Send a message directly to this agent…" : "Send a message to the orchestration system…"}
               className="flex-1 bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300 transition-all"
               autoFocus disabled={isStreaming || sendMessageMutation.isPending} />
-            <button type="submit" disabled={isStreaming || sendMessageMutation.isPending || (!input.trim() && attachments.length === 0)}
+            <button id="chat-send-btn" type="submit" disabled={isStreaming || sendMessageMutation.isPending || (!input.trim() && attachments.length === 0)}
               className="bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:hover:bg-blue-600 text-white rounded-xl px-4 py-2.5 transition-all duration-150 flex items-center gap-2 font-medium text-sm">
               {isStreaming || sendMessageMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
