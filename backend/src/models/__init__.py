@@ -1,5 +1,6 @@
 from .agent import Agent
 from .approval import ApprovalRequest
+from .artifact import Artifact
 from .base import Base
 from .conversation import Conversation
 from .user import User
@@ -15,6 +16,7 @@ from .workflow import Workflow, WorkflowStatus
 __all__ = [
     "ApprovalRequest",
     "Agent",
+    "Artifact",
     "Base",
     "Conversation",
     "DocumentChunk",
