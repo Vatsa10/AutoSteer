@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from src.database import get_db
 from src.models.shared_state import SharedState
@@ -129,8 +130,26 @@ async def delete_document(
         return {"ok": True}
     docs = row.value.get("documents", [])
     if 0 <= index < len(docs):
-        docs.pop(index)
+        removed = docs.pop(index)
+        # Drop vectorized chunks from pgvector
+        if removed.get("document_id"):
+            try:
+                from src.integrations.rag import delete_document
+                await delete_document(removed["document_id"], session, workspace_id=workspace_id)
+            except Exception:
+                pass
+        # Delete the file from disk too
+        stored_as = removed.get("stored_as")
+        if stored_as:
+            try:
+                from src.integrations.files import _uploads_dir
+                fp = (_uploads_dir() / stored_as).resolve()
+                if fp.is_file() and str(fp).startswith(str(_uploads_dir().resolve())):
+                    fp.unlink()
+            except Exception:
+                pass
     row.value = {"documents": docs, "summary": row.value.get("summary", "")}
+    flag_modified(row, "value")
     row.updated_at = datetime.now(timezone.utc)
     await session.commit()
     return {"ok": True}
@@ -155,19 +174,35 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="File too large (max 5MB)")
 
     meta = save_upload(file.filename, content)
-    # Extract full text (PDF/DOCX/text) — quick_scan off, large cap for whole resume.
-    extracted = json.loads(await file_upload_read(meta["file_id"], max_chars=20000, quick_scan=False))
+    # Extract full text (PDF/DOCX/text) — quick_scan off, large cap for whole document.
+    extracted = json.loads(await file_upload_read(meta["file_id"], max_chars=500000, quick_scan=False))
     text = extracted.get("text", "")
     if not text:
         raise HTTPException(status_code=400, detail="Could not extract text from this file type")
 
+    import math
+    pages = extracted.get("pages") or math.ceil(len(text) / 3000)
+
     doc = {
         "filename": meta["filename"],
         "stored_as": meta["stored_as"],
-        "text": text,
         "preview": text[:300],
         "char_count": len(text),
+        "pages": pages,
     }
+
+    # Large docs (>20k chars OR >10 pages): chunk + embed into pgvector for hybrid
+    # retrieval. Small docs stay inlined verbatim (cheap, no retrieval loss).
+    if len(text) > 20000 or pages > 10:
+        from src.integrations.rag import index_document
+        idx = await index_document(text, title=meta["filename"], session=session,
+                                   workspace_id=workspace_id, source="memory")
+        doc["vectorized"] = True
+        doc["document_id"] = idx["document_id"]
+        doc["chunks"] = idx["chunks"]
+    else:
+        doc["vectorized"] = False
+        doc["text"] = text
 
     r = await session.execute(
         select(SharedState).where(
@@ -178,6 +213,7 @@ async def upload_document(
     if row and row.value:
         docs = row.value.get("documents", []) + [doc]
         row.value = {"documents": docs, "summary": row.value.get("summary", "")}
+        flag_modified(row, "value")
         row.updated_at = datetime.now(timezone.utc)
     else:
         session.add(SharedState(
@@ -207,6 +243,7 @@ async def save_documents(
     val = {"documents": body.documents, "summary": body.summary}
     if row:
         row.value = val
+        flag_modified(row, "value")
         row.updated_at = datetime.now(timezone.utc)
     else:
         session.add(SharedState(

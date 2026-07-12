@@ -167,7 +167,9 @@ export async function savePreferences(prefs: { about: string; responseStyle: str
 }
 
 // Memory
-export async function getMemory(): Promise<{ facts: { id: string; fact_type: string; key: string; value: string }[]; documents: { filename: string; preview: string; char_count: number }[]; summary: string }> {
+export interface MemoryDoc { filename: string; preview: string; char_count: number; pages?: number; vectorized?: boolean; chunks?: number }
+
+export async function getMemory(): Promise<{ facts: { id: string; fact_type: string; key: string; value: string }[]; documents: MemoryDoc[]; summary: string }> {
   const res = await apiFetch("/api/memory");
   return res.json();
 }
@@ -189,7 +191,7 @@ export async function deleteMemoryDocument(index: number): Promise<void> {
   await apiFetch(`/api/memory/documents/${index}`, { method: "DELETE" });
 }
 
-export async function uploadMemoryDocument(file: File): Promise<{ ok: boolean; document: { filename: string; preview: string; char_count: number } }> {
+export async function uploadMemoryDocument(file: File): Promise<{ ok: boolean; document: MemoryDoc }> {
   const formData = new FormData();
   formData.append("file", file);
   const headers: Record<string, string> = {};

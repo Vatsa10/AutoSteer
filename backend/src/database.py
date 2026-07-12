@@ -96,6 +96,23 @@ async def init_db():
             except Exception as tbl_exc:
                 logger.error("Failed to create table %s: %s", table.name, tbl_exc)
 
+    # --- Phase 2.5: document_chunks hybrid-search columns + indexes ----------
+    # Existing DBs won't have the embedding column (create_all skips existing
+    # tables), so add it and the search indexes best-effort in isolated txns.
+    ddl_statements = [
+        "ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding vector(1536)",
+        "CREATE INDEX IF NOT EXISTS document_chunks_fts_idx "
+        "ON document_chunks USING GIN (to_tsvector('english', content))",
+        "CREATE INDEX IF NOT EXISTS document_chunks_vec_idx "
+        "ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)",
+    ]
+    for stmt in ddl_statements:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text(stmt))
+        except Exception as exc:
+            logger.warning("Hybrid-search DDL skipped (%s): %s", stmt.split()[0:3], exc)
+
     # --- Phase 3: signal vector-search availability --------------------------
     import src.models.memory_embedding as _mem_emb_mod
 

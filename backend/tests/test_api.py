@@ -4,7 +4,9 @@ from httpx import ASGITransport, AsyncClient
 from src.api.main import create_app
 
 
-API_KEY = "dev-secret-change-me-in-production"
+from src.config import get_settings
+
+API_KEY = get_settings().autosteer_api_key or "dev-secret-change-me-in-production"
 
 @pytest.fixture
 def app():

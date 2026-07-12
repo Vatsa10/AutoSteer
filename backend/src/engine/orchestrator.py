@@ -758,9 +758,22 @@ User request: {user_message}"""
                 r = await session.execute(_sa_ud(_SSud).where(_SSud.workspace_id == workspace_id, _SSud.key == "user:documents"))
                 docs_row = r.scalar_one_or_none()
                 if docs_row and docs_row.value:
+                    vec_doc_ids = []
                     for d in docs_row.value.get("documents", []):
                         if d.get("text"):
+                            # Small docs: inline verbatim.
                             file_context_parts.append(f"[User document: {d.get('filename','document')}]\n{d['text']}")
+                        elif d.get("vectorized") and d.get("document_id"):
+                            vec_doc_ids.append(d["document_id"])
+                    # Large docs: retrieve only the most relevant chunks for this query.
+                    if vec_doc_ids:
+                        from src.integrations.rag import hybrid_search
+                        hits = await hybrid_search(user_message, session, workspace_id=workspace_id,
+                                                   document_ids=vec_doc_ids, limit=6)
+                        for h in hits:
+                            file_context_parts.append(
+                                f"[From {h['source']}/{h.get('title','doc')} — chunk {h['chunk_index']}]\n{h['snippet']}"
+                            )
             except Exception:
                 pass
 

@@ -16,6 +16,9 @@ interface MemoryDocument {
   filename: string;
   preview: string;
   char_count: number;
+  pages?: number;
+  vectorized?: boolean;
+  chunks?: number;
 }
 
 export default function MemoryPage() {
@@ -303,7 +306,16 @@ export default function MemoryPage() {
             <div key={i} className="flex items-start gap-3 px-3 py-2.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors group">
               <FileText className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
-                <div className="text-sm font-medium text-slate-700 truncate">{doc.filename}</div>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-slate-700 truncate">{doc.filename}</span>
+                  {doc.vectorized ? (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 shrink-0">
+                      Vectorized · {doc.chunks} chunks{doc.pages ? ` · ${doc.pages}p` : ""}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 shrink-0">Inline</span>
+                  )}
+                </div>
                 <div className="text-xs text-slate-400">{(doc.char_count / 1024).toFixed(1)} KB · {doc.preview.slice(0, 80)}…</div>
               </div>
               <button onClick={() => removeDocument(i)} className="p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all shrink-0"><Trash2 className="w-3.5 h-3.5" /></button>

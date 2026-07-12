@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from src.config import get_settings
+
 
 @pytest.mark.asyncio
 async def test_full_chat_flow():
@@ -90,7 +92,7 @@ async def test_full_chat_flow():
                 response = await client.post(
                     "/api/chat",
                     json={"message": "Research the latest transformer architectures"},
-                    headers={"X-API-Key": "dev-secret-change-me-in-production"},
+                    headers={"X-API-Key": get_settings().autosteer_api_key or "dev-secret-change-me-in-production"},
                 )
 
             assert response.status_code == 200
