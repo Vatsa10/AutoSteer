@@ -1,0 +1,39 @@
+# AutoSteer Workflow — Contract redline with legal approval
+name: contract_redline
+description: "Extract obligations from a contract, draft a redline, gate for legal approval, then ship a docx."
+schedule_cron: null
+
+inputs:
+  focus:
+    type: string
+    default: "obligations and liabilities"
+    description: "What to focus the redline on."
+
+steps:
+  - id: extract
+    type: agent_call
+    agent: web_researcher
+    description: "Extract key obligations, liabilities, and risky clauses from the uploaded contract using document context."
+    dependencies: []
+
+  - id: redline
+    type: agent_call
+    agent: legal_counsel
+    description: "Draft a redline with suggested edits and rationale for each flagged clause."
+    dependencies: [extract]
+
+  - id: legal_gate
+    type: approval
+    description: "Legal review: approve the redline before it ships."
+    dependencies: [redline]
+    config:
+      prompt: "Please review the following redline and approve or reject."
+      timeout_hours: 72
+
+  - id: make_doc
+    type: tool_call
+    tool: create_docx
+    description: "Generate the final approved redline document."
+    dependencies: [legal_gate]
+    config:
+      filename: "contract_redline.docx"
