@@ -40,6 +40,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const addToolTrace = useChatStore((s) => s.addToolTrace);
   const addSourceTrace = useChatStore((s) => s.addSourceTrace);
   const addStepTrace = useChatStore((s) => s.addStepTrace);
+  const addArtifactRef = useChatStore((s) => s.addArtifactRef);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
   const reset = useChatStore((s) => s.reset);
@@ -168,6 +169,9 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               break;
             case "step":
               addStepTrace({ id: event.id, status: event.status, label: event.label });
+              break;
+            case "artifact":
+              addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
               break;
             case "metadata":
               if (event.conversation_id && !convId) setConversationId(event.conversation_id);
@@ -313,6 +317,18 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
                 </div>
                 {msg.role === "assistant" && (
                   <ChatTrace tools={msg.tools} sources={msg.sources} steps={msg.steps} />
+                )}
+                {msg.role === "assistant" && msg.artifacts && msg.artifacts.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {msg.artifacts.map((art) => (
+                      <a key={art.id} href="/artifacts"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
+                        <span className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">{art.kind}</span>
+                        <span className="text-sm text-slate-700 truncate flex-1">{art.title}</span>
+                        <span className="text-[11px] text-blue-600">View →</span>
+                      </a>
+                    ))}
+                  </div>
                 )}
                 {msg.role === "assistant" && msg.model && <p className="text-[10px] text-slate-400 mt-2">via {msg.model}</p>}
               </div>

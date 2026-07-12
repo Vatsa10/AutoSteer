@@ -31,6 +31,7 @@ export const useToastStore = create<ToastStore>((set) => ({
 export interface ToolTrace { name: string; status: string; result_summary: string; duration_ms: number }
 export interface SourceTrace { filename: string; chunk_index: number; score: number; snippet: string }
 export interface StepTrace { id: string; status: string; label: string }
+export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -41,6 +42,7 @@ export interface ChatMessage {
   tools?: ToolTrace[];
   sources?: SourceTrace[];
   steps?: StepTrace[];
+  artifacts?: ArtifactRef[];
 }
 
 export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
@@ -66,6 +68,7 @@ interface ChatStore {
   addToolTrace: (t: ToolTrace) => void;
   addSourceTrace: (s: SourceTrace) => void;
   addStepTrace: (s: StepTrace) => void;
+  addArtifactRef: (a: ArtifactRef) => void;
 }
 
 export interface RoutingEvent {
@@ -125,6 +128,15 @@ export const useChatStore = create<ChatStore>((set) => ({
         const i = steps.findIndex((x) => x.id === st.id);
         if (i >= 0) steps[i] = st; else steps.push(st);  // update status in place
         msgs[msgs.length - 1] = { ...last, steps };
+      }
+      return { messages: msgs };
+    }),
+  addArtifactRef: (a) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = { ...last, artifacts: [...(last.artifacts || []), a] };
       }
       return { messages: msgs };
     }),
