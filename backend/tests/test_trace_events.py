@@ -34,3 +34,19 @@ def test_build_source_event_falls_back_to_source():
     hit = {"title": "", "source": "upload", "chunk_index": 0, "score": 0.1, "snippet": "z"}
     ev = build_source_event(hit)
     assert ev["filename"] == "upload"
+
+
+from src.engine.orchestrator import build_step_event
+
+
+def test_build_step_event_shape():
+    ev = build_step_event("draft", "running", "Draft the doc")
+    assert ev["type"] == "step"
+    assert ev["id"] == "draft"
+    assert ev["status"] == "running"
+    assert ev["label"] == "Draft the doc"
+
+
+def test_build_step_event_default_label():
+    ev = build_step_event("s1", "ok")
+    assert ev["label"] == ""
