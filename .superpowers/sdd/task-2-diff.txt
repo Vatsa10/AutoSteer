@@ -1,0 +1,72 @@
+diff --git a/backend/src/engine/orchestrator.py b/backend/src/engine/orchestrator.py
+index fa304de..92daceb 100644
+--- a/backend/src/engine/orchestrator.py
++++ b/backend/src/engine/orchestrator.py
+@@ -51,6 +51,17 @@ from src.models.conversation import Conversation
+ from src.models.message import Message as MessageModel
+ 
+ 
++def build_source_event(hit: dict) -> dict:
++    """Structured trace event for a retrieved document chunk cited in context."""
++    return {
++        "type": "source",
++        "filename": hit.get("title") or hit.get("source") or "document",
++        "chunk_index": hit.get("chunk_index", 0),
++        "score": hit.get("score", 0.0),
++        "snippet": (hit.get("snippet") or "")[:300],
++    }
++
++
+ @dataclass
+ class Subtask:
+     id: str
+@@ -751,6 +762,7 @@ User request: {user_message}"""
+                 pass
+ 
+         # Load persistent user documents (resume, etc.) saved via Settings > Memory
++        _source_events: list[dict] = []
+         if session is not None:
+             try:
+                 from sqlalchemy import select as _sa_ud
+@@ -774,9 +786,13 @@ User request: {user_message}"""
+                             file_context_parts.append(
+                                 f"[From {h['source']}/{h.get('title','doc')} — chunk {h['chunk_index']}]\n{h['snippet']}"
+                             )
++                            _source_events.append(build_source_event(h))
+             except Exception:
+                 pass
+ 
++        for _ev in _source_events:
++            yield _ev
++
+         if file_ids:
+             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
+             import json as _json2
+diff --git a/backend/tests/test_trace_events.py b/backend/tests/test_trace_events.py
+index 9fa774b..fac8d88 100644
+--- a/backend/tests/test_trace_events.py
++++ b/backend/tests/test_trace_events.py
+@@ -14,3 +14,23 @@ def test_build_tool_event_error_status():
+     ev = build_tool_event("bad_tool", "error", "boom", 5)
+     assert ev["status"] == "error"
+     assert ev["result_summary"] == "boom"
++
++
++from src.engine.orchestrator import build_source_event
++
++
++def test_build_source_event_shape():
++    hit = {"document_id": "d1", "title": "handbook.pdf", "source": "memory",
++           "chunk_index": 12, "score": 0.83, "snippet": "y" * 500}
++    ev = build_source_event(hit)
++    assert ev["type"] == "source"
++    assert ev["filename"] == "handbook.pdf"
++    assert ev["chunk_index"] == 12
++    assert ev["score"] == 0.83
++    assert len(ev["snippet"]) <= 300
++
++
++def test_build_source_event_falls_back_to_source():
++    hit = {"title": "", "source": "upload", "chunk_index": 0, "score": 0.1, "snippet": "z"}
++    ev = build_source_event(hit)
++    assert ev["filename"] == "upload"

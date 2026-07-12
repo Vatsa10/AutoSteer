@@ -1,0 +1,117 @@
+diff --git a/frontend/src/components/chat-interface.tsx b/frontend/src/components/chat-interface.tsx
+index fd40244..3158a0b 100644
+--- a/frontend/src/components/chat-interface.tsx
++++ b/frontend/src/components/chat-interface.tsx
+@@ -40,6 +40,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const addToolTrace = useChatStore((s) => s.addToolTrace);
+   const addSourceTrace = useChatStore((s) => s.addSourceTrace);
+   const addStepTrace = useChatStore((s) => s.addStepTrace);
++  const addArtifactRef = useChatStore((s) => s.addArtifactRef);
+   const isStreaming = useChatStore((s) => s.isStreaming);
+   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
+   const reset = useChatStore((s) => s.reset);
+@@ -169,6 +170,9 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+             case "step":
+               addStepTrace({ id: event.id, status: event.status, label: event.label });
+               break;
++            case "artifact":
++              addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
++              break;
+             case "metadata":
+               if (event.conversation_id && !convId) setConversationId(event.conversation_id);
+               break;
+@@ -314,6 +318,18 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+                 {msg.role === "assistant" && (
+                   <ChatTrace tools={msg.tools} sources={msg.sources} steps={msg.steps} />
+                 )}
++                {msg.role === "assistant" && msg.artifacts && msg.artifacts.length > 0 && (
++                  <div className="mt-2 space-y-1.5">
++                    {msg.artifacts.map((art) => (
++                      <a key={art.id} href="/artifacts"
++                        className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
++                        <span className="text-[10px] uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">{art.kind}</span>
++                        <span className="text-sm text-slate-700 truncate flex-1">{art.title}</span>
++                        <span className="text-[11px] text-blue-600">View →</span>
++                      </a>
++                    ))}
++                  </div>
++                )}
+                 {msg.role === "assistant" && msg.model && <p className="text-[10px] text-slate-400 mt-2">via {msg.model}</p>}
+               </div>
+             </div>
+diff --git a/frontend/src/components/sidebar.tsx b/frontend/src/components/sidebar.tsx
+index 9b63071..d26de2d 100644
+--- a/frontend/src/components/sidebar.tsx
++++ b/frontend/src/components/sidebar.tsx
+@@ -14,6 +14,7 @@ import {
+   Settings,
+   LayoutTemplate,
+   CheckSquare,
++  FileText,
+ } from "lucide-react";
+ import { useQuery } from "@tanstack/react-query";
+ import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
+@@ -25,6 +26,7 @@ const navItems = [
+   { href: "/templates", label: "Templates", icon: LayoutTemplate },
+   { href: "/agents", label: "Agents", icon: Users },
+   { href: "/settings/approvals", label: "Approvals", icon: CheckSquare },
++  { href: "/artifacts", label: "Artifacts", icon: FileText },
+   { href: "/conversations", label: "History", icon: History },
+   { href: "/settings", label: "Settings", icon: Settings },
+ ];
+diff --git a/frontend/src/lib/store.ts b/frontend/src/lib/store.ts
+index 7dd4fed..5358b8d 100644
+--- a/frontend/src/lib/store.ts
++++ b/frontend/src/lib/store.ts
+@@ -31,6 +31,7 @@ export const useToastStore = create<ToastStore>((set) => ({
+ export interface ToolTrace { name: string; status: string; result_summary: string; duration_ms: number }
+ export interface SourceTrace { filename: string; chunk_index: number; score: number; snippet: string }
+ export interface StepTrace { id: string; status: string; label: string }
++export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
+ 
+ export interface ChatMessage {
+   role: "user" | "assistant";
+@@ -41,6 +42,7 @@ export interface ChatMessage {
+   tools?: ToolTrace[];
+   sources?: SourceTrace[];
+   steps?: StepTrace[];
++  artifacts?: ArtifactRef[];
+ }
+ 
+ export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
+@@ -66,6 +68,7 @@ interface ChatStore {
+   addToolTrace: (t: ToolTrace) => void;
+   addSourceTrace: (s: SourceTrace) => void;
+   addStepTrace: (s: StepTrace) => void;
++  addArtifactRef: (a: ArtifactRef) => void;
+ }
+ 
+ export interface RoutingEvent {
+@@ -128,6 +131,15 @@ export const useChatStore = create<ChatStore>((set) => ({
+       }
+       return { messages: msgs };
+     }),
++  addArtifactRef: (a) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, artifacts: [...(last.artifacts || []), a] };
++      }
++      return { messages: msgs };
++    }),
+   setConversationId: (id) => set({ conversationId: id }),
+   setTargetAgent: (agent) => set({ targetAgent: agent }),
+   setRoutingStage: (stage) => set({ routingStage: stage }),
+diff --git a/frontend/src/lib/websocket.ts b/frontend/src/lib/websocket.ts
+index b2885d7..8858ee0 100644
+--- a/frontend/src/lib/websocket.ts
++++ b/frontend/src/lib/websocket.ts
+@@ -10,6 +10,7 @@ export type WSEvent =
+   | { type: "tool_call"; name: string; status: string; result_summary: string; duration_ms: number }
+   | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
+   | { type: "step"; id: string; status: string; label: string }
++  | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
+   | { type: "done" };
+ 
+ interface WSCallbacks {

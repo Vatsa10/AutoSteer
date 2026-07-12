@@ -1,0 +1,760 @@
+### COMMITS
+9c690aa feat(trace): render trace strip (tools/sources/steps) under chat answers
+b11e255 feat(trace): add trace types and store actions
+bf21594 feat(trace): emit step events during workflow execution
+5d1d6ed feat(trace): emit source citation events for retrieved chunks
+bf4b6d6 feat(trace): emit structured tool_call events from agent runtime
+
+### STAT
+ backend/src/engine/agent_runtime.py        | 41 ++++++++++++---
+ backend/src/engine/orchestrator.py         | 27 ++++++++++
+ backend/tests/test_trace_events.py         | 52 +++++++++++++++++++
+ frontend/src/components/chat-interface.tsx | 16 ++++++
+ frontend/src/components/chat-trace.tsx     | 82 ++++++++++++++++++++++++++++++
+ frontend/src/lib/store.ts                  | 40 +++++++++++++++
+ frontend/src/lib/websocket.ts              |  3 ++
+ 7 files changed, 253 insertions(+), 8 deletions(-)
+
+### FULL DIFF
+diff --git a/backend/src/engine/agent_runtime.py b/backend/src/engine/agent_runtime.py
+index 7c9379d..e7ffe1a 100644
+--- a/backend/src/engine/agent_runtime.py
++++ b/backend/src/engine/agent_runtime.py
+@@ -1,21 +1,34 @@
+ import json
+ import re
++import time
+ from collections.abc import AsyncGenerator
+ from dataclasses import dataclass, field
+ 
+ from src.engine.llm import LLMMessage, LLMProvider, LLMResponse, LLMStreamChunk
+ from src.engine.schemas import AgentConfig, SoulConfig
+ from src.engine.tool_executor import ToolRegistry, execute_tool
+ from src.engine.tool_aliases import resolve_tool_name
+ 
+ 
++def build_tool_event(name: str, status: str, result_text: str, duration_ms: int) -> dict:
++    """Structured trace event for a single tool execution."""
++    summary = (result_text or "")[:200]
++    return {
++        "type": "tool_call",
++        "name": name,
++        "status": status,
++        "result_summary": summary,
++        "duration_ms": duration_ms,
++    }
++
++
+ @dataclass
+ class HandoffInfo:
+     target_agent: str
+     reason: str
+     context_summary: str
+     current_state: str = ""
+     expected_outcome: str = ""
+ 
+ 
+ @dataclass
+@@ -287,21 +300,21 @@ Format:
+             system_prompt=full_prompt,
+             model=self.model_override,
+             json_mode=use_json,
+         )
+ 
+         content = response.content
+         model = response.model
+         usage = response.usage
+ 
+         # Execute tools if agent requested them
+-        content, model, usage = await self._execute_tool_calls(content, model, usage)
++        content, model, usage, _tool_events = await self._execute_tool_calls(content, model, usage)
+ 
+         # Parse handoff marker
+         handoff = None
+         start_marker = "HANDOFF_JSON_START"
+         end_marker = "HANDOFF_JSON_END"
+         start_idx = content.find(start_marker)
+         end_idx = content.find(end_marker)
+ 
+         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+             json_str = content[start_idx + len(start_marker):end_idx]
+@@ -330,28 +343,29 @@ Format:
+             LLMMessage(role="assistant", content=agent_result.content)
+         )
+         return agent_result
+ 
+     _TOOL_CALL_RE = re.compile(
+         r"TOOL_CALL_START\s*(\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})\s*TOOL_CALL_END", re.DOTALL
+     )
+ 
+     async def _execute_tool_calls(
+         self, content: str, model: str, usage: dict
+-    ) -> tuple[str, str, dict]:
+-        """Parse TOOL_CALL markers in content, execute tools, feed results back to LLM."""
++    ) -> tuple[str, str, dict, list[dict]]:
++        """Parse TOOL_CALL markers, execute tools, feed results back to LLM. Returns tool trace events too."""
++        tool_events: list[dict] = []
+         if not self.tool_registry:
+-            return content, model, usage
++            return content, model, usage, tool_events
+ 
+         tool_calls = self._TOOL_CALL_RE.findall(content)
+         if not tool_calls:
+-            return content, model, usage
++            return content, model, usage, tool_events
+ 
+         # Strip tool call markers from visible content
+         clean_content = self._TOOL_CALL_RE.sub("", content).strip()
+ 
+         # Execute each tool
+         tool_results: list[str] = []
+         for tc_json in tool_calls:
+             try:
+                 # Sanitize: escape raw control chars that break JSON parsing
+                 sanitized = re.sub(r'(?<!\\)\n', r'\\n', tc_json)
+@@ -360,61 +374,68 @@ Format:
+                 tc = json.loads(sanitized)
+                 tool_name = tc.get("tool", "")
+                 arguments = tc.get("arguments", {})
+                 # Block TOOL_CALL for tools not in this agent's allowlist
+                 if self.tool_registry and not self.tool_registry.is_registered(tool_name):
+                     canonical = resolve_tool_name(tool_name)
+                     tool_results.append(
+                         f"Tool [{tool_name}] blocked: not in agent allowlist "
+                         f"(canonical: {canonical}). Use only listed tools."
+                     )
++                    tool_events.append(build_tool_event(tool_name, "blocked", "not in allowlist", 0))
+                     continue
++                _t0 = time.monotonic()
+                 result = await execute_tool(self.tool_registry, tool_name, arguments)
++                _dur = int((time.monotonic() - _t0) * 1000)
+                 result_text = result.output or result.error
+                 # Inject download link for document generation tools
+                 if result.success and tool_name in ("create_docx", "create_pptx"):
+                     try:
+                         meta = json.loads(result.output)
+                         fname = meta.get("filename", "download")
+                         result_text += (
+                             f"\n\n**Download link (include this in your response):** "
+                             f"[Download {fname}](/api/files/download/{fname})"
+                         )
+                     except Exception:
+                         pass
+                 tool_results.append(
+                     f"Tool [{tool_name}] result ({'success' if result.success else 'failed'}): {result_text}"
+                 )
++                tool_events.append(build_tool_event(
++                    tool_name, "ok" if result.success else "error", result_text, _dur
++                ))
+             except (json.JSONDecodeError, TypeError) as exc:
+                 tool_results.append(f"Tool call parse error: {exc}")
++                tool_events.append(build_tool_event("unknown", "error", str(exc), 0))
+ 
+         if not tool_results:
+-            return clean_content, model, usage
++            return clean_content, model, usage, tool_events
+ 
+         # Feed tool results back to LLM for synthesis (gpt-4o-mini with context)
+         tool_output = "\n".join(tool_results)
+         mem_ctx = self._build_memory_context()
+         sub_prompt = "Synthesize tool results into a helpful response."
+         if mem_ctx:
+             sub_prompt += f"\n\n{mem_ctx}"
+         synthesis_msg = (
+             f"Tool results:\n{tool_output}\n\n"
+             f"Synthesize these into a helpful response. Original request: {self.conversation_history[-1].content[:500]}"
+         )
+         follow_up = await self.llm.complete(
+             messages=[LLMMessage(role="user", content=synthesis_msg)],
+             system_prompt=sub_prompt,
+             model=self.llm.default_model,
+             temperature=0.3, max_tokens=1024,
+         )
+ 
+-        return follow_up.content, follow_up.model, follow_up.usage
++        return follow_up.content, follow_up.model, follow_up.usage, tool_events
+ 
+     # ── Auto-search triggers ──────────────────────────────────────
+     _SEARCH_TRIGGERS = re.compile(
+         r"\b(who|what|where|when|why|research|find|search|look up|tell me about|information on|learn about|latest|news about)\b",
+         re.IGNORECASE,
+     )
+ 
+     async def _auto_search(self, user_message: str) -> str | None:
+         """Pre-execute search tools for research-like queries. Returns context string or None."""
+         if not self.tool_registry:
+@@ -529,25 +550,29 @@ Format:
+                 full_content += chunk.content
+                 yield {"type": "token", "content": chunk.content}
+             if chunk.model:
+                 model_name = chunk.model
+             if chunk.usage:
+                 usage = chunk.usage
+             if chunk.is_done and not chunk.content:
+                 pass
+ 
+         # Execute tools if agent emitted TOOL_CALL markers
++        tool_events: list[dict] = []
+         if "TOOL_CALL_START" in full_content:
+-            display_content, model_name, usage = await self._execute_tool_calls(full_content, model_name, usage)
++            display_content, model_name, usage, tool_events = await self._execute_tool_calls(full_content, model_name, usage)
+         else:
+             display_content = full_content
+ 
++        for _ev in tool_events:
++            yield _ev
++
+         # Parse handoff from display_content (after tool execution)
+         handoff = None
+         start_marker = "HANDOFF_JSON_START"
+         end_marker = "HANDOFF_JSON_END"
+         start_idx = full_content.find(start_marker)
+         end_idx = full_content.find(end_marker)
+ 
+         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+             json_str = full_content[start_idx + len(start_marker):end_idx]
+             try:
+diff --git a/backend/src/engine/orchestrator.py b/backend/src/engine/orchestrator.py
+index a8cca0b..743c5d4 100644
+--- a/backend/src/engine/orchestrator.py
++++ b/backend/src/engine/orchestrator.py
+@@ -44,20 +44,36 @@ from src.engine.loader import AgentLoader, LoadedAgent
+ from src.engine.router import OrchestratorRouter, RoutingResult
+ from src.engine.schemas import OrchestratorConfig, RoutingRule
+ from src.engine.workflow_executor import WorkflowExecutor
+ from src.engine.tool_executor import get_tool_registry, set_tool_context
+ from src.messaging.bus import MessageBus
+ from src.messaging.schemas import AgentMessage, MessageType, Priority
+ from src.models.conversation import Conversation
+ from src.models.message import Message as MessageModel
+ 
+ 
++def build_source_event(hit: dict) -> dict:
++    """Structured trace event for a retrieved document chunk cited in context."""
++    return {
++        "type": "source",
++        "filename": hit.get("title") or hit.get("source") or "document",
++        "chunk_index": hit.get("chunk_index", 0),
++        "score": hit.get("score", 0.0),
++        "snippet": (hit.get("snippet") or "")[:300],
++    }
++
++
++def build_step_event(step_id: str, status: str, label: str = "") -> dict:
++    """Structured trace event for a workflow/DAG step."""
++    return {"type": "step", "id": step_id, "status": status, "label": label}
++
++
+ @dataclass
+ class Subtask:
+     id: str
+     agent: str
+     description: str
+     dependencies: list[str] = field(default_factory=list)
+     result: str = ""
+ 
+ 
+ class OrchestrationEngine:
+@@ -540,38 +556,42 @@ User request: {user_message}"""
+         ready = [sid for sid, d in in_degree.items() if d == 0]
+ 
+         yield {"type": "token", "content": f"[ Workflow: {wf_name} · {len(steps)} steps ]\n\n"}
+ 
+         while ready:
+             sid = ready.pop(0)
+             step = step_by_id[sid]
+             step_type = step.get("type", "agent_call")
+ 
+             yield {"type": "routing", "stage": "processing", "department": "workflow", "agent": f"{wf_name}/{sid}"}
++            yield build_step_event(sid, "running")
+             yield {"type": "token", "content": f">>> Step: {sid}\n"}
+ 
+             if step_type == "agent_call":
+                 agent_role = step.get("agent", "")
+                 if agent_role and agent_role in self.agents:
+                     dep_ctx = "\n".join(f"[{d}]: {results.get(d, '')[:1500]}" for d in step.get("dependencies", []))
+                     prompt = f"{dep_ctx}\n\n{step.get('description', '')}\n\nUser request: {user_message}"
+                     try:
+                         agent = self.agents[agent_role].copy_for_request()
+                         resp = await agent.process(prompt)
+                         results[sid] = getattr(resp, "content", str(resp))
+                         yield {"type": "token", "content": results[sid][:3000] + "\n\n"}
++                        yield build_step_event(sid, "ok")
+                     except Exception as exc:
+                         results[sid] = f"Error: {exc}"
+                         yield {"type": "token", "content": f"Error: {exc}\n\n"}
++                        yield build_step_event(sid, "error")
+                 else:
+                     results[sid] = f"Agent '{agent_role}' not available"
+                     yield {"type": "token", "content": f"Skipped: {results[sid]}\n\n"}
++                    yield build_step_event(sid, "skipped")
+ 
+             elif step_type == "tool_call":
+                 tool_name = step.get("tool", "")
+                 tool_config = step.get("config", {})
+                 dep_ctx = "\n".join(f"[{d}]: {results.get(d, '')[:1500]}" for d in step.get("dependencies", []))
+                 try:
+                     from src.engine.tool_executor import get_tool_registry, execute_tool, set_tool_context
+                     set_tool_context(session=session, workspace_id="default")
+                     registry = get_tool_registry()
+                     tool_args = {**tool_config, "text": dep_ctx or user_message}
+@@ -744,20 +764,21 @@ User request: {user_message}"""
+                 r = await session.execute(_sa_ss(_SSs).where(_SSs.workspace_id == workspace_id, _SSs.key == f"conv:{conversation_id}:files"))
+                 prev = r.scalar_one_or_none()
+                 if prev and prev.value:
+                     for fd in prev.value.get("files", []):
+                         if fd.get("text"):
+                             file_context_parts.append(f"[File: {fd.get('filename','unknown')} ({fd.get('type','')})]\n{fd['text']}")
+             except Exception:
+                 pass
+ 
+         # Load persistent user documents (resume, etc.) saved via Settings > Memory
++        _source_events: list[dict] = []
+         if session is not None:
+             try:
+                 from sqlalchemy import select as _sa_ud
+                 from src.models.shared_state import SharedState as _SSud
+                 r = await session.execute(_sa_ud(_SSud).where(_SSud.workspace_id == workspace_id, _SSud.key == "user:documents"))
+                 docs_row = r.scalar_one_or_none()
+                 if docs_row and docs_row.value:
+                     vec_doc_ids = []
+                     for d in docs_row.value.get("documents", []):
+                         if d.get("text"):
+@@ -767,23 +788,27 @@ User request: {user_message}"""
+                             vec_doc_ids.append(d["document_id"])
+                     # Large docs: retrieve only the most relevant chunks for this query.
+                     if vec_doc_ids:
+                         from src.integrations.rag import hybrid_search
+                         hits = await hybrid_search(user_message, session, workspace_id=workspace_id,
+                                                    document_ids=vec_doc_ids, limit=6)
+                         for h in hits:
+                             file_context_parts.append(
+                                 f"[From {h['source']}/{h.get('title','doc')} — chunk {h['chunk_index']}]\n{h['snippet']}"
+                             )
++                            _source_events.append(build_source_event(h))
+             except Exception:
+                 pass
+ 
++        for _ev in _source_events:
++            yield _ev
++
+         if file_ids:
+             print(f"[orchestrator] loading {len(file_ids)} file(s): {file_ids}")
+             import json as _json2
+             new_files = []
+             for fid in file_ids:
+                 try:
+                     from src.integrations.files import file_upload_read, _uploads_dir
+                     raw = await file_upload_read(fid, max_chars=8000)
+                     data = _json2.loads(raw)
+                     if "error" in data:
+@@ -1058,20 +1083,22 @@ User request: {user_message}"""
+             if event["type"] == "token":
+                 full_content += event["content"]
+                 yield {"type": "token", "content": event["content"]}
+             elif event["type"] == "metadata":
+                 model_name = event.get("model", "")
+                 usage = event.get("usage", {})
+                 handoff_data = event.get("handoff")
+                 full_content = event.get("display_content", full_content)
+             elif event["type"] == "done":
+                 pass
++            else:
++                yield event  # forward tool_call / other trace events
+ 
+         # Phase 3: Persist to DB (non-blocking for stream)
+         content = full_content
+         if session is not None:
+             try:
+                 from sqlalchemy import select as sa_select
+                 now = datetime.now(timezone.utc)
+ 
+                 result = await session.execute(
+                     sa_select(Conversation).where(Conversation.id == conversation_id)
+diff --git a/backend/tests/test_trace_events.py b/backend/tests/test_trace_events.py
+new file mode 100644
+index 0000000..6ee90d2
+--- /dev/null
++++ b/backend/tests/test_trace_events.py
+@@ -0,0 +1,52 @@
++from src.engine.agent_runtime import build_tool_event
++
++
++def test_build_tool_event_shape():
++    ev = build_tool_event("web_search", "ok", "x" * 500, 1234)
++    assert ev["type"] == "tool_call"
++    assert ev["name"] == "web_search"
++    assert ev["status"] == "ok"
++    assert ev["duration_ms"] == 1234
++    assert len(ev["result_summary"]) <= 200
++
++
++def test_build_tool_event_error_status():
++    ev = build_tool_event("bad_tool", "error", "boom", 5)
++    assert ev["status"] == "error"
++    assert ev["result_summary"] == "boom"
++
++
++from src.engine.orchestrator import build_source_event
++
++
++def test_build_source_event_shape():
++    hit = {"document_id": "d1", "title": "handbook.pdf", "source": "memory",
++           "chunk_index": 12, "score": 0.83, "snippet": "y" * 500}
++    ev = build_source_event(hit)
++    assert ev["type"] == "source"
++    assert ev["filename"] == "handbook.pdf"
++    assert ev["chunk_index"] == 12
++    assert ev["score"] == 0.83
++    assert len(ev["snippet"]) <= 300
++
++
++def test_build_source_event_falls_back_to_source():
++    hit = {"title": "", "source": "upload", "chunk_index": 0, "score": 0.1, "snippet": "z"}
++    ev = build_source_event(hit)
++    assert ev["filename"] == "upload"
++
++
++from src.engine.orchestrator import build_step_event
++
++
++def test_build_step_event_shape():
++    ev = build_step_event("draft", "running", "Draft the doc")
++    assert ev["type"] == "step"
++    assert ev["id"] == "draft"
++    assert ev["status"] == "running"
++    assert ev["label"] == "Draft the doc"
++
++
++def test_build_step_event_default_label():
++    ev = build_step_event("s1", "ok")
++    assert ev["label"] == ""
+diff --git a/frontend/src/components/chat-interface.tsx b/frontend/src/components/chat-interface.tsx
+index 8184c9e..fd40244 100644
+--- a/frontend/src/components/chat-interface.tsx
++++ b/frontend/src/components/chat-interface.tsx
+@@ -1,17 +1,18 @@
+ "use client";
+ 
+ import { useState, useRef, useEffect, useCallback } from "react";
+ import { Send, Network, Loader2, Paperclip, X, FileText, Image } from "lucide-react";
+ import ReactMarkdown from "react-markdown";
+ import { useQueryClient } from "@tanstack/react-query";
+ import { RoutingPath } from "@/components/routing-path";
++import { ChatTrace } from "@/components/chat-trace";
+ import { AgentSelector } from "@/components/agent-selector";
+ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store";
+ import { useConversationMessages, useSendMessage } from "@/lib/hooks";
+ import { useToastStore } from "@/lib/store";
+ import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
+ import { resolveApproval } from "@/lib/api";
+ import { Onboarding } from "@/components/onboarding";
+ 
+ interface FileAttachment { filename: string; content: string; mime_type: string; }
+ 
+@@ -29,20 +30,23 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const appendContent = useChatStore((s) => s.appendContent);
+   const conversationId = useChatStore((s) => s.conversationId);
+   const setConversationId = useChatStore((s) => s.setConversationId);
+   const targetAgent = useChatStore((s) => s.targetAgent);
+   const setTargetAgent = useChatStore((s) => s.setTargetAgent);
+   const routingStage = useChatStore((s) => s.routingStage);
+   const setRoutingStage = useChatStore((s) => s.setRoutingStage);
+   const routingEvents = useChatStore((s) => s.routingEvents);
+   const addRoutingEvent = useChatStore((s) => s.addRoutingEvent);
+   const clearRoutingEvents = useChatStore((s) => s.clearRoutingEvents);
++  const addToolTrace = useChatStore((s) => s.addToolTrace);
++  const addSourceTrace = useChatStore((s) => s.addSourceTrace);
++  const addStepTrace = useChatStore((s) => s.addStepTrace);
+   const isStreaming = useChatStore((s) => s.isStreaming);
+   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
+   const reset = useChatStore((s) => s.reset);
+ 
+   const [input, setInput] = useState("");
+   const [wsMode, setWsMode] = useState(true);
+   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+   const [uploading, setUploading] = useState(false);
+   const [showOnboarding, setShowOnboarding] = useState(false);
+   const [pendingApprovals, setPendingApprovals] = useState<Record<string, { approval_id: string; step_id: string; prompt: string; context?: string; busy?: boolean }>>({});
+@@ -149,20 +153,29 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+       setIsStreaming(true);
+       const ws = createChatWebSocket({
+         onOpen: () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); },
+         onEvent: (event: WSEvent) => {
+           switch (event.type) {
+             case "routing":
+               setRoutingStage(event.stage as RoutingStage);
+               addRoutingEvent({ type: event.stage as RoutingEvent["type"], label: event.stage || "", detail: event.department || event.agent });
+               break;
+             case "token": appendContent(event.content); break;
++            case "tool_call":
++              addToolTrace({ name: event.name, status: event.status, result_summary: event.result_summary, duration_ms: event.duration_ms });
++              break;
++            case "source":
++              addSourceTrace({ filename: event.filename, chunk_index: event.chunk_index, score: event.score, snippet: event.snippet });
++              break;
++            case "step":
++              addStepTrace({ id: event.id, status: event.status, label: event.label });
++              break;
+             case "metadata":
+               if (event.conversation_id && !convId) setConversationId(event.conversation_id);
+               break;
+             case "error": addToast(event.message, "error"); setIsStreaming(false); setRoutingStage(""); break;
+             case "approval":
+               setIsStreaming(false);
+               setPendingApprovals((p) => ({ ...p, [event.approval_id]: { approval_id: event.approval_id, step_id: event.step_id, prompt: event.prompt, context: event.context } }));
+               break;
+             case "done":
+               setIsStreaming(false); setRoutingStage("");
+@@ -291,20 +304,23 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+                       <span key={j} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 animate-trace">{evt.label}{evt.detail ? ` → ${evt.detail}` : ""}</span>
+                     ))}
+                   </div>
+                 )}
+                 <div className="text-sm leading-relaxed text-slate-900 prose prose-sm prose-slate max-w-none">
+                   <ReactMarkdown>{msg.content}</ReactMarkdown>
+                   {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
+                     <span className="inline-block w-1.5 h-4 bg-blue-600 ml-0.5 animate-pulse align-middle" />
+                   )}
+                 </div>
++                {msg.role === "assistant" && (
++                  <ChatTrace tools={msg.tools} sources={msg.sources} steps={msg.steps} />
++                )}
+                 {msg.role === "assistant" && msg.model && <p className="text-[10px] text-slate-400 mt-2">via {msg.model}</p>}
+               </div>
+             </div>
+           ))}
+           {isStreaming && messages[messages.length - 1]?.content === "" && (
+             <div className="flex justify-start">
+               <div className="bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-md px-4 py-3">
+                 <div className="flex items-center gap-2.5 mb-2"><Loader2 className="w-4 h-4 text-blue-600 animate-spin" /><span className="text-xs text-blue-600 font-medium">{routingStage === "classifying" && "Classifying intent…"}{routingStage === "routing" && "Routing to department…"}{routingStage === "processing" && "Agent processing…"}{routingStage === "department" && "Department matched…"}{routingStage === "agent" && "Agent selected…"}{!routingStage && "Working…"}</span></div>
+                 <div className="w-48 h-1 bg-slate-200 rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-blue-700 via-blue-500 to-blue-400 rounded-full animate-load" /></div>
+               </div>
+diff --git a/frontend/src/components/chat-trace.tsx b/frontend/src/components/chat-trace.tsx
+new file mode 100644
+index 0000000..67b9230
+--- /dev/null
++++ b/frontend/src/components/chat-trace.tsx
+@@ -0,0 +1,82 @@
++"use client";
++
++import { useState } from "react";
++import type { ToolTrace, SourceTrace, StepTrace } from "@/lib/store";
++
++const statusColor = (s: string) =>
++  s === "error" || s === "blocked" ? "text-red-600 border-red-200" : "text-slate-700 border-slate-200";
++
++export function ChatTrace({
++  tools = [],
++  sources = [],
++  steps = [],
++}: {
++  tools?: ToolTrace[];
++  sources?: SourceTrace[];
++  steps?: StepTrace[];
++}) {
++  const [open, setOpen] = useState(false);
++  const [snippet, setSnippet] = useState<string | null>(null);
++  const count = tools.length + sources.length + steps.length;
++  if (count === 0) return null;
++
++  return (
++    <div className="mt-2 border border-slate-200 rounded-lg bg-white">
++      <button
++        onClick={() => setOpen((o) => !o)}
++        className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] uppercase tracking-wide text-slate-500 hover:bg-slate-50 rounded-lg"
++      >
++        <span>
++          Trace &middot; {tools.length} tools &middot; {sources.length} sources &middot; {steps.length} steps
++        </span>
++        <span>{open ? "–" : "+"}</span>
++      </button>
++      {open && (
++        <div className="border-t border-slate-200 p-3 space-y-3">
++          {steps.length > 0 && (
++            <div className="flex flex-wrap gap-1.5">
++              {steps.map((s) => (
++                <span
++                  key={s.id}
++                  className={`text-[10px] border rounded-full px-1.5 py-0.5 ${statusColor(s.status)}`}
++                >
++                  {s.id} &middot; {s.status}
++                </span>
++              ))}
++            </div>
++          )}
++          {tools.length > 0 && (
++            <div className="flex flex-wrap gap-1.5">
++              {tools.map((t, i) => (
++                <span
++                  key={i}
++                  className={`text-[10px] border rounded-full px-1.5 py-0.5 ${statusColor(t.status)}`}
++                >
++                  {t.name} {t.status === "ok" ? "✓" : "✕"} {t.duration_ms}ms
++                </span>
++              ))}
++            </div>
++          )}
++          {sources.length > 0 && (
++            <div className="flex flex-wrap gap-1.5">
++              {sources.map((s, i) => (
++                <button
++                  key={i}
++                  onClick={() => setSnippet(s.snippet)}
++                  className="text-[10px] border border-slate-200 rounded-full px-1.5 py-0.5 hover:bg-slate-900 hover:text-white transition-colors"
++                >
++                  {s.filename} &middot; chunk {s.chunk_index} &middot; {s.score.toFixed(2)}
++                </button>
++              ))}
++            </div>
++          )}
++          {snippet && (
++            <div className="border border-slate-200 rounded-lg p-2 text-[10px] leading-relaxed whitespace-pre-wrap text-slate-600">
++              {snippet}
++            </div>
++          )}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/frontend/src/lib/store.ts b/frontend/src/lib/store.ts
+index 2b6470f..7dd4fed 100644
+--- a/frontend/src/lib/store.ts
++++ b/frontend/src/lib/store.ts
+@@ -21,26 +21,33 @@ export const useToastStore = create<ToastStore>((set) => ({
+     set((s) => ({ toasts: [...s.toasts, { id, message, type }] }));
+     setTimeout(() => {
+       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }));
+     }, 5000);
+   },
+   removeToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+ }));
+ 
+ // ── Chat state ───────────────────────────────────────────────────
+ 
++export interface ToolTrace { name: string; status: string; result_summary: string; duration_ms: number }
++export interface SourceTrace { filename: string; chunk_index: number; score: number; snippet: string }
++export interface StepTrace { id: string; status: string; label: string }
++
+ export interface ChatMessage {
+   role: "user" | "assistant";
+   content: string;
+   agent?: string | null;
+   department?: string | null;
+   model?: string | null;
++  tools?: ToolTrace[];
++  sources?: SourceTrace[];
++  steps?: StepTrace[];
+ }
+ 
+ export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
+ 
+ interface ChatStore {
+   messages: ChatMessage[];
+   conversationId: string | undefined;
+   targetAgent: string | null;
+   routingStage: RoutingStage;
+   routingEvents: RoutingEvent[];
+@@ -49,20 +56,23 @@ interface ChatStore {
+   setMessages: (messages: ChatMessage[]) => void;
+   addMessage: (message: ChatMessage) => void;
+   appendContent: (content: string) => void;
+   setConversationId: (id: string | undefined) => void;
+   setTargetAgent: (agent: string | null) => void;
+   setRoutingStage: (stage: RoutingStage) => void;
+   addRoutingEvent: (event: RoutingEvent) => void;
+   clearRoutingEvents: () => void;
+   setIsStreaming: (v: boolean) => void;
+   reset: () => void;
++  addToolTrace: (t: ToolTrace) => void;
++  addSourceTrace: (s: SourceTrace) => void;
++  addStepTrace: (s: StepTrace) => void;
+ }
+ 
+ export interface RoutingEvent {
+   type: "classifying" | "department" | "agent" | "processing" | "done";
+   label: string;
+   detail?: string;
+ }
+ 
+ const initialChatState = {
+   messages: [] as ChatMessage[],
+@@ -81,20 +91,50 @@ export const useChatStore = create<ChatStore>((set) => ({
+     set((s) => ({ messages: [...s.messages, message] })),
+   appendContent: (content) =>
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, content: last.content + content };
+       }
+       return { messages: msgs };
+     }),
++  addToolTrace: (t) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, tools: [...(last.tools || []), t] };
++      }
++      return { messages: msgs };
++    }),
++  addSourceTrace: (src) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, sources: [...(last.sources || []), src] };
++      }
++      return { messages: msgs };
++    }),
++  addStepTrace: (st) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        const steps = [...(last.steps || [])];
++        const i = steps.findIndex((x) => x.id === st.id);
++        if (i >= 0) steps[i] = st; else steps.push(st);  // update status in place
++        msgs[msgs.length - 1] = { ...last, steps };
++      }
++      return { messages: msgs };
++    }),
+   setConversationId: (id) => set({ conversationId: id }),
+   setTargetAgent: (agent) => set({ targetAgent: agent }),
+   setRoutingStage: (stage) => set({ routingStage: stage }),
+   addRoutingEvent: (event) =>
+     set((s) => ({ routingEvents: [...s.routingEvents, event] })),
+   clearRoutingEvents: () => set({ routingEvents: [] }),
+   setIsStreaming: (v) => set({ isStreaming: v }),
+   reset: () =>
+     set({
+       messages: [],
+diff --git a/frontend/src/lib/websocket.ts b/frontend/src/lib/websocket.ts
+index 590caab..b2885d7 100644
+--- a/frontend/src/lib/websocket.ts
++++ b/frontend/src/lib/websocket.ts
+@@ -1,19 +1,22 @@
+ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+ const WS_BASE = API_BASE.replace(/^http/, "ws");
+ 
+ export type WSEvent =
+   | { type: "routing"; stage: string; department?: string; agent?: string }
+   | { type: "token"; content: string }
+   | { type: "metadata"; conversation_id: string; agent?: string; department?: string; model?: string }
+   | { type: "error"; message: string }
+   | { type: "approval"; approval_id: string; step_id: string; prompt: string; context?: string }
++  | { type: "tool_call"; name: string; status: string; result_summary: string; duration_ms: number }
++  | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
++  | { type: "step"; id: string; status: string; label: string }
+   | { type: "done" };
+ 
+ interface WSCallbacks {
+   onEvent: (event: WSEvent) => void;
+   onOpen?: () => void;
+   onError?: (error: Event) => void;
+   onClose?: (error: boolean) => void;
+ }
+ 
+ export function createChatWebSocket(callbacks: WSCallbacks): WebSocket {

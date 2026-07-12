@@ -28,4 +28,3 @@ docker-compose.override.yml
 .DS_Store
 Thumbs.db
 AI_STARTUP_AGENT_SYSTEM.md
-docs/

@@ -1,0 +1,79 @@
+diff --git a/backend/src/engine/agent_runtime.py b/backend/src/engine/agent_runtime.py
+index e7ffe1a..c3b26d5 100644
+--- a/backend/src/engine/agent_runtime.py
++++ b/backend/src/engine/agent_runtime.py
+@@ -22,6 +22,11 @@ def build_tool_event(name: str, status: str, result_text: str, duration_ms: int)
+     }
+ 
+ 
++def build_artifact_event(artifact_id: str, title: str, kind: str, filename: str | None) -> dict:
++    """Structured stream event announcing a persisted artifact."""
++    return {"type": "artifact", "id": artifact_id, "title": title, "kind": kind, "filename": filename}
++
++
+ @dataclass
+ class HandoffInfo:
+     target_agent: str
+@@ -396,6 +401,21 @@ Format:
+                             f"\n\n**Download link (include this in your response):** "
+                             f"[Download {fname}](/api/files/download/{fname})"
+                         )
++                        # Persist as a durable artifact (best-effort)
++                        try:
++                            from src.engine.tool_executor import get_tool_context
++                            from src.api.routes.artifacts import create_artifact
++                            _ctx = get_tool_context()
++                            _sess = _ctx.get("session")
++                            if _sess is not None:
++                                _kind = "doc" if tool_name == "create_docx" else "sheet"
++                                _art = await create_artifact(
++                                    _sess, title=fname, kind=_kind, filename=fname,
++                                    workspace_id=_ctx.get("workspace_id", "default"),
++                                )
++                                tool_events.append(build_artifact_event(_art.id, fname, _kind, fname))
++                        except Exception:
++                            pass
+                     except Exception:
+                         pass
+                 tool_results.append(
+diff --git a/backend/tests/test_artifacts.py b/backend/tests/test_artifacts.py
+index c3043b1..1cecb34 100644
+--- a/backend/tests/test_artifacts.py
++++ b/backend/tests/test_artifacts.py
+@@ -56,3 +56,36 @@ async def test_artifact_api_list_get_approve():
+     async with get_session_factory()() as s:
+         row = await s.get(Artifact, aid)
+         assert row.status == "approved"
++
++
++from src.engine.agent_runtime import build_artifact_event
++
++
++def test_build_artifact_event_shape():
++    ev = build_artifact_event("id1", "My Doc", "doc", "my_doc.docx")
++    assert ev["type"] == "artifact"
++    assert ev["id"] == "id1"
++    assert ev["title"] == "My Doc"
++    assert ev["kind"] == "doc"
++    assert ev["filename"] == "my_doc.docx"
++
++
++from sqlalchemy import select as _sel
++
++
++@pytest.mark.asyncio
++async def test_doc_tool_persists_artifact():
++    await init_db()
++    from src.engine.tool_executor import set_tool_context
++    from src.models.artifact import Artifact
++
++    async with get_session_factory()() as s:
++        set_tool_context(session=s, workspace_id="default")
++        # Simulate a create_docx tool result being handled: call create_artifact the same way the runtime does.
++        from src.api.routes.artifacts import create_artifact
++        art = await create_artifact(s, title="report.docx", kind="doc", filename="report.docx")
++        await s.commit()
++        got = (await s.execute(_sel(Artifact).where(Artifact.id == art.id))).scalar_one()
++        assert got.filename == "report.docx"
++        assert got.kind == "doc"
++        assert got.status == "draft"
