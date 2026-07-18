@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Send, Network, Loader2, Paperclip, X, FileText, Image } from "lucide-react";
+import { Send, Network, Loader2, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useQueryClient } from "@tanstack/react-query";
 import { RoutingPath } from "@/components/routing-path";
@@ -29,6 +29,8 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const addMessage = useChatStore((s) => s.addMessage);
   const appendContent = useChatStore((s) => s.appendContent);
   const replaceLastContent = useChatStore((s) => s.replaceLastContent);
+  const updateLastMeta = useChatStore((s) => s.updateLastMeta);
+  const dropLastIfEmptyAssistant = useChatStore((s) => s.dropLastIfEmptyAssistant);
   const conversationId = useChatStore((s) => s.conversationId);
   const setConversationId = useChatStore((s) => s.setConversationId);
   const targetAgent = useChatStore((s) => s.targetAgent);
@@ -50,13 +52,18 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const [wsMode, setWsMode] = useState(true);
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [showOnboarding, setShowOnboarding] = useState(false);
   const [pendingApprovals, setPendingApprovals] = useState<Record<string, { approval_id: string; step_id: string; prompt: string; context?: string; busy?: boolean }>>({});
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const loadedOnce = useRef(false);
+  // Which conversation's history is currently in the store — prevents a post-stream
+  // refetch from clobbering freshly-streamed messages (and their traces).
+  const historyLoadedFor = useRef<string | undefined>(undefined);
+  // Monotonic turn counter. Bumped on new-chat / conversation switch so in-flight
+  // sends that resolve late can detect they are stale and bail.
+  const turnRef = useRef(0);
   // Stable ref to avoid sendMessageMutation recreating sendViaWebSocket every render.
   const sendMutationRef = useRef<ReturnType<typeof useSendMessage> | null>(null);
 
@@ -65,27 +72,41 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     useConversationMessages(conversationId);
 
   useEffect(() => {
-    if (historyMessages && historyMessages.length > 0 && conversationId) {
-      setMessages(
-        historyMessages.map((m) => ({
-          role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
-          content: m.content,
-          agent: m.from_agent !== "user" ? m.from_agent : null,
-          department: null,
-          model: null,
-        }))
-      );
-    }
-  }, [historyMessages, conversationId, setMessages]);
+    if (!conversationId || isStreaming) return;
+    // Already showing this conversation (e.g. we just streamed into it) — never
+    // overwrite the live store with a server refetch; it would drop streamed traces.
+    if (historyLoadedFor.current === conversationId) return;
+    // Switching to a different conversation: clear stale messages while its
+    // history loads, then hydrate (even when the new conversation is empty).
+    if (isLoadingHistory) { setMessages([]); return; }
+    historyLoadedFor.current = conversationId;
+    setMessages(
+      (historyMessages ?? []).map((m, i) => ({
+        id: `${conversationId}-${i}`,
+        role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
+        content: m.content,
+        agent: m.from_agent !== "user" ? m.from_agent : null,
+        department: null,
+        model: null,
+      }))
+    );
+  }, [historyMessages, conversationId, isStreaming, isLoadingHistory, setMessages]);
 
   // ── Scroll ───────────────────────────────────────────────────
   const isHistoryLoad = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (isLoadingHistory) { isHistoryLoad.current = true; return; }
     if (isHistoryLoad.current && !isLoadingHistory) {
       isHistoryLoad.current = false;
       messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
       return;
+    }
+    // Don't yank the view down while the user has scrolled up to read history.
+    const c = scrollContainerRef.current;
+    if (c) {
+      const nearBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 120;
+      if (!nearBottom) return;
     }
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, routingEvents, isLoadingHistory]);
@@ -140,9 +161,11 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       }
       clearRoutingEvents();
       setIsStreaming(true);
+      const turn = turnRef.current;
       const ws = createChatWebSocket({
         onOpen: () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); },
         onEvent: (event: WSEvent) => {
+          if (turn !== turnRef.current) return; // stale turn (new chat / switch) — ignore
           switch (event.type) {
             case "routing":
               setRoutingStage(event.stage as RoutingStage);
@@ -163,9 +186,20 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
               break;
             case "metadata":
-              if (event.conversation_id && !convId) setConversationId(event.conversation_id);
+              if (event.conversation_id && !convId) {
+                setConversationId(event.conversation_id);
+                // We already hold the live messages for this new conversation;
+                // mark it loaded so the history refetch won't overwrite them.
+                historyLoadedFor.current = event.conversation_id;
+              }
+              updateLastMeta({ agent: event.agent, department: event.department, model: event.model });
               break;
-            case "error": addToast(event.message, "error"); setIsStreaming(false); setRoutingStage(""); break;
+            case "error":
+              addToast(event.message, "error");
+              setIsStreaming(false);
+              setRoutingStage("");
+              dropLastIfEmptyAssistant(); // remove the blank placeholder bubble
+              break;
             case "approval":
               setIsStreaming(false);
               setPendingApprovals((p) => ({ ...p, [event.approval_id]: { approval_id: event.approval_id, step_id: event.step_id, prompt: event.prompt, context: event.context } }));
@@ -178,25 +212,38 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
           }
         },
         onError: () => {
-          setWsMode(false); setIsStreaming(false); setRoutingStage("");
+          wsRef.current = null;
+          if (turn !== turnRef.current) return; // stale — user moved on
+          setWsMode(false); setRoutingStage("");
           const m = sendMutationRef.current;
-          if (!m) return;
+          if (!m) { setIsStreaming(false); return; }
+          // Degrade this send to REST, filling the placeholder assistant bubble.
           m.mutate(
             { message, conversationId: convId, targetAgent: tgtAgent, fileIds, files },
-            { onSuccess: (data) => { appendContent(data.response); if (data.conversation_id && !convId) setConversationId(data.conversation_id); } },
+            {
+              onSuccess: (data) => {
+                if (turn !== turnRef.current) return;
+                replaceLastContent(data.response);
+                updateLastMeta({ agent: data.agent, department: data.routed_to, model: data.model });
+                if (data.conversation_id && !convId) {
+                  setConversationId(data.conversation_id);
+                  historyLoadedFor.current = data.conversation_id;
+                }
+              },
+              onSettled: () => { if (turn === turnRef.current) setIsStreaming(false); },
+            },
           );
         },
         onClose: (error) => {
-          if (error) {
-            setIsStreaming(false); setRoutingStage("");
-            // Auto-retry once before degrading to REST
-            setTimeout(() => { if (!wsRef.current) setWsMode(true); }, 1500);
-          }
+          wsRef.current = null;
+          if (error && turn === turnRef.current) { setIsStreaming(false); setRoutingStage(""); }
         },
       });
       wsRef.current = ws;
     },
-    [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient],
+    [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent,
+     replaceLastContent, updateLastMeta, dropLastIfEmptyAssistant, addToolTrace, addSourceTrace,
+     addStepTrace, addArtifactRef, setConversationId, addToast, queryClient],
   );
 
   // ── Submit (extracted so it can be called with explicit text, bypassing
@@ -207,6 +254,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       const userMessage = rawText.trim() || "Analyze the attached files.";
       const currentAttachments = [...attach];
       const attachLabel = currentAttachments.length > 0 ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]` : "";
+      const turn = ++turnRef.current;
       setInput(""); setAttachments([]);
       addMessage({ role: "user", content: userMessage + attachLabel });
 
@@ -220,16 +268,20 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
           { message: userMessage, conversationId, targetAgent: targetAgent ?? undefined, files: currentAttachments.length > 0 ? currentAttachments : undefined },
           {
             onSuccess: (data) => {
-              setIsStreaming(false); setRoutingStage("");
-              setMessages(useChatStore.getState().messages.slice(0, -1).concat({ role: "assistant", content: data.response, agent: data.agent, department: data.routed_to, model: data.model }));
-              if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
+              if (turn !== turnRef.current) return; // stale — user started a new chat/turn
+              replaceLastContent(data.response);
+              updateLastMeta({ agent: data.agent, department: data.routed_to, model: data.model });
+              if (data.conversation_id && !conversationId) {
+                setConversationId(data.conversation_id);
+                historyLoadedFor.current = data.conversation_id;
+              }
             },
-            onError: () => { setIsStreaming(false); setRoutingStage(""); },
+            onSettled: () => { if (turn === turnRef.current) { setIsStreaming(false); setRoutingStage(""); } },
           },
         );
       }
     },
-    [wsMode, conversationId, targetAgent, isStreaming, sendMessageMutation, sendViaWebSocket, addMessage, setInput, setAttachments, setConversationId, setIsStreaming, setRoutingStage, setMessages],
+    [wsMode, conversationId, targetAgent, isStreaming, sendMessageMutation, sendViaWebSocket, addMessage, setInput, setAttachments, setConversationId, setIsStreaming, setRoutingStage, replaceLastContent, updateLastMeta],
   );
 
   // ── Submit ───────────────────────────────────────────────────
@@ -258,6 +310,8 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   }, [initialConversationId, setConversationId, setInput, submitText]);
 
   function handleNewConversation() {
+    turnRef.current++; // invalidate any in-flight send
+    historyLoadedFor.current = undefined;
     if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
     reset(); setInput("");
   }
@@ -293,7 +347,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
         {!isLoadingHistory && messages.length === 0 && !conversationId && (
           null
         )}
@@ -314,7 +368,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
         {isLoadingHistory && <div className="flex items-center justify-center h-full"><Loader2 className="w-5 h-5 text-blue-600 animate-spin" /></div>}
         <div className="px-4 py-4 space-y-5 max-w-3xl mx-auto">
           {messages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
               <div className={`max-w-[85%] ${msg.role === "user" ? "bg-blue-50 border border-blue-200 rounded-2xl rounded-br-md" : "bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-md"} px-4 py-3`}>
                 {msg.role === "assistant" && (msg.department || msg.agent) && (
                   <div className="mb-2"><RoutingPath department={msg.department ?? null} agent={msg.agent ?? null} compact /></div>
@@ -375,7 +429,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
                             await resolveApproval(a.approval_id, { action: "approved", note: "Approved from chat" });
                             addToast("Approved", "success");
                             setPendingApprovals((p) => { const n = { ...p }; delete n[a.approval_id]; return n; });
-                          } catch (e: any) { addToast(e?.message || "Failed", "error"); }
+                          } catch (e: unknown) { addToast(e instanceof Error ? e.message : "Failed", "error"); }
                           finally { setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: false } })); }
                         }}
                         disabled={a.busy}
@@ -388,7 +442,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
                             await resolveApproval(a.approval_id, { action: "rejected", note: "Rejected from chat" });
                             addToast("Rejected", "info");
                             setPendingApprovals((p) => { const n = { ...p }; delete n[a.approval_id]; return n; });
-                          } catch (e: any) { addToast(e?.message || "Failed", "error"); }
+                          } catch (e: unknown) { addToast(e instanceof Error ? e.message : "Failed", "error"); }
                           finally { setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: false } })); }
                         }}
                         disabled={a.busy}
@@ -415,7 +469,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
             <div className="flex flex-wrap gap-1.5">
               {attachments.map((a, i) => (
                 <span key={i} className="inline-flex items-center gap-1 text-[11px] bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-1">
-                  {a.filename.endsWith(".pdf") || a.filename.endsWith(".docx") ? <FileText className="w-3 h-3" /> : <Image className="w-3 h-3" />}
+                  {a.filename.endsWith(".pdf") || a.filename.endsWith(".docx") ? <FileText className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
                   <span className="max-w-[120px] truncate">{a.filename}</span>
                   <button type="button" onClick={() => removeAttachment(i)} className="hover:text-blue-900"><X className="w-2.5 h-2.5" /></button>
                 </span>

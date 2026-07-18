@@ -9,6 +9,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from src.database import get_db
 from src.models.shared_state import SharedState
 from src.models.memory_fact import MemoryFact
+from src.models.memory_insight import MemoryInsight
 
 router = APIRouter(tags=["memory"])
 
@@ -63,6 +64,75 @@ async def get_memory(
     except Exception:
         pass
     return {"facts": facts, "documents": documents, "summary": summary}
+
+
+@router.get("/memory/insights")
+async def list_insights(
+    request: Request,
+    limit: int = Query(default=50, le=200),
+    session: AsyncSession = Depends(get_db),
+):
+    """Return consolidated insights (the knowledge catalog), most important first."""
+    r = await session.execute(
+        select(MemoryInsight)
+        .order_by(MemoryInsight.importance.desc(), MemoryInsight.created_at.desc())
+        .limit(limit)
+    )
+    return {
+        "insights": [
+            {
+                "id": i.id,
+                "title": i.title,
+                "body": i.body,
+                "topics": i.topics or [],
+                "connections": i.connections or [],
+                "importance": i.importance,
+                "source_conversations": i.source_conversations or [],
+                "created_at": i.created_at.isoformat() if i.created_at else None,
+            }
+            for i in r.scalars().all()
+        ]
+    }
+
+
+@router.post("/memory/dream")
+async def run_dream(
+    request: Request,
+    session: AsyncSession = Depends(get_db),
+):
+    """Trigger a memory consolidation ('dream') pass. Called by cron or manually."""
+    from src.config import get_settings
+    from src.engine.dream import consolidate
+
+    s = get_settings()
+    llm = getattr(request.app.state, "llm_provider", None)
+    if llm is None:
+        from src.engine.llm import LLMProvider
+        llm = LLMProvider(
+            default_model=s.background_llm_model or s.default_llm_model,
+            anthropic_api_key=s.anthropic_api_key,
+            openai_api_key=s.openai_api_key,
+        )
+    elif s.background_llm_model:
+        # Route this pass through the cheap background model without mutating the
+        # shared provider's default.
+        llm = _BoundModel(llm, s.background_llm_model)
+    try:
+        return await consolidate(session, llm)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Dream failed: {exc}") from exc
+
+
+class _BoundModel:
+    """Wrap an LLMProvider so complete() defaults to a specific (cheap) model."""
+
+    def __init__(self, llm, model: str):
+        self._llm = llm
+        self._model = model
+
+    async def complete(self, *args, **kwargs):
+        kwargs.setdefault("model", self._model)
+        return await self._llm.complete(*args, **kwargs)
 
 
 @router.post("/memory/facts")

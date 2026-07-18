@@ -9,8 +9,9 @@ services:
     name: AutoSteer-backend
     runtime: python
     buildCommand: pip install . && pip install python-jose[cryptography]
-    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 2
-    plan: starter
+    # Single worker: free tier is 512MB / 0.1 CPU — two workers OOM.
+    startCommand: uvicorn src.api.main:app --host 0.0.0.0 --port $PORT --workers 1
+    plan: free
     healthCheckPath: /api/health
 
     envVars:
@@ -32,6 +33,13 @@ services:
         value: openai
       - key: DEFAULT_LLM_MODEL
         value: gpt-4o-mini
+      # Cheap model for background memory consolidation ("dreaming").
+      # Leave blank to reuse DEFAULT_LLM_MODEL, or set e.g. gemini/gemini-1.5-flash
+      # (free tier via GEMINI_API_KEY) to keep the dream cycle near-zero cost.
+      - key: BACKGROUND_LLM_MODEL
+        value: ""
+      - key: GEMINI_API_KEY
+        sync: false
 
       # Auth
       - key: AutoSteer_api_key
@@ -122,9 +130,12 @@ services:
       - key: MAX_CONCURRENT_DEPARTMENTS
         value: "5"
 
-      # Uploads
+      # Uploads — free tier has NO persistent disk, so use ephemeral /tmp.
+      # Files vanish on restart/sleep; large docs are chunked into Postgres
+      # (pgvector) at upload time, so retrieval survives — only the raw file is
+      # ephemeral. Attach a paid disk and point this at it for durable files.
       - key: UPLOADS_DIR
-        value: /var/data/uploads
+        value: /tmp/uploads
 
   # --- Background worker (optional — for heavy workflows) --------------------
   # - type: worker

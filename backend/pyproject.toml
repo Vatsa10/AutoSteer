@@ -28,6 +28,8 @@ dependencies = [
     "pgvector>=0.4",
     "openai>=1.0",
     "python-multipart>=0.0.9",
+    "feedparser>=6.0",
+    "youtube-transcript-api>=1.0",
 ]
 
 [project.optional-dependencies]

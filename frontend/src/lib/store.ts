@@ -34,6 +34,7 @@ export interface StepTrace { id: string; status: string; label: string }
 export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
 
 export interface ChatMessage {
+  id: string;
   role: "user" | "assistant";
   content: string;
   agent?: string | null;
@@ -56,9 +57,11 @@ interface ChatStore {
   isStreaming: boolean;
 
   setMessages: (messages: ChatMessage[]) => void;
-  addMessage: (message: ChatMessage) => void;
+  addMessage: (message: Omit<ChatMessage, "id"> & { id?: string }) => string;
   appendContent: (content: string) => void;
   replaceLastContent: (content: string) => void;
+  updateLastMeta: (meta: Pick<ChatMessage, "agent" | "department" | "model">) => void;
+  dropLastIfEmptyAssistant: () => void;
   setConversationId: (id: string | undefined) => void;
   setTargetAgent: (agent: string | null) => void;
   setRoutingStage: (stage: RoutingStage) => void;
@@ -91,8 +94,11 @@ export const useChatStore = create<ChatStore>((set) => ({
   ...initialChatState,
 
   setMessages: (messages) => set({ messages }),
-  addMessage: (message) =>
-    set((s) => ({ messages: [...s.messages, message] })),
+  addMessage: (message) => {
+    const id = message.id ?? `m-${Math.random().toString(36).slice(2, 10)}`;
+    set((s) => ({ messages: [...s.messages, { ...message, id }] }));
+    return id;
+  },
   appendContent: (content) =>
     set((s) => {
       const msgs = [...s.messages];
@@ -110,6 +116,28 @@ export const useChatStore = create<ChatStore>((set) => ({
         msgs[msgs.length - 1] = { ...last, content };
       }
       return { messages: msgs };
+    }),
+  updateLastMeta: (meta) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = {
+          ...last,
+          agent: meta.agent ?? last.agent,
+          department: meta.department ?? last.department,
+          model: meta.model ?? last.model,
+        };
+      }
+      return { messages: msgs };
+    }),
+  dropLastIfEmptyAssistant: () =>
+    set((s) => {
+      const last = s.messages[s.messages.length - 1];
+      if (last && last.role === "assistant" && last.content === "") {
+        return { messages: s.messages.slice(0, -1) };
+      }
+      return {};
     }),
   addToolTrace: (t) =>
     set((s) => {

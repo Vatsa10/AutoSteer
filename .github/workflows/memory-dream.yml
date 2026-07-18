@@ -1,0 +1,32 @@
+name: Memory Dream (consolidation)
+
+# Free background "dreaming": pings the backend to consolidate raw facts into
+# insights. GitHub Actions scheduled runs are free. The web service may be asleep
+# on Render's free tier — the first ping wakes it, the job retries once.
+on:
+  schedule:
+    - cron: "*/30 * * * *" # every 30 minutes
+  workflow_dispatch: {}
+
+jobs:
+  dream:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger consolidation
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }} # e.g. https://autosteer.onrender.com
+          API_KEY: ${{ secrets.AUTOSTEER_API_KEY }} # optional; sent as X-API-Key if set
+        run: |
+          set -e
+          [ -z "$BACKEND_URL" ] && { echo "BACKEND_URL secret not set — skipping"; exit 0; }
+          auth=()
+          [ -n "$API_KEY" ] && auth=(-H "X-API-Key: $API_KEY")
+          for attempt in 1 2; do
+            code=$(curl -s -o /tmp/out.json -w "%{http_code}" -m 120 -X POST \
+              "${auth[@]}" "$BACKEND_URL/api/memory/dream" || echo "000")
+            echo "Attempt $attempt -> HTTP $code"; cat /tmp/out.json || true; echo
+            [ "$code" = "200" ] && exit 0
+            sleep 30 # give a sleeping free-tier instance time to wake
+          done
+          echo "Dream ping failed after retries" >&2
+          exit 1

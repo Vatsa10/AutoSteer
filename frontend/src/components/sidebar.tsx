@@ -15,6 +15,7 @@ import {
   LayoutTemplate,
   CheckSquare,
   FileText,
+  Brain,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
@@ -27,6 +28,7 @@ const navItems = [
   { href: "/agents", label: "Agents", icon: Users },
   { href: "/settings/approvals", label: "Approvals", icon: CheckSquare },
   { href: "/artifacts", label: "Artifacts", icon: FileText },
+  { href: "/memory", label: "Memory", icon: Brain },
   { href: "/conversations", label: "History", icon: History },
   { href: "/settings", label: "Settings", icon: Settings },
 ];

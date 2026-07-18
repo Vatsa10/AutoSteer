@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # LLM
     default_llm_provider: str = "openai"
     default_llm_model: str = "gpt-4o-mini"
+    # Cheap model for background memory consolidation ("dreaming").
+    # Falls back to default_llm_model when unset. Gemini Flash has a generous free tier.
+    background_llm_model: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 

@@ -43,6 +43,7 @@ from src.integrations.notion import notion_export
 from src.integrations.policy import policy_doc_generate
 from src.integrations.posthog import posthog_read
 from src.integrations.rag import semantic_search
+from src.integrations.reach import reach_rss_read, reach_web_read, reach_youtube_transcript
 from src.integrations.sandbox import code_sandbox_lite
 from src.integrations.search import web_search
 from src.integrations.sentry import sentry_read
@@ -487,6 +488,18 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
     registry.register("web_crawl", web_crawl, _schema(
         "web_crawl", "Crawl a website, extract text from pages and PDFs.",
         {"url": {"type": "string"}, "max_depth": {"type": "integer"}, "max_pages": {"type": "integer"}},
+    ))
+    registry.register("reach_web_read", reach_web_read, _schema(
+        "reach_web_read", "Read any web page as clean markdown via Jina Reader (free, no key).",
+        {"url": {"type": "string"}, "max_chars": {"type": "integer"}},
+    ))
+    registry.register("reach_youtube_transcript", reach_youtube_transcript, _schema(
+        "reach_youtube_transcript", "Fetch a YouTube video transcript by URL or ID.",
+        {"video": {"type": "string"}, "max_chars": {"type": "integer"}, "language": {"type": "string"}},
+    ))
+    registry.register("reach_rss_read", reach_rss_read, _schema(
+        "reach_rss_read", "Read recent items from an RSS/Atom feed.",
+        {"feed_url": {"type": "string"}, "max_items": {"type": "integer"}},
     ))
     registry.register("prompt_playground", _wrap_prompt_playground, _schema(
         "prompt_playground", "Save/list/run prompts.",

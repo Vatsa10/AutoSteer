@@ -205,6 +205,28 @@ export async function uploadMemoryDocument(file: File): Promise<{ ok: boolean; d
   return res.json();
 }
 
+// Memory insights (dream / knowledge catalog)
+export interface MemoryInsight {
+  id: string;
+  title: string;
+  body: string;
+  topics: string[];
+  connections: string[];
+  importance: number;
+  source_conversations: string[];
+  created_at: string | null;
+}
+
+export async function getMemoryInsights(): Promise<{ insights: MemoryInsight[] }> {
+  const res = await apiFetch("/api/memory/insights");
+  return res.json();
+}
+
+export async function runMemoryDream(): Promise<{ consolidated: number; insights_created: number; reason?: string }> {
+  const res = await apiFetch("/api/memory/dream", { method: "POST" });
+  return res.json();
+}
+
 // Status
 export interface SystemStatus {
   total_agents: number;
@@ -298,7 +320,7 @@ export interface WorkflowStepDef {
   tool?: string | null;
   description?: string;
   dependencies?: string[];
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 }
 
 export interface WorkflowDefinition {
