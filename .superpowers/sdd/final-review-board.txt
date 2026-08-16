@@ -1,0 +1,1980 @@
+### COMMITS
+2d8f747 feat(agent): add AgentBoard component and integrate agent node management in chat interface
+78b0751 @ fix(board): fallback response when multi-agent synthesis fails
+594234b feat(tests): add fake agents and test for multi-step event emission in orchestration
+c2cefcc feat(orchestrator): implement streaming decomposition and execution for multi-step tasks
+f49fabf fix(orchestrator): stop yielding in finally during DAG stream teardown
+ccf7de7 feat(board): streaming DAG executor with node_start/node_end events
+648574d feat(reach): register github/reddit/hn tools + web_researcher allowlist
+4f33cc4 @ fix(deps): pin openai>=3.1 and litellm>=1.83 to stop version drift
+bc7fed7 feat(reach): add server-safe github/reddit/hackernews read tools
+58eccd8 @ docs: add multi-agent board + reach tools plan (informed by deep-read workflow)
+45c7ec2 @ docs: add multi-agent board + reach tools spec
+0e84661 feat: add reach tools for web reading, YouTube transcripts, and RSS feeds
+607bd76 feat(report): add detailed reports for tasks C7 and C6, including implementation summaries and test results
+
+### STAT
+ .github/workflows/memory-dream.yml                 |  32 +
+ .superpowers/sdd/final-review-c.txt                | 908 +++++++++++++++++++++
+ .superpowers/sdd/fix-c-feature2-report.md          |  88 ++
+ .superpowers/sdd/fix-c7-report.md                  |  23 +
+ .superpowers/sdd/progress-c.md                     |  23 +
+ .superpowers/sdd/task-c1-diff.txt                  |  70 ++
+ .superpowers/sdd/task-c1-report.md                 |  23 +
+ .superpowers/sdd/task-c2-diff.txt                  |  60 ++
+ .superpowers/sdd/task-c2-report.md                 |  18 +
+ .superpowers/sdd/task-c3-report.md                 |  25 +
+ .superpowers/sdd/task-c4-diff.txt                  |  83 ++
+ .superpowers/sdd/task-c4-report.md                 |  62 ++
+ .superpowers/sdd/task-c5-diff.txt                  |  50 ++
+ .superpowers/sdd/task-c5-report.md                 |  57 ++
+ .superpowers/sdd/task-c6-report.md                 |  30 +
+ .superpowers/sdd/task-c7-diff.txt                  | 112 +++
+ .superpowers/sdd/task-c7-report.md                 |  32 +
+ .../versions/a1b2c3d4e5f6_memory_insights.py       |  38 +
+ backend/pyproject.toml                             |   6 +-
+ backend/render.yaml                                |  19 +-
+ .../data_analytics/web_researcher/agent.yaml       |   3 +
+ backend/src/api/routes/memory.py                   |  70 ++
+ backend/src/config.py                              |   3 +
+ backend/src/engine/dream.py                        | 169 ++++
+ backend/src/engine/orchestrator.py                 | 198 ++++-
+ backend/src/engine/tool_aliases.py                 |  22 +
+ backend/src/engine/tool_executor.py                |  28 +
+ backend/src/integrations/reach.py                  | 187 +++++
+ backend/src/models/__init__.py                     |   2 +
+ backend/src/models/memory_insight.py               |  32 +
+ backend/tests/test_dream_and_reach.py              |  49 ++
+ backend/tests/test_reach_tools.py                  |  69 ++
+ backend/tests/test_trace_events.py                 | 127 +++
+ .../2026-07-18-plan-multiagent-board-reach.md      | 716 ++++++++++++++++
+ .../2026-07-18-multiagent-board-reach-design.md    | 125 +++
+ frontend/src/app/(main)/memory/page.tsx            | 153 ++++
+ frontend/src/components/agent-board.tsx            |  34 +
+ frontend/src/components/chat-interface.tsx         | 136 ++-
+ frontend/src/components/sidebar.tsx                |   2 +
+ frontend/src/lib/api.ts                            |  24 +-
+ frontend/src/lib/store.ts                          |  79 +-
+ frontend/src/lib/websocket.ts                      |   2 +
+ 42 files changed, 3936 insertions(+), 53 deletions(-)
+
+### FULL DIFF
+diff --git a/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml b/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml
+index 72afdc6..b9a47f4 100644
+--- a/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml
++++ b/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml
+@@ -1,16 +1,19 @@
+ name: WebResearcherAgent
+ role: web_researcher
+ tools:
+   - ddg_search: Search the web via DuckDuckGo for relevant sources
+   - web_crawl: Crawl websites to extract full text content and PDFs
+   - url_fetch: Fetch and extract text from a single URL
+   - arxiv_search: Search academic papers on arXiv
+   - semantic_search: Search workspace documents (RAG)
++  - reach_github_read: Read public GitHub repos (metadata/readme/issues)
++  - reach_reddit_read: Read public subreddits or Reddit posts
++  - reach_hackernews_read: Search Hacker News stories
+ 
+ response_schema:
+   sections:
+     - type: key_takeaways
+       title: Key Takeaways
+       items: []
+     - type: detailed_findings
+       title: Detailed Findings
+diff --git a/backend/src/api/routes/memory.py b/backend/src/api/routes/memory.py
+index f754b2f..ac2b9ee 100644
+--- a/backend/src/api/routes/memory.py
++++ b/backend/src/api/routes/memory.py
+@@ -4,16 +4,17 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
+ from pydantic import BaseModel
+ from sqlalchemy import select, delete
+ from sqlalchemy.ext.asyncio import AsyncSession
+ from sqlalchemy.orm.attributes import flag_modified
+ 
+ from src.database import get_db
+ from src.models.shared_state import SharedState
+ from src.models.memory_fact import MemoryFact
++from src.models.memory_insight import MemoryInsight
+ 
+ router = APIRouter(tags=["memory"])
+ 
+ DOCS_KEY = "user:documents"
+ 
+ 
+ class FactBody(BaseModel):
+     fact_type: str = "preference"
+@@ -60,16 +61,85 @@ async def get_memory(
+         if row and row.value:
+             documents = row.value.get("documents", [])
+             summary = row.value.get("summary", "")
+     except Exception:
+         pass
+     return {"facts": facts, "documents": documents, "summary": summary}
+ 
+ 
++@router.get("/memory/insights")
++async def list_insights(
++    request: Request,
++    limit: int = Query(default=50, le=200),
++    session: AsyncSession = Depends(get_db),
++):
++    """Return consolidated insights (the knowledge catalog), most important first."""
++    r = await session.execute(
++        select(MemoryInsight)
++        .order_by(MemoryInsight.importance.desc(), MemoryInsight.created_at.desc())
++        .limit(limit)
++    )
++    return {
++        "insights": [
++            {
++                "id": i.id,
++                "title": i.title,
++                "body": i.body,
++                "topics": i.topics or [],
++                "connections": i.connections or [],
++                "importance": i.importance,
++                "source_conversations": i.source_conversations or [],
++                "created_at": i.created_at.isoformat() if i.created_at else None,
++            }
++            for i in r.scalars().all()
++        ]
++    }
++
++
++@router.post("/memory/dream")
++async def run_dream(
++    request: Request,
++    session: AsyncSession = Depends(get_db),
++):
++    """Trigger a memory consolidation ('dream') pass. Called by cron or manually."""
++    from src.config import get_settings
++    from src.engine.dream import consolidate
++
++    s = get_settings()
++    llm = getattr(request.app.state, "llm_provider", None)
++    if llm is None:
++        from src.engine.llm import LLMProvider
++        llm = LLMProvider(
++            default_model=s.background_llm_model or s.default_llm_model,
++            anthropic_api_key=s.anthropic_api_key,
++            openai_api_key=s.openai_api_key,
++        )
++    elif s.background_llm_model:
++        # Route this pass through the cheap background model without mutating the
++        # shared provider's default.
++        llm = _BoundModel(llm, s.background_llm_model)
++    try:
++        return await consolidate(session, llm)
++    except Exception as exc:
++        raise HTTPException(status_code=500, detail=f"Dream failed: {exc}") from exc
++
++
++class _BoundModel:
++    """Wrap an LLMProvider so complete() defaults to a specific (cheap) model."""
++
++    def __init__(self, llm, model: str):
++        self._llm = llm
++        self._model = model
++
++    async def complete(self, *args, **kwargs):
++        kwargs.setdefault("model", self._model)
++        return await self._llm.complete(*args, **kwargs)
++
++
+ @router.post("/memory/facts")
+ async def add_fact(
+     body: FactBody,
+     request: Request,
+     session: AsyncSession = Depends(get_db),
+ ):
+     import uuid
+     from datetime import datetime, timezone
+diff --git a/backend/src/config.py b/backend/src/config.py
+index 173397c..6c43462 100644
+--- a/backend/src/config.py
++++ b/backend/src/config.py
+@@ -45,16 +45,19 @@ class Settings(BaseSettings):
+             import re
+             host = self.upstash_redis_rest_url.replace("https://", "").replace("http://", "").rstrip("/")
+             return f"redis://default:{self.upstash_redis_rest_token}@{host}:6379"
+         return ""
+ 
+     # LLM
+     default_llm_provider: str = "openai"
+     default_llm_model: str = "gpt-4o-mini"
++    # Cheap model for background memory consolidation ("dreaming").
++    # Falls back to default_llm_model when unset. Gemini Flash has a generous free tier.
++    background_llm_model: str = ""
+     anthropic_api_key: str = ""
+     openai_api_key: str = ""
+ 
+     # Agent config
+     agents_dir: str = "src/agents/definitions"
+     max_concurrent_departments: int = 5
+     max_workflow_agents: int = 10
+     max_parallel: int = 3
+diff --git a/backend/src/engine/dream.py b/backend/src/engine/dream.py
+new file mode 100644
+index 0000000..c8255e8
+--- /dev/null
++++ b/backend/src/engine/dream.py
+@@ -0,0 +1,169 @@
++"""The 'dream' cycle — background memory consolidation.
++
++Inspired by GoogleCloudPlatform's always-on-memory-agent, adapted to AutoSteer's
++Neon/Postgres + LiteLLM stack (no Google ADK, no SQLite). Periodically the system
++reads raw facts accumulated since the last run and distills them into durable,
++connected insights (the knowledge catalog). Cheap model, runs off a cron ping.
++"""
++
++import json
++import uuid
++from datetime import datetime, timezone
++
++from sqlalchemy import select
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from src.models.memory_fact import MemoryFact
++from src.models.memory_insight import MemoryInsight
++from src.models.shared_state import SharedState
++
++_WATERMARK_KEY = "memory:dream_watermark"  # ISO timestamp of last consolidated fact
++
++_SYSTEM = (
++    "You are a memory consolidation engine. You merge raw facts into durable, "
++    "de-duplicated insights and surface connections between them. Return JSON only."
++)
++
++
++async def consolidate(session: AsyncSession, llm, max_facts: int = 60) -> dict:
++    """Run one consolidation pass. Returns a summary dict.
++
++    Reads facts created after the stored watermark, asks the LLM to distill them
++    into insights, persists new MemoryInsight rows, and advances the watermark.
++    Safe to call repeatedly (idempotent-ish via the watermark).
++    """
++    watermark = await _get_watermark(session)
++    q = select(MemoryFact)
++    if watermark:
++        q = q.where(MemoryFact.created_at > watermark)
++    q = q.order_by(MemoryFact.created_at.asc()).limit(max_facts)
++    facts = (await session.execute(q)).scalars().all()
++
++    if not facts:
++        return {"consolidated": 0, "insights_created": 0, "reason": "no new facts"}
++
++    existing_titles = await _recent_insight_titles(session)
++    payload = "\n".join(
++        f"- [{f.fact_type}] {f.key}: {f.value} (conv={f.conversation_id})" for f in facts
++    )
++    prompt = f"""Consolidate these raw memory facts into durable insights.
++
++Merge duplicates, connect related facts, and rate importance 1-5.
++Avoid repeating these existing insights: {existing_titles or 'none'}.
++
++Facts:
++{payload}
++
++Return JSON: {{"insights": [{{"title": "...", "body": "...", "topics": ["..."],
++"connections": ["related topic or title"], "importance": 1-5}}]}}
++Only include genuinely useful, non-trivial insights (max 8)."""
++
++    from src.engine.llm import LLMMessage
++
++    resp = await llm.complete(
++        messages=[LLMMessage(role="user", content=prompt)],
++        system_prompt=_SYSTEM,
++        temperature=0.2,
++        max_tokens=1200,
++        json_mode=True,
++    )
++    insights = _parse_insights(resp)
++
++    conv_ids = sorted({f.conversation_id for f in facts})
++    created = 0
++    for ins in insights[:8]:
++        title = str(ins.get("title", "")).strip()
++        body = str(ins.get("body", "")).strip()
++        if not title or not body:
++            continue
++        session.add(
++            MemoryInsight(
++                id=uuid.uuid4().hex[:16],
++                title=title[:255],
++                body=body,
++                topics=_as_list(ins.get("topics")),
++                connections=_as_list(ins.get("connections")),
++                importance=_clamp_importance(ins.get("importance")),
++                source_conversations=conv_ids,
++            )
++        )
++        created += 1
++
++    # Advance watermark to the newest fact we processed.
++    await _set_watermark(session, facts[-1].created_at)
++    await session.commit()
++    return {"consolidated": len(facts), "insights_created": created}
++
++
++def _parse_insights(resp) -> list[dict]:
++    data = getattr(resp, "structured", None)
++    if not isinstance(data, dict):
++        try:
++            data = json.loads(resp.content)
++        except (json.JSONDecodeError, TypeError):
++            return []
++    insights = data.get("insights", data if isinstance(data, list) else [])
++    return insights if isinstance(insights, list) else []
++
++
++def _as_list(v) -> list:
++    if isinstance(v, list):
++        return [str(x) for x in v]
++    if v:
++        return [str(v)]
++    return []
++
++
++def _clamp_importance(v) -> int:
++    try:
++        return max(1, min(5, int(v)))
++    except (TypeError, ValueError):
++        return 3
++
++
++async def _recent_insight_titles(session: AsyncSession, limit: int = 30) -> str:
++    r = await session.execute(
++        select(MemoryInsight.title).order_by(MemoryInsight.created_at.desc()).limit(limit)
++    )
++    return ", ".join(t for (t,) in r.all())
++
++
++async def _get_watermark(session: AsyncSession) -> datetime | None:
++    r = await session.execute(
++        select(SharedState).where(
++            SharedState.workspace_id == "default", SharedState.key == _WATERMARK_KEY
++        )
++    )
++    row = r.scalar_one_or_none()
++    if row and row.value and row.value.get("ts"):
++        try:
++            return datetime.fromisoformat(row.value["ts"])
++        except ValueError:
++            return None
++    return None
++
++
++async def _set_watermark(session: AsyncSession, ts: datetime) -> None:
++    r = await session.execute(
++        select(SharedState).where(
++            SharedState.workspace_id == "default", SharedState.key == _WATERMARK_KEY
++        )
++    )
++    row = r.scalar_one_or_none()
++    val = {"ts": ts.isoformat()}
++    if row:
++        row.value = val
++        from sqlalchemy.orm.attributes import flag_modified
++
++        flag_modified(row, "value")
++        row.updated_at = datetime.now(timezone.utc)
++    else:
++        session.add(
++            SharedState(
++                workspace_id="default",
++                key=_WATERMARK_KEY,
++                value=val,
++                owner="system",
++                updated_at=datetime.now(timezone.utc),
++            )
++        )
+diff --git a/backend/src/engine/orchestrator.py b/backend/src/engine/orchestrator.py
+index ed0437e..573de03 100644
+--- a/backend/src/engine/orchestrator.py
++++ b/backend/src/engine/orchestrator.py
+@@ -67,16 +67,26 @@ def build_step_event(step_id: str, status: str, label: str = "") -> dict:
+     return {"type": "step", "id": step_id, "status": status, "label": label}
+ 
+ 
+ def should_emit_final(streamed: str, display: str) -> bool:
+     """Emit a `final` replacement only when the synthesized answer differs from streamed tokens."""
+     return bool(display) and display.strip() != (streamed or "").strip()
+ 
+ 
++def build_node_start(node_id: str, agent: str, department: str, description: str) -> dict:
++    """Trace event: a DAG sub-agent panel has started."""
++    return {"type": "node_start", "id": node_id, "agent": agent, "department": department, "description": description}
++
++
++def build_node_end(node_id: str, agent: str, content: str, status: str, elapsed_ms: int) -> dict:
++    """Trace event: a DAG sub-agent panel finished (block-fill)."""
++    return {"type": "node_end", "id": node_id, "agent": agent, "content": (content or "")[:4000], "status": status, "elapsed_ms": elapsed_ms}
++
++
+ @dataclass
+ class Subtask:
+     id: str
+     agent: str
+     description: str
+     dependencies: list[str] = field(default_factory=list)
+     result: str = ""
+ 
+@@ -282,16 +292,77 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
+                     tid, result = item
+                     results[tid] = result
+                     task_map[tid].result = result
+                 elif isinstance(item, BaseException):
+                     print(f"[dag] subtask {level[0] if len(level)==1 else 'parallel'} failed: {item}")
+ 
+         return results
+ 
++    async def _execute_dag_stream(self, subtasks: list[Subtask], context: str, conversation_id: str, session):
++        """Streaming DAG: yields node_start/node_end per subtask, then a __results__ envelope."""
++        import time
++        task_map = {t.id: t for t in subtasks}
++        levels = self._topological_levels(subtasks)
++        results: dict[str, str] = {}
++
++        for level in levels:
++            async def run_one(tid: str):
++                t = task_map[tid]
++                dep_context = "\n".join(f"[Subtask {d} result]: {results.get(d, '')}" for d in t.dependencies)
++                full_ctx = f"{context}\n\n{dep_context}\n\nTask: {t.description}"
++                template = self.agents.get(t.agent)
++                _t0 = time.monotonic()
++                content, status = "", "ok"
++                if not template:
++                    return tid, f"Agent {t.agent} not available", "error", 0
++                agent = template.copy_for_request()
++                try:
++                    r = await agent.process(full_ctx)
++                    content = getattr(r, "content", str(r))
++                except Exception as exc:
++                    content, status = f"Error: {exc}", "error"
++                return tid, content, status, int((time.monotonic() - _t0) * 1000)
++
++            # Emit starts for the whole level, then complete as each finishes.
++            for tid in level:
++                t = task_map[tid]
++                yield build_node_start(tid, t.agent, getattr(t, "department", "") or "", t.description)
++
++            started = {tid: asyncio.ensure_future(run_one(tid)) for tid in level}
++            pending = set(started.values())
++            fut_to_tid = {f: tid for tid, f in started.items()}
++            try:
++                while pending:
++                    done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
++                    for f in done:
++                        tid = fut_to_tid[f]
++                        try:
++                            rtid, content, status, elapsed = f.result()
++                        except Exception as exc:
++                            rtid, content, status, elapsed = tid, f"Error: {exc}", "error", 0
++                        results[rtid] = content
++                        task_map[rtid].result = content
++                        yield build_node_end(rtid, task_map[rtid].agent, content, status, elapsed)
++            except Exception:
++                # A genuine error (NOT teardown/cancel — GeneratorExit/CancelledError are
++                # BaseException and won't be caught here): settle unfinished panels, then re-raise.
++                for tid in level:
++                    if tid not in results:
++                        results[tid] = "error"
++                        yield build_node_end(tid, task_map[tid].agent, "error", "error", 0)
++                raise
++            finally:
++                # Safe cleanup only — NEVER yield here (illegal during GeneratorExit).
++                # Cancel any still-pending sub-agent tasks so they don't leak after teardown.
++                for f in pending:
++                    f.cancel()
++
++        yield {"type": "__results__", "results": results}
++
+     async def _decompose_and_execute(
+         self, user_message: str, has_context: bool,
+         conversation_id: str, session
+     ) -> dict | None:
+         """LLM decomposes complex task into subtask DAG, executes, synthesizes.
+         Returns None for simple tasks (fall through to normal routing)."""
+         if not has_context and len(user_message.split()) < 8:
+             return None  # too short to be multi-step
+@@ -369,16 +440,122 @@ Available agents: {', '.join(list(self.agents.keys()))}"""
+                 "routed_to": "multi-agent",
+                 "agent": ",".join(t.agent for t in subtasks),
+                 "model": final.model,
+                 "usage": final.usage,
+             }
+         except Exception:
+             return None
+ 
++    async def _decompose_and_execute_stream(
++        self, user_message: str, has_context: bool,
++        conversation_id: str, session
++    ):
++        """Streaming variant of _decompose_and_execute: yields node_start/node_end events
++        as subtasks execute, then a terminal {"type": "decomp_result", ...} event.
++        Yields nothing (and returns) for simple tasks that don't need decomposition."""
++        if not has_context and len(user_message.split()) < 8:
++            return  # too short to be multi-step
++
++        # Classify: is this a multi-step task?
++        prompt = f"""Classify this user request. Is it a multi-step task needing multiple agents?
++
++User: "{user_message[:500]}"
++File context: {"yes" if has_context else "no"}
++
++Respond with JSON only:
++{{"multi_step": true/false, "subtasks": [{{"agent":"<role>","description":"<task>","dependencies":[]}}]}}
++
++Available agents: {', '.join(list(self.agents.keys()))}"""
++
++        try:
++            resp = await self.llm.complete(
++                messages=[LLMMessage(role="user", content=prompt)],
++                system_prompt="Task decomposition classifier. Return JSON only.",
++                temperature=0.0, max_tokens=300, model=ROUTER_MODEL,
++            )
++            plan = _json.loads(resp.content)
++            if not plan.get("multi_step") or not plan.get("subtasks"):
++                return
++        except Exception:
++            return
++
++        # Build Subtask DAG — normalize LLM dependency references to sub_N format
++        subtasks = []
++        for i, st in enumerate(plan["subtasks"]):
++            agent = st.get("agent", "")
++            if agent not in self.agents:
++                continue
++            raw_deps = st.get("dependencies", [])
++            normalized_deps = []
++            for d in raw_deps:
++                if isinstance(d, int):
++                    normalized_deps.append(f"sub_{d}")
++                elif isinstance(d, str) and d.isdigit():
++                    normalized_deps.append(f"sub_{int(d)}")
++                elif isinstance(d, str) and d.startswith("sub_"):
++                    normalized_deps.append(d)
++            subtasks.append(Subtask(
++                id=f"sub_{i}",
++                agent=agent,
++                description=st.get("description", ""),
++                dependencies=normalized_deps,
++            ))
++        if len(subtasks) < 2:
++            return
++
++        # Execute DAG (streaming) — re-yield node events, capture final results envelope
++        results: dict[str, str] = {}
++        async for ev in self._execute_dag_stream(subtasks, user_message, conversation_id, session):
++            if ev.get("type") == "__results__":
++                results = ev["results"]
++            else:
++                yield ev  # node_start / node_end → live board
++
++        # Synthesize
++        synthesis_prompt = (
++            f"User request: {user_message}\n\n"
++            + "\n\n".join(
++                f"Subtask {t.id} ({t.agent}): {t.description}\nResult: {t.result}"
++                for t in subtasks
++            )
++            + "\n\nSynthesize a coherent final response. Include any download links from results."
++        )
++        try:
++            final = await self.llm.complete(
++                messages=[LLMMessage(role="user", content=synthesis_prompt)],
++                system_prompt="Synthesize multi-agent results into a single coherent response.",
++                temperature=0.3, max_tokens=2048,
++            )
++            yield {
++                "type": "decomp_result",
++                "conversation_id": conversation_id,
++                "response": final.content,
++                "routed_to": "multi-agent",
++                "agent": ",".join(t.agent for t in subtasks),
++                "model": final.model,
++                "usage": final.usage,
++            }
++        except Exception:
++            # Synthesis failed. Do NOT return silently — the caller would then fall
++            # through to normal routing and emit a SECOND, unrelated response after the
++            # board already streamed. Emit a fallback assembled from the sub-agent results.
++            fallback = "\n\n".join(
++                f"**{t.agent}**: {t.result}" for t in subtasks if getattr(t, "result", None)
++            ) or "Multi-agent run completed, but synthesis failed. See the agent outputs above."
++            yield {
++                "type": "decomp_result",
++                "conversation_id": conversation_id,
++                "response": fallback,
++                "routed_to": "multi-agent",
++                "agent": ",".join(t.agent for t in subtasks),
++                "model": "none",
++                "usage": {},
++            }
++
+     async def _route_department(self, user_message: str) -> RoutingResult | None:
+         """Route to department: regex first, then LLM fallback, then direct answer."""
+         regex_result = self.master_router.route(user_message)
+         if regex_result is not None and regex_result.confidence >= 0.5:
+             return regex_result
+ 
+         dept_name = await self._llm_classify_department(user_message)
+         if dept_name:
+@@ -1038,26 +1215,31 @@ User request: {user_message}"""
+                     agent_role = agent_result.target
+                 yield {"type": "routing", "stage": "agent", "department": department, "agent": agent_role}
+ 
+         # Dynamic task decomposition (ponytail: skip for simple queries, 90%+ of messages)
+         _multi_step_markers = ["first", "then", "after that", "next", "step", "and also",
+                                "also ", "research and", "compare and", "analyze and",
+                                "1.", "2.", "3.", "- ", "* ", "•"]
+         looks_multi_step = any(m in user_message.lower() for m in _multi_step_markers)
+-        decomp = None
+         if looks_multi_step or len(user_message.split()) > 50:
+-            decomp = await self._decompose_and_execute(
++            decomp_final = None
++            async for ev in self._decompose_and_execute_stream(
+                 effective_message, bool(file_context_parts), conversation_id, session
+-            )
+-        if decomp:
+-            yield {"type": "token", "content": decomp["response"]}
+-            yield {"type": "metadata", "conversation_id": conversation_id, "agent": decomp.get("agent"), "department": decomp.get("routed_to"), "model": decomp.get("model"), "usage": decomp.get("usage")}
+-            yield {"type": "done"}
+-            return
++            ):
++                if ev.get("type") == "decomp_result":
++                    decomp_final = ev
++                else:
++                    yield ev  # node_start / node_end → live board
++            if decomp_final is not None:
++                yield {"type": "token", "content": decomp_final["response"]}
++                yield {"type": "metadata", "conversation_id": conversation_id, "agent": decomp_final.get("agent"), "department": decomp_final.get("routed_to"), "model": decomp_final.get("model"), "usage": decomp_final.get("usage")}
++                yield {"type": "done"}
++                return
++            # else: not a multi-step task → fall through to normal routing below
+ 
+         # LLM-based agent coordination
+         stream_intent = await self._classify_intent(user_message, bool(file_context_parts))
+         if stream_intent and stream_intent.get("action") == "create_document" and file_context_parts:
+             if stream_intent.get("needs_research") and self.agents.get("web_researcher"):
+                 try:
+                     sq = stream_intent.get("search_query", user_message)
+                     wr = self.agents["web_researcher"].copy_for_request()
+diff --git a/backend/src/engine/tool_aliases.py b/backend/src/engine/tool_aliases.py
+index 40246ed..5f37585 100644
+--- a/backend/src/engine/tool_aliases.py
++++ b/backend/src/engine/tool_aliases.py
+@@ -91,16 +91,32 @@ TOOL_ALIASES: dict[str, str] = {
+     "user_research": "url_fetch",
+     "arxiv_search": "arxiv_search",
+     "web_search": "web_search",
+     "url_fetch": "url_fetch",
+     "ddg_search": "ddg_search",
+     "web_crawl": "web_crawl",
+     "web_scraper": "web_crawl",
+     "site_crawler": "web_crawl",
++    "reach_web_read": "reach_web_read",
++    "web_reader": "reach_web_read",
++    "page_reader": "reach_web_read",
++    "reach_youtube_transcript": "reach_youtube_transcript",
++    "youtube_transcript": "reach_youtube_transcript",
++    "video_transcript": "reach_youtube_transcript",
++    "reach_rss_read": "reach_rss_read",
++    "rss_reader": "reach_rss_read",
++    "news_feed": "reach_rss_read",
++    "reach_github_read": "reach_github_read",
++    "github_read": "reach_github_read",
++    "reach_reddit_read": "reach_reddit_read",
++    "reddit_read": "reach_reddit_read",
++    "reach_hackernews_read": "reach_hackernews_read",
++    "hackernews_read": "reach_hackernews_read",
++    "hn_search": "reach_hackernews_read",
+     "notion_export": "notion_export",
+     "gdocs_export": "gdocs_export",
+     "slack_post": "slack_post",
+     "slack_read": "slack_read",
+     "github_read": "github_read",
+     "email_draft": "email_draft",
+     "email_send": "email_send",
+     "file_upload_read": "file_upload_read",
+@@ -180,16 +196,22 @@ TOOL_CATALOG: dict[str, dict] = {
+     "intercom_read": {"tier": ToolTier.LIVE, "provider": "intercom", "description": "Read Intercom conversations"},
+     "zendesk_read": {"tier": ToolTier.LIVE, "provider": "zendesk", "description": "Read Zendesk tickets"},
+     "intercom_reply_draft": {"tier": ToolTier.LIVE, "provider": "intercom", "description": "Draft Intercom support replies"},
+     "sentry_read": {"tier": ToolTier.LIVE, "provider": "sentry", "description": "Read Sentry error issues"},
+     "email_send": {"tier": ToolTier.BETA, "provider": "resend", "description": "Send email after explicit user approval"},
+     # Phase D — AI ops
+     "ddg_search": {"tier": ToolTier.LIVE, "provider": None, "description": "Search the web via DuckDuckGo (no API key required)"},
+     "web_crawl": {"tier": ToolTier.LIVE, "provider": None, "description": "Crawl websites, extract text from pages and PDFs"},
++    "reach_web_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Read any page as markdown via Jina Reader (free)"},
++    "reach_youtube_transcript": {"tier": ToolTier.LIVE, "provider": None, "description": "Fetch YouTube video transcripts (free)"},
++    "reach_rss_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Read RSS/Atom feeds (free)"},
++    "reach_github_read": {"tier": ToolTier.LIVE, "provider": "github", "description": "Read public GitHub repos"},
++    "reach_reddit_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Read public subreddits/posts"},
++    "reach_hackernews_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Search Hacker News"},
+     "arxiv_search": {"tier": ToolTier.LIVE, "provider": None, "description": "Search arXiv papers"},
+     "prompt_playground": {"tier": ToolTier.LIVE, "provider": None, "description": "Save/run/compare prompts"},
+     "eval_runner": {"tier": ToolTier.LIVE, "provider": None, "description": "Batch eval via LiteLLM"},
+     "model_compare": {"tier": ToolTier.LIVE, "provider": None, "description": "Side-by-side model comparison"},
+     "token_cost_estimate": {"tier": ToolTier.LIVE, "provider": None, "description": "Estimate cost from token counts"},
+     "code_sandbox_lite": {"tier": ToolTier.BETA, "provider": "e2b", "description": "Restricted Python code execution"},
+     "wandb_read": {"tier": ToolTier.BETA, "provider": "wandb", "description": "Read W&B experiment runs"},
+     # Phase E — Knowledge & hosted
+diff --git a/backend/src/engine/tool_executor.py b/backend/src/engine/tool_executor.py
+index 6dee105..9f02008 100644
+--- a/backend/src/engine/tool_executor.py
++++ b/backend/src/engine/tool_executor.py
+@@ -38,16 +38,20 @@ from src.integrations.hubspot import hubspot_note, hubspot_read
+ from src.integrations.intercom import intercom_read, intercom_reply_draft
+ from src.integrations.lighthouse import lighthouse_audit
+ from src.integrations.linear import linear_create, linear_read
+ from src.integrations.local_llm import local_complete
+ from src.integrations.notion import notion_export
+ from src.integrations.policy import policy_doc_generate
+ from src.integrations.posthog import posthog_read
+ from src.integrations.rag import semantic_search
++from src.integrations.reach import (
++    reach_rss_read, reach_web_read, reach_youtube_transcript,
++    reach_github_read, reach_reddit_read, reach_hackernews_read,
++)
+ from src.integrations.sandbox import code_sandbox_lite
+ from src.integrations.search import web_search
+ from src.integrations.sentry import sentry_read
+ from src.integrations.slack import slack_post, slack_read
+ from src.integrations.stripe_metrics import stripe_metrics_read
+ from src.integrations.tts import speak_text
+ from src.integrations.typeform import typeform_create
+ from src.integrations.url_fetch import url_fetch
+@@ -483,16 +487,40 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
+     registry.register("ddg_search", ddg_search, _schema(
+         "ddg_search", "Search the web via DuckDuckGo. No API key needed.",
+         {"query": {"type": "string"}, "max_results": {"type": "integer"}},
+     ))
+     registry.register("web_crawl", web_crawl, _schema(
+         "web_crawl", "Crawl a website, extract text from pages and PDFs.",
+         {"url": {"type": "string"}, "max_depth": {"type": "integer"}, "max_pages": {"type": "integer"}},
+     ))
++    registry.register("reach_web_read", reach_web_read, _schema(
++        "reach_web_read", "Read any web page as clean markdown via Jina Reader (free, no key).",
++        {"url": {"type": "string"}, "max_chars": {"type": "integer"}},
++    ))
++    registry.register("reach_youtube_transcript", reach_youtube_transcript, _schema(
++        "reach_youtube_transcript", "Fetch a YouTube video transcript by URL or ID.",
++        {"video": {"type": "string"}, "max_chars": {"type": "integer"}, "language": {"type": "string"}},
++    ))
++    registry.register("reach_rss_read", reach_rss_read, _schema(
++        "reach_rss_read", "Read recent items from an RSS/Atom feed.",
++        {"feed_url": {"type": "string"}, "max_items": {"type": "integer"}},
++    ))
++    registry.register("reach_github_read", reach_github_read, _schema(
++        "reach_github_read", "Read a public GitHub repo (metadata/readme/issues).",
++        {"target": {"type": "string"}, "action": {"type": "string"}, "max_chars": {"type": "integer"}},
++    ))
++    registry.register("reach_reddit_read", reach_reddit_read, _schema(
++        "reach_reddit_read", "Read a public subreddit or Reddit post (no login).",
++        {"target": {"type": "string"}, "sort": {"type": "string"}, "limit": {"type": "integer"}},
++    ))
++    registry.register("reach_hackernews_read", reach_hackernews_read, _schema(
++        "reach_hackernews_read", "Search Hacker News stories via the public Algolia API.",
++        {"query": {"type": "string"}, "kind": {"type": "string"}, "limit": {"type": "integer"}},
++    ))
+     registry.register("prompt_playground", _wrap_prompt_playground, _schema(
+         "prompt_playground", "Save/list/run prompts.",
+         {"action": {"type": "string"}, "name": {"type": "string"}, "prompt": {"type": "string"}, "model": {"type": "string"}},
+     ))
+     registry.register("eval_runner", eval_runner, _schema(
+         "eval_runner", "Run batch eval across models.",
+         {"prompts": {"type": "array"}, "models": {"type": "array"}, "expected_contains": {"type": "array"}},
+     ))
+diff --git a/backend/src/integrations/reach.py b/backend/src/integrations/reach.py
+new file mode 100644
+index 0000000..2ae7ddb
+--- /dev/null
++++ b/backend/src/integrations/reach.py
+@@ -0,0 +1,187 @@
++"""Agent-Reach inspired free internet tools: Jina Reader, YouTube transcripts, RSS.
++
++Zero-config, no API keys. Cookie-gated channels (Twitter/Reddit/XHS) intentionally
++excluded — ban risk on servers.
++"""
++
++import json
++
++import httpx
++
++try:
++    import feedparser
++except ImportError:
++    feedparser = None  # type: ignore[assignment]
++
++try:
++    from youtube_transcript_api import YouTubeTranscriptApi
++except ImportError:
++    YouTubeTranscriptApi = None  # type: ignore[assignment,misc]
++
++_UA = {"User-Agent": "AutoSteer/0.1 (+https://github.com/AutoSteer)"}
++
++
++async def reach_web_read(url: str, max_chars: int = 12000) -> str:
++    """Read any web page as clean markdown via Jina Reader (r.jina.ai, free)."""
++    if not url.startswith(("http://", "https://")):
++        url = f"https://{url}"
++    async with httpx.AsyncClient(timeout=45.0, follow_redirects=True, headers=_UA) as client:
++        resp = await client.get(f"https://r.jina.ai/{url}")
++        resp.raise_for_status()
++        text = resp.text
++    if len(text) > max_chars:
++        text = text[:max_chars] + "\n...[truncated]"
++    return json.dumps({"url": url, "markdown": text, "char_count": len(text)}, indent=2)
++
++
++async def reach_youtube_transcript(video: str, max_chars: int = 12000, language: str = "en") -> str:
++    """Fetch a YouTube video transcript. Accepts URL or video ID."""
++    if YouTubeTranscriptApi is None:
++        return json.dumps({"error": "youtube-transcript-api not installed"})
++    video_id = _extract_video_id(video)
++    if not video_id:
++        return json.dumps({"error": f"Could not parse video id from {video!r}"})
++    import asyncio
++
++    def _fetch() -> str:
++        transcript = YouTubeTranscriptApi().fetch(video_id, languages=[language, "en"])
++        return " ".join(snippet.text for snippet in transcript)
++
++    try:
++        text = await asyncio.to_thread(_fetch)
++    except Exception as exc:  # library raises many transcript-specific errors
++        return json.dumps({"error": f"Transcript unavailable: {exc}", "video_id": video_id})
++    if len(text) > max_chars:
++        text = text[:max_chars] + "\n...[truncated]"
++    return json.dumps({"video_id": video_id, "transcript": text, "char_count": len(text)}, indent=2)
++
++
++async def reach_rss_read(feed_url: str, max_items: int = 10) -> str:
++    """Read an RSS/Atom feed and return recent items."""
++    if feedparser is None:
++        return json.dumps({"error": "feedparser not installed"})
++    if not feed_url.startswith(("http://", "https://")):
++        feed_url = f"https://{feed_url}"
++    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=_UA) as client:
++        resp = await client.get(feed_url)
++        resp.raise_for_status()
++        raw = resp.content
++    parsed = feedparser.parse(raw)
++    items = [
++        {
++            "title": e.get("title", ""),
++            "link": e.get("link", ""),
++            "published": e.get("published", e.get("updated", "")),
++            "summary": _strip_html(e.get("summary", ""))[:500],
++        }
++        for e in parsed.entries[:max_items]
++    ]
++    return json.dumps(
++        {"feed": parsed.feed.get("title", feed_url), "items": items, "count": len(items)},
++        indent=2,
++    )
++
++
++def _extract_video_id(video: str) -> str:
++    import re
++
++    if re.fullmatch(r"[\w-]{11}", video):
++        return video
++    m = re.search(r"(?:v=|youtu\.be/|shorts/|embed/)([\w-]{11})", video)
++    return m.group(1) if m else ""
++
++
++def _strip_html(text: str) -> str:
++    import re
++
++    return " ".join(re.sub(r"<[^>]+>", " ", text).split())
++
++
++async def reach_github_read(target: str, action: str = "repo", max_chars: int = 10000, session=None, workspace_id: str = "default") -> str:
++    """Read a public GitHub repo: action=repo|readme|issues. target='owner/repo'."""
++    import base64
++    headers = dict(_UA)
++    headers["Accept"] = "application/vnd.github+json"
++    try:
++        from src.integrations.credentials import get_credential
++        tok = await get_credential("github", session, workspace_id) if session is not None else None
++        if tok:
++            headers["Authorization"] = f"Bearer {tok}"
++    except Exception:
++        pass
++    owner_repo = target.strip().strip("/")
++    base = f"https://api.github.com/repos/{owner_repo}"
++    try:
++        async with httpx.AsyncClient(timeout=30.0, headers=headers, follow_redirects=True) as client:
++            if action == "readme":
++                r = await client.get(f"{base}/readme")
++                if r.status_code >= 400:
++                    return json.dumps({"error": f"GitHub {r.status_code}", "target": owner_repo})
++                data = r.json()
++                text = base64.b64decode(data.get("content", "")).decode("utf-8", "replace")
++                return json.dumps({"target": owner_repo, "readme": text[:max_chars]}, indent=2)
++            if action == "issues":
++                r = await client.get(f"{base}/issues", params={"state": "open", "per_page": 15})
++                if r.status_code >= 400:
++                    return json.dumps({"error": f"GitHub {r.status_code}", "target": owner_repo})
++                items = [{"number": i["number"], "title": i["title"], "state": i["state"], "url": i["html_url"]}
++                         for i in r.json() if "pull_request" not in i]
++                return json.dumps({"target": owner_repo, "count": len(items), "issues": items}, indent=2)
++            r = await client.get(base)
++            if r.status_code >= 400:
++                return json.dumps({"error": f"GitHub {r.status_code} (rate limit? set GITHUB_TOKEN)", "target": owner_repo})
++            d = r.json()
++            return json.dumps({
++                "full_name": d.get("full_name"), "description": d.get("description"),
++                "stars": d.get("stargazers_count"), "forks": d.get("forks_count"),
++                "language": d.get("language"), "open_issues": d.get("open_issues_count"),
++                "url": d.get("html_url"),
++            }, indent=2)
++    except Exception as exc:
++        return json.dumps({"error": f"GitHub read failed: {exc}", "target": owner_repo})
++
++
++async def reach_reddit_read(target: str, sort: str = "hot", limit: int = 10, max_chars: int = 10000) -> str:
++    """Read a public subreddit or post via reddit .json (no login). target=subreddit or permalink."""
++    t = target.strip()
++    if t.startswith("http"):
++        url = t.rstrip("/") + "/.json"
++    elif t.startswith("/r/") or t.startswith("r/"):
++        url = f"https://www.reddit.com/{t.lstrip('/')}/{sort}.json"
++    else:
++        url = f"https://www.reddit.com/r/{t}/{sort}.json"
++    try:
++        async with httpx.AsyncClient(timeout=30.0, headers=_UA, follow_redirects=True) as client:
++            r = await client.get(url, params={"limit": min(limit, 25)})
++            if r.status_code == 429:
++                return json.dumps({"error": "Reddit rate-limited (429). Try again later.", "target": t})
++            if r.status_code >= 400:
++                return json.dumps({"error": f"Reddit {r.status_code}", "target": t})
++            data = r.json()
++        listing = data["data"]["children"] if isinstance(data, dict) else data[0]["data"]["children"]
++        items = []
++        for c in listing[:limit]:
++            d = c.get("data", {})
++            items.append({"title": d.get("title"), "url": d.get("url"), "score": d.get("score"),
++                          "permalink": d.get("permalink"), "text": (d.get("selftext") or "")[:800]})
++        return json.dumps({"target": t, "count": len(items), "items": items}, indent=2)[:max_chars + 500]
++    except Exception as exc:
++        return json.dumps({"error": f"Reddit read failed: {exc}", "target": t})
++
++
++async def reach_hackernews_read(query: str, kind: str = "search", limit: int = 10, max_chars: int = 8000) -> str:
++    """Search Hacker News via the public Algolia API. kind=search|search_by_date."""
++    endpoint = "search_by_date" if kind == "search_by_date" else "search"
++    try:
++        async with httpx.AsyncClient(timeout=30.0, headers=_UA) as client:
++            r = await client.get(f"https://hn.algolia.com/api/v1/{endpoint}",
++                                  params={"query": query, "tags": "story", "hitsPerPage": min(limit, 30)})
++            if r.status_code >= 400:
++                return json.dumps({"error": f"HN {r.status_code}", "query": query})
++            hits = r.json().get("hits", [])
++        items = [{"title": h.get("title"), "url": h.get("url"), "points": h.get("points"),
++                  "comments": h.get("num_comments"), "hn_url": f"https://news.ycombinator.com/item?id={h.get('objectID')}"}
++                 for h in hits[:limit]]
++        return json.dumps({"query": query, "count": len(items), "items": items}, indent=2)[:max_chars + 500]
++    except Exception as exc:
++        return json.dumps({"error": f"HN read failed: {exc}", "query": query})
+diff --git a/backend/src/models/__init__.py b/backend/src/models/__init__.py
+index aed5840..5a8cc3b 100644
+--- a/backend/src/models/__init__.py
++++ b/backend/src/models/__init__.py
+@@ -3,31 +3,33 @@ from .approval import ApprovalRequest
+ from .artifact import Artifact
+ from .base import Base
+ from .conversation import Conversation
+ from .user import User
+ from .document_chunk import DocumentChunk
+ from .integration_connection import IntegrationConnection
+ from .memory_embedding import MemoryEmbedding
+ from .memory_fact import MemoryFact
++from .memory_insight import MemoryInsight
+ from .message import Message, MessageType, Priority
+ from .shared_state import SharedState
+ from .task import Task, TaskStatus
+ from .workflow import Workflow, WorkflowStatus
+ 
+ __all__ = [
+     "ApprovalRequest",
+     "Agent",
+     "Artifact",
+     "Base",
+     "Conversation",
+     "DocumentChunk",
+     "IntegrationConnection",
+     "MemoryEmbedding",
+     "MemoryFact",
++    "MemoryInsight",
+     "Message",
+     "MessageType",
+     "Priority",
+     "SharedState",
+     "Task",
+     "TaskStatus",
+     "Workflow",
+     "WorkflowStatus",
+diff --git a/backend/src/models/memory_insight.py b/backend/src/models/memory_insight.py
+new file mode 100644
+index 0000000..bb3fbd3
+--- /dev/null
++++ b/backend/src/models/memory_insight.py
+@@ -0,0 +1,32 @@
++"""Consolidated cross-conversation insights — the output of the 'dream' cycle.
++
++Doubles as the queryable knowledge catalog: each row is a durable, structured
++piece of knowledge the system has distilled from raw facts and conversations.
++"""
++
++from datetime import datetime, timezone
++
++from sqlalchemy import JSON, DateTime, Integer, String, Text
++from sqlalchemy.orm import Mapped, mapped_column
++
++from .base import Base
++
++
++class MemoryInsight(Base):
++    __tablename__ = "memory_insights"
++
++    id: Mapped[str] = mapped_column(String(64), primary_key=True)
++    title: Mapped[str] = mapped_column(String(255))
++    body: Mapped[str] = mapped_column(Text, nullable=False)
++    # Topic/entity tags for retrieval, e.g. ["deployment", "render"].
++    topics: Mapped[list] = mapped_column(JSON, default=list)
++    # Related insight ids or fact keys this connects to (the "connections" graph).
++    connections: Mapped[list] = mapped_column(JSON, default=list)
++    importance: Mapped[int] = mapped_column(Integer, default=3)  # 1 (trivial) .. 5 (critical)
++    source_conversations: Mapped[list] = mapped_column(JSON, default=list)
++    created_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
++    )
++    updated_at: Mapped[datetime] = mapped_column(
++        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
++    )
+diff --git a/frontend/src/app/(main)/memory/page.tsx b/frontend/src/app/(main)/memory/page.tsx
+new file mode 100644
+index 0000000..63eeb57
+--- /dev/null
++++ b/frontend/src/app/(main)/memory/page.tsx
+@@ -0,0 +1,153 @@
++"use client";
++
++import { useMemo, useState } from "react";
++import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
++import { Brain, Sparkles, Loader2, Link2, Search } from "lucide-react";
++import { getMemory, getMemoryInsights, runMemoryDream } from "@/lib/api";
++import { useToastStore } from "@/lib/store";
++
++const IMPORTANCE_COLOR: Record<number, string> = {
++  5: "bg-red-50 text-red-700 border-red-200",
++  4: "bg-orange-50 text-orange-700 border-orange-200",
++  3: "bg-blue-50 text-blue-700 border-blue-200",
++  2: "bg-slate-50 text-slate-600 border-slate-200",
++  1: "bg-slate-50 text-slate-400 border-slate-200",
++};
++
++export default function MemoryBrainPage() {
++  const addToast = useToastStore((s) => s.addToast);
++  const queryClient = useQueryClient();
++  const [search, setSearch] = useState("");
++
++  const insightsQuery = useQuery({ queryKey: ["memory-insights"], queryFn: getMemoryInsights });
++  const memoryQuery = useQuery({ queryKey: ["memory"], queryFn: getMemory });
++
++  const dream = useMutation({
++    mutationFn: runMemoryDream,
++    onSuccess: (r) => {
++      addToast(
++        r.insights_created > 0
++          ? `Dreamed up ${r.insights_created} new insight(s) from ${r.consolidated} facts.`
++          : r.reason || "Nothing new to consolidate.",
++        r.insights_created > 0 ? "success" : "info",
++      );
++      queryClient.invalidateQueries({ queryKey: ["memory-insights"] });
++    },
++    onError: (e: Error) => addToast(e.message, "error"),
++  });
++
++  const facts = memoryQuery.data?.facts ?? [];
++  const insightsData = insightsQuery.data?.insights;
++
++  const filteredInsights = useMemo(() => {
++    const insights = insightsData ?? [];
++    const q = search.trim().toLowerCase();
++    if (!q) return insights;
++    return insights.filter(
++      (i) =>
++        i.title.toLowerCase().includes(q) ||
++        i.body.toLowerCase().includes(q) ||
++        i.topics.some((t) => t.toLowerCase().includes(q)),
++    );
++  }, [insightsData, search]);
++
++  return (
++    <div className="h-full overflow-y-auto">
++      <div className="max-w-4xl mx-auto px-6 py-8 space-y-8">
++        {/* Header */}
++        <div className="flex items-start justify-between gap-4">
++          <div className="flex items-center gap-3">
++            <div className="w-11 h-11 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center">
++              <Brain className="w-6 h-6 text-blue-600" />
++            </div>
++            <div>
++              <h1 className="text-xl font-semibold text-slate-900">Memory</h1>
++              <p className="text-sm text-slate-500">
++                A living knowledge catalog. Facts are distilled into connected insights while you&apos;re away.
++              </p>
++            </div>
++          </div>
++          <button
++            onClick={() => dream.mutate()}
++            disabled={dream.isPending}
++            className="shrink-0 inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm font-medium rounded-xl px-4 py-2.5 transition-colors"
++          >
++            {dream.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
++            {dream.isPending ? "Dreaming…" : "Dream now"}
++          </button>
++        </div>
++
++        {/* Search */}
++        <div className="relative">
++          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
++          <input
++            value={search}
++            onChange={(e) => setSearch(e.target.value)}
++            placeholder="Search insights & topics…"
++            className="w-full bg-white border border-slate-300 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-300"
++          />
++        </div>
++
++        {/* Insights (knowledge catalog) */}
++        <section className="space-y-3">
++          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
++            Insights ({filteredInsights.length})
++          </h2>
++          {insightsQuery.isLoading ? (
++            <div className="flex justify-center py-10"><Loader2 className="w-5 h-5 text-blue-600 animate-spin" /></div>
++          ) : filteredInsights.length === 0 ? (
++            <div className="text-center py-12 border border-dashed border-slate-200 rounded-2xl">
++              <Brain className="w-8 h-8 text-slate-300 mx-auto mb-3" />
++              <p className="text-sm text-slate-500">No insights yet.</p>
++              <p className="text-xs text-slate-400 mt-1">Chat a bit, then hit &quot;Dream now&quot; to consolidate what was learned.</p>
++            </div>
++          ) : (
++            filteredInsights.map((i) => (
++              <div key={i.id} className="bg-white border border-slate-200 rounded-2xl px-5 py-4 hover:border-blue-300 transition-colors">
++                <div className="flex items-start justify-between gap-3">
++                  <h3 className="text-sm font-semibold text-slate-900">{i.title}</h3>
++                  <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${IMPORTANCE_COLOR[i.importance] ?? IMPORTANCE_COLOR[3]}`}>
++                    P{i.importance}
++                  </span>
++                </div>
++                <p className="text-sm text-slate-600 mt-1.5 leading-relaxed">{i.body}</p>
++                {(i.topics.length > 0 || i.connections.length > 0) && (
++                  <div className="flex flex-wrap items-center gap-1.5 mt-3">
++                    {i.topics.map((t) => (
++                      <span key={t} className="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200">{t}</span>
++                    ))}
++                    {i.connections.map((c) => (
++                      <span key={c} className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-blue-50 text-blue-600 border border-blue-200">
++                        <Link2 className="w-2.5 h-2.5" />{c}
++                      </span>
++                    ))}
++                  </div>
++                )}
++              </div>
++            ))
++          )}
++        </section>
++
++        {/* Raw facts */}
++        <section className="space-y-3">
++          <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
++            Raw facts ({facts.length})
++          </h2>
++          {facts.length === 0 ? (
++            <p className="text-sm text-slate-400">No facts captured yet.</p>
++          ) : (
++            <div className="grid gap-1.5">
++              {facts.map((f) => (
++                <div key={f.id} className="flex items-baseline gap-2 text-sm bg-white border border-slate-200 rounded-lg px-3 py-2">
++                  <span className="text-[10px] uppercase tracking-wider text-slate-400 shrink-0">{f.fact_type}</span>
++                  <span className="font-medium text-slate-700">{f.key}</span>
++                  <span className="text-slate-500 truncate">{f.value}</span>
++                </div>
++              ))}
++            </div>
++          )}
++        </section>
++      </div>
++    </div>
++  );
++}
+diff --git a/frontend/src/components/agent-board.tsx b/frontend/src/components/agent-board.tsx
+new file mode 100644
+index 0000000..a4ac8b7
+--- /dev/null
++++ b/frontend/src/components/agent-board.tsx
+@@ -0,0 +1,34 @@
++"use client";
++
++import ReactMarkdown from "react-markdown";
++import { Loader2, Check, AlertTriangle } from "lucide-react";
++import type { AgentNode } from "@/lib/store";
++
++export function AgentBoard({ nodes }: { nodes?: AgentNode[] }) {
++  if (!nodes || nodes.length === 0) return null;
++  return (
++    <div className="mb-3 grid grid-cols-1 md:grid-cols-2 gap-2">
++      {nodes.map((n) => (
++        <div key={n.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
++          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-100 bg-slate-50">
++            {n.status === "running" ? <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
++              : n.status === "error" ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
++              : <Check className="w-3.5 h-3.5 text-green-600" />}
++            <span className="text-xs font-medium text-slate-700 truncate">{n.agent}</span>
++            {n.department && <span className="text-[10px] text-slate-400">{n.department}</span>}
++            {typeof n.elapsed_ms === "number" && n.status !== "running" && (
++              <span className="ml-auto text-[10px] text-slate-400">{(n.elapsed_ms / 1000).toFixed(1)}s</span>
++            )}
++          </div>
++          <div className="px-3 py-2 text-xs text-slate-600 max-h-48 overflow-auto">
++            {n.status === "running" ? (
++              <span className="text-slate-400 italic">{n.description || "working…"}</span>
++            ) : (
++              <div className="prose prose-sm max-w-none"><ReactMarkdown>{n.content || ""}</ReactMarkdown></div>
++            )}
++          </div>
++        </div>
++      ))}
++    </div>
++  );
++}
+diff --git a/frontend/src/components/chat-interface.tsx b/frontend/src/components/chat-interface.tsx
+index e6195f7..884c29c 100644
+--- a/frontend/src/components/chat-interface.tsx
++++ b/frontend/src/components/chat-interface.tsx
+@@ -1,16 +1,17 @@
+ "use client";
+ 
+ import { useState, useRef, useEffect, useCallback } from "react";
+-import { Send, Network, Loader2, Paperclip, X, FileText, Image } from "lucide-react";
++import { Send, Network, Loader2, Paperclip, X, FileText, Image as ImageIcon } from "lucide-react";
+ import ReactMarkdown from "react-markdown";
+ import { useQueryClient } from "@tanstack/react-query";
+ import { RoutingPath } from "@/components/routing-path";
+ import { ChatTrace } from "@/components/chat-trace";
++import { AgentBoard } from "@/components/agent-board";
+ import { AgentSelector } from "@/components/agent-selector";
+ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store";
+ import { useConversationMessages, useSendMessage } from "@/lib/hooks";
+ import { useToastStore } from "@/lib/store";
+ import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
+ import { resolveApproval } from "@/lib/api";
+ import { Onboarding } from "@/components/onboarding";
+ 
+@@ -24,74 +25,98 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const queryClient = useQueryClient();
+   const addToast = useToastStore((s) => s.addToast);
+ 
+   const messages = useChatStore((s) => s.messages);
+   const setMessages = useChatStore((s) => s.setMessages);
+   const addMessage = useChatStore((s) => s.addMessage);
+   const appendContent = useChatStore((s) => s.appendContent);
+   const replaceLastContent = useChatStore((s) => s.replaceLastContent);
++  const updateLastMeta = useChatStore((s) => s.updateLastMeta);
++  const dropLastIfEmptyAssistant = useChatStore((s) => s.dropLastIfEmptyAssistant);
+   const conversationId = useChatStore((s) => s.conversationId);
+   const setConversationId = useChatStore((s) => s.setConversationId);
+   const targetAgent = useChatStore((s) => s.targetAgent);
+   const setTargetAgent = useChatStore((s) => s.setTargetAgent);
+   const routingStage = useChatStore((s) => s.routingStage);
+   const setRoutingStage = useChatStore((s) => s.setRoutingStage);
+   const routingEvents = useChatStore((s) => s.routingEvents);
+   const addRoutingEvent = useChatStore((s) => s.addRoutingEvent);
+   const clearRoutingEvents = useChatStore((s) => s.clearRoutingEvents);
+   const addToolTrace = useChatStore((s) => s.addToolTrace);
+   const addSourceTrace = useChatStore((s) => s.addSourceTrace);
+   const addStepTrace = useChatStore((s) => s.addStepTrace);
+   const addArtifactRef = useChatStore((s) => s.addArtifactRef);
++  const startAgentNode = useChatStore((s) => s.startAgentNode);
++  const endAgentNode = useChatStore((s) => s.endAgentNode);
++  const settleAgentNodes = useChatStore((s) => s.settleAgentNodes);
+   const isStreaming = useChatStore((s) => s.isStreaming);
+   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
+   const reset = useChatStore((s) => s.reset);
+ 
+   const [input, setInput] = useState("");
+   const [wsMode, setWsMode] = useState(true);
+   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+   const [uploading, setUploading] = useState(false);
+-  const [showOnboarding, setShowOnboarding] = useState(false);
+   const [pendingApprovals, setPendingApprovals] = useState<Record<string, { approval_id: string; step_id: string; prompt: string; context?: string; busy?: boolean }>>({});
+   const wsRef = useRef<WebSocket | null>(null);
+   const messagesEndRef = useRef<HTMLDivElement>(null);
+   const inputRef = useRef<HTMLInputElement>(null);
+   const fileInputRef = useRef<HTMLInputElement>(null);
+   const loadedOnce = useRef(false);
++  // Which conversation's history is currently in the store — prevents a post-stream
++  // refetch from clobbering freshly-streamed messages (and their traces).
++  const historyLoadedFor = useRef<string | undefined>(undefined);
++  // Monotonic turn counter. Bumped on new-chat / conversation switch so in-flight
++  // sends that resolve late can detect they are stale and bail.
++  const turnRef = useRef(0);
+   // Stable ref to avoid sendMessageMutation recreating sendViaWebSocket every render.
+   const sendMutationRef = useRef<ReturnType<typeof useSendMessage> | null>(null);
+ 
+   // ── Load conversation history ────────────────────────────────
+   const { data: historyMessages, isLoading: isLoadingHistory } =
+     useConversationMessages(conversationId);
+ 
+   useEffect(() => {
+-    if (historyMessages && historyMessages.length > 0 && conversationId) {
+-      setMessages(
+-        historyMessages.map((m) => ({
+-          role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
+-          content: m.content,
+-          agent: m.from_agent !== "user" ? m.from_agent : null,
+-          department: null,
+-          model: null,
+-        }))
+-      );
+-    }
+-  }, [historyMessages, conversationId, setMessages]);
++    if (!conversationId || isStreaming) return;
++    // Already showing this conversation (e.g. we just streamed into it) — never
++    // overwrite the live store with a server refetch; it would drop streamed traces.
++    if (historyLoadedFor.current === conversationId) return;
++    // Switching to a different conversation: clear stale messages while its
++    // history loads, then hydrate (even when the new conversation is empty).
++    if (isLoadingHistory) { setMessages([]); return; }
++    historyLoadedFor.current = conversationId;
++    setMessages(
++      (historyMessages ?? []).map((m, i) => ({
++        id: `${conversationId}-${i}`,
++        role: (m.message_type === "request" ? "user" : "assistant") as "user" | "assistant",
++        content: m.content,
++        agent: m.from_agent !== "user" ? m.from_agent : null,
++        department: null,
++        model: null,
++      }))
++    );
++  }, [historyMessages, conversationId, isStreaming, isLoadingHistory, setMessages]);
+ 
+   // ── Scroll ───────────────────────────────────────────────────
+   const isHistoryLoad = useRef(false);
++  const scrollContainerRef = useRef<HTMLDivElement>(null);
+   useEffect(() => {
+     if (isLoadingHistory) { isHistoryLoad.current = true; return; }
+     if (isHistoryLoad.current && !isLoadingHistory) {
+       isHistoryLoad.current = false;
+       messagesEndRef.current?.scrollIntoView({ behavior: "instant" as ScrollBehavior });
+       return;
+     }
++    // Don't yank the view down while the user has scrolled up to read history.
++    const c = scrollContainerRef.current;
++    if (c) {
++      const nearBottom = c.scrollHeight - c.scrollTop - c.clientHeight < 120;
++      if (!nearBottom) return;
++    }
+     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+   }, [messages, routingEvents, isLoadingHistory]);
+ 
+   useEffect(() => { inputRef.current?.focus(); }, []);
+   useEffect(() => { return () => { wsRef.current?.close(); }; }, []);
+ 
+   // ── File picker ──────────────────────────────────────────────
+   async function handleFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+@@ -135,19 +160,21 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+     (message: string, fileIds: string[], convId?: string, tgtAgent?: string, files?: FileAttachment[]) => {
+       // Close any prior WebSocket before opening a new one.
+       if (wsRef.current) {
+         try { wsRef.current.close(); } catch {}
+         wsRef.current = null;
+       }
+       clearRoutingEvents();
+       setIsStreaming(true);
++      const turn = turnRef.current;
+       const ws = createChatWebSocket({
+         onOpen: () => { sendWSMessage(ws, message, convId, tgtAgent, fileIds, files); },
+         onEvent: (event: WSEvent) => {
++          if (turn !== turnRef.current) return; // stale turn (new chat / switch) — ignore
+           switch (event.type) {
+             case "routing":
+               setRoutingStage(event.stage as RoutingStage);
+               addRoutingEvent({ type: event.stage as RoutingEvent["type"], label: event.stage || "", detail: event.department || event.agent });
+               break;
+             case "token": appendContent(event.content); break;
+             case "final": replaceLastContent(event.content); break;
+             case "tool_call":
+@@ -157,84 +184,120 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+               addSourceTrace({ filename: event.filename, chunk_index: event.chunk_index, score: event.score, snippet: event.snippet });
+               break;
+             case "step":
+               addStepTrace({ id: event.id, status: event.status, label: event.label });
+               break;
+             case "artifact":
+               addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
+               break;
++            case "node_start":
++              startAgentNode({ id: event.id, agent: event.agent, department: event.department, description: event.description, status: "running" });
++              break;
++            case "node_end":
++              endAgentNode(event.id, event.content, event.status, event.elapsed_ms);
++              break;
+             case "metadata":
+-              if (event.conversation_id && !convId) setConversationId(event.conversation_id);
++              if (event.conversation_id && !convId) {
++                setConversationId(event.conversation_id);
++                // We already hold the live messages for this new conversation;
++                // mark it loaded so the history refetch won't overwrite them.
++                historyLoadedFor.current = event.conversation_id;
++              }
++              updateLastMeta({ agent: event.agent, department: event.department, model: event.model });
++              break;
++            case "error":
++              addToast(event.message, "error");
++              setIsStreaming(false);
++              setRoutingStage("");
++              dropLastIfEmptyAssistant(); // remove the blank placeholder bubble
+               break;
+-            case "error": addToast(event.message, "error"); setIsStreaming(false); setRoutingStage(""); break;
+             case "approval":
+               setIsStreaming(false);
+               setPendingApprovals((p) => ({ ...p, [event.approval_id]: { approval_id: event.approval_id, step_id: event.step_id, prompt: event.prompt, context: event.context } }));
+               break;
+             case "done":
+               setIsStreaming(false); setRoutingStage("");
++              settleAgentNodes();
+               queryClient.invalidateQueries({ queryKey: ["conversations"] });
+               if (convId) queryClient.invalidateQueries({ queryKey: ["messages", convId] });
+               break;
+           }
+         },
+         onError: () => {
+-          setWsMode(false); setIsStreaming(false); setRoutingStage("");
++          wsRef.current = null;
++          if (turn !== turnRef.current) return; // stale — user moved on
++          setWsMode(false); setRoutingStage("");
+           const m = sendMutationRef.current;
+-          if (!m) return;
++          if (!m) { setIsStreaming(false); return; }
++          // Degrade this send to REST, filling the placeholder assistant bubble.
+           m.mutate(
+             { message, conversationId: convId, targetAgent: tgtAgent, fileIds, files },
+-            { onSuccess: (data) => { appendContent(data.response); if (data.conversation_id && !convId) setConversationId(data.conversation_id); } },
++            {
++              onSuccess: (data) => {
++                if (turn !== turnRef.current) return;
++                replaceLastContent(data.response);
++                updateLastMeta({ agent: data.agent, department: data.routed_to, model: data.model });
++                if (data.conversation_id && !convId) {
++                  setConversationId(data.conversation_id);
++                  historyLoadedFor.current = data.conversation_id;
++                }
++              },
++              onSettled: () => { if (turn === turnRef.current) setIsStreaming(false); },
++            },
+           );
+         },
+         onClose: (error) => {
+-          if (error) {
+-            setIsStreaming(false); setRoutingStage("");
+-            // Auto-retry once before degrading to REST
+-            setTimeout(() => { if (!wsRef.current) setWsMode(true); }, 1500);
+-          }
++          wsRef.current = null;
++          if (error && turn === turnRef.current) { setIsStreaming(false); setRoutingStage(""); }
+         },
+       });
+       wsRef.current = ws;
+     },
+-    [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent, setConversationId, addToast, queryClient],
++    [clearRoutingEvents, setIsStreaming, setRoutingStage, addRoutingEvent, appendContent,
++     replaceLastContent, updateLastMeta, dropLastIfEmptyAssistant, addToolTrace, addSourceTrace,
++     addStepTrace, addArtifactRef, setConversationId, addToast, queryClient],
+   );
+ 
+   // ── Submit (extracted so it can be called with explicit text, bypassing
+   //     async `input` state — used by the outcome-launch auto-send below) ──
+   const submitText = useCallback(
+     (rawText: string, attach: FileAttachment[] = []) => {
+       if ((!rawText.trim() && attach.length === 0) || isStreaming || sendMessageMutation.isPending) return;
+       const userMessage = rawText.trim() || "Analyze the attached files.";
+       const currentAttachments = [...attach];
+       const attachLabel = currentAttachments.length > 0 ? `\n[Attached: ${currentAttachments.map((a) => a.filename).join(", ")}]` : "";
++      const turn = ++turnRef.current;
+       setInput(""); setAttachments([]);
+       addMessage({ role: "user", content: userMessage + attachLabel });
+ 
+       if (wsMode) {
+         addMessage({ role: "assistant", content: "", agent: targetAgent });
+         sendViaWebSocket(userMessage, [], conversationId, targetAgent ?? undefined, currentAttachments);
+       } else {
+         setIsStreaming(true); setRoutingStage("classifying");
+         addMessage({ role: "assistant", content: "" });
+         sendMessageMutation.mutate(
+           { message: userMessage, conversationId, targetAgent: targetAgent ?? undefined, files: currentAttachments.length > 0 ? currentAttachments : undefined },
+           {
+             onSuccess: (data) => {
+-              setIsStreaming(false); setRoutingStage("");
+-              setMessages(useChatStore.getState().messages.slice(0, -1).concat({ role: "assistant", content: data.response, agent: data.agent, department: data.routed_to, model: data.model }));
+-              if (data.conversation_id && !conversationId) setConversationId(data.conversation_id);
++              if (turn !== turnRef.current) return; // stale — user started a new chat/turn
++              replaceLastContent(data.response);
++              updateLastMeta({ agent: data.agent, department: data.routed_to, model: data.model });
++              if (data.conversation_id && !conversationId) {
++                setConversationId(data.conversation_id);
++                historyLoadedFor.current = data.conversation_id;
++              }
+             },
+-            onError: () => { setIsStreaming(false); setRoutingStage(""); },
++            onSettled: () => { if (turn === turnRef.current) { setIsStreaming(false); setRoutingStage(""); } },
+           },
+         );
+       }
+     },
+-    [wsMode, conversationId, targetAgent, isStreaming, sendMessageMutation, sendViaWebSocket, addMessage, setInput, setAttachments, setConversationId, setIsStreaming, setRoutingStage, setMessages],
++    [wsMode, conversationId, targetAgent, isStreaming, sendMessageMutation, sendViaWebSocket, addMessage, setInput, setAttachments, setConversationId, setIsStreaming, setRoutingStage, replaceLastContent, updateLastMeta],
+   );
+ 
+   // ── Submit ───────────────────────────────────────────────────
+   async function handleSubmit(e: React.FormEvent) {
+     e.preventDefault();
+     submitText(input, attachments);
+   }
+ 
+@@ -253,16 +316,18 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+         submitText(templatePrompt, []);
+       } else {
+         setInput(templatePrompt);
+       }
+     }
+   }, [initialConversationId, setConversationId, setInput, submitText]);
+ 
+   function handleNewConversation() {
++    turnRef.current++; // invalidate any in-flight send
++    historyLoadedFor.current = undefined;
+     if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
+     reset(); setInput("");
+   }
+ 
+   return (
+     <>
+       <Onboarding
+         onComplete={({ about }) => {
+@@ -288,17 +353,17 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+             {isLoadingHistory ? "Loading..." : conversationId ? "Conversation" : "New Conversation"}
+           </span>
+         </div>
+         {messages.length > 0 && (
+           <button onClick={handleNewConversation} className="text-xs text-slate-500 hover:text-blue-600 transition-colors">New chat</button>
+         )}
+       </div>
+ 
+-      <div className="flex-1 overflow-y-auto">
++      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
+         {!isLoadingHistory && messages.length === 0 && !conversationId && (
+           null
+         )}
+         {!isLoadingHistory && messages.length === 0 && conversationId && (
+           <div className="flex flex-col items-center justify-center h-full text-center px-6">
+             <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center mb-5">
+               <Network className="w-7 h-7 text-blue-600" />
+             </div>
+@@ -309,28 +374,29 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+                 <button key={s} onClick={() => setInput(s)} className="text-left text-xs text-slate-500 hover:text-blue-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-blue-300 rounded-lg px-3 py-2 transition-all duration-150">{s}</button>
+               ))}
+             </div>
+           </div>
+         )}
+         {isLoadingHistory && <div className="flex items-center justify-center h-full"><Loader2 className="w-5 h-5 text-blue-600 animate-spin" /></div>}
+         <div className="px-4 py-4 space-y-5 max-w-3xl mx-auto">
+           {messages.map((msg, i) => (
+-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
++            <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+               <div className={`max-w-[85%] ${msg.role === "user" ? "bg-blue-50 border border-blue-200 rounded-2xl rounded-br-md" : "bg-slate-50 border border-slate-200 rounded-2xl rounded-bl-md"} px-4 py-3`}>
+                 {msg.role === "assistant" && (msg.department || msg.agent) && (
+                   <div className="mb-2"><RoutingPath department={msg.department ?? null} agent={msg.agent ?? null} compact /></div>
+                 )}
+                 {msg.role === "assistant" && isStreaming && i === messages.length - 1 && routingEvents.length > 0 && (
+                   <div className="mb-2 flex items-center gap-2 flex-wrap">
+                     {routingEvents.map((evt, j) => (
+                       <span key={j} className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200 animate-trace">{evt.label}{evt.detail ? ` → ${evt.detail}` : ""}</span>
+                     ))}
+                   </div>
+                 )}
++                {msg.role === "assistant" && <AgentBoard nodes={msg.agentNodes} />}
+                 <div className="text-sm leading-relaxed text-slate-900 prose prose-sm prose-slate max-w-none">
+                   <ReactMarkdown>{msg.content}</ReactMarkdown>
+                   {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
+                     <span className="inline-block w-1.5 h-4 bg-blue-600 ml-0.5 animate-pulse align-middle" />
+                   )}
+                 </div>
+                 {msg.role === "assistant" && (
+                   <ChatTrace tools={msg.tools} sources={msg.sources} steps={msg.steps} />
+@@ -370,30 +436,30 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+                     <div className="flex gap-2 pt-1">
+                       <button
+                         onClick={async () => {
+                           setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: true } }));
+                           try {
+                             await resolveApproval(a.approval_id, { action: "approved", note: "Approved from chat" });
+                             addToast("Approved", "success");
+                             setPendingApprovals((p) => { const n = { ...p }; delete n[a.approval_id]; return n; });
+-                          } catch (e: any) { addToast(e?.message || "Failed", "error"); }
++                          } catch (e: unknown) { addToast(e instanceof Error ? e.message : "Failed", "error"); }
+                           finally { setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: false } })); }
+                         }}
+                         disabled={a.busy}
+                         className="font-tele text-[10px] bg-[#E61919] text-[#F4F4F0] px-4 py-1.5 hover:bg-[#0A0A0A] transition-colors disabled:opacity-40"
+                       >APPROVE</button>
+                       <button
+                         onClick={async () => {
+                           setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: true } }));
+                           try {
+                             await resolveApproval(a.approval_id, { action: "rejected", note: "Rejected from chat" });
+                             addToast("Rejected", "info");
+                             setPendingApprovals((p) => { const n = { ...p }; delete n[a.approval_id]; return n; });
+-                          } catch (e: any) { addToast(e?.message || "Failed", "error"); }
++                          } catch (e: unknown) { addToast(e instanceof Error ? e.message : "Failed", "error"); }
+                           finally { setPendingApprovals((p) => ({ ...p, [a.approval_id]: { ...a, busy: false } })); }
+                         }}
+                         disabled={a.busy}
+                         className="font-tele text-[10px] border-2 border-[#0A0A0A] px-4 py-1.5 hover:bg-[#0A0A0A] hover:text-[#F4F4F0] transition-colors disabled:opacity-40"
+                       >REJECT</button>
+                     </div>
+                   </div>
+                 ))}
+@@ -410,17 +476,17 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+             <AgentSelector value={targetAgent} onChange={setTargetAgent} />
+             {targetAgent && <span className="text-[11px] text-blue-500/70">Sending directly to selected agent — routing bypassed</span>}
+             {!wsMode && <span className="text-[11px] text-amber-600">REST mode (WebSocket unavailable)</span>}
+           </div>
+           {attachments.length > 0 && (
+             <div className="flex flex-wrap gap-1.5">
+               {attachments.map((a, i) => (
+                 <span key={i} className="inline-flex items-center gap-1 text-[11px] bg-blue-50 border border-blue-200 text-blue-700 rounded-md px-2 py-1">
+-                  {a.filename.endsWith(".pdf") || a.filename.endsWith(".docx") ? <FileText className="w-3 h-3" /> : <Image className="w-3 h-3" />}
++                  {a.filename.endsWith(".pdf") || a.filename.endsWith(".docx") ? <FileText className="w-3 h-3" /> : <ImageIcon className="w-3 h-3" />}
+                   <span className="max-w-[120px] truncate">{a.filename}</span>
+                   <button type="button" onClick={() => removeAttachment(i)} className="hover:text-blue-900"><X className="w-2.5 h-2.5" /></button>
+                 </span>
+               ))}
+               {uploading && <span className="text-[11px] text-slate-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Uploading…</span>}
+             </div>
+           )}
+           <div className="flex gap-2.5">
+diff --git a/frontend/src/components/sidebar.tsx b/frontend/src/components/sidebar.tsx
+index d26de2d..53cf4b1 100644
+--- a/frontend/src/components/sidebar.tsx
++++ b/frontend/src/components/sidebar.tsx
+@@ -10,28 +10,30 @@ import {
+   Network,
+   PanelLeftClose,
+   PanelLeft,
+   Loader2,
+   Settings,
+   LayoutTemplate,
+   CheckSquare,
+   FileText,
++  Brain,
+ } from "lucide-react";
+ import { useQuery } from "@tanstack/react-query";
+ import { ConversationList, type ConversationSummary } from "@/components/conversation-list";
+ import { useConversations } from "@/lib/hooks";
+ import { getPendingApprovals } from "@/lib/api";
+ 
+ const navItems = [
+   { href: "/chat", label: "Chat", icon: MessageSquare },
+   { href: "/templates", label: "Templates", icon: LayoutTemplate },
+   { href: "/agents", label: "Agents", icon: Users },
+   { href: "/settings/approvals", label: "Approvals", icon: CheckSquare },
+   { href: "/artifacts", label: "Artifacts", icon: FileText },
++  { href: "/memory", label: "Memory", icon: Brain },
+   { href: "/conversations", label: "History", icon: History },
+   { href: "/settings", label: "Settings", icon: Settings },
+ ];
+ 
+ interface SidebarProps {
+   activeConversationId?: string;
+   onSelectConversation?: (id: string) => void;
+   onNewConversation?: () => void;
+diff --git a/frontend/src/lib/api.ts b/frontend/src/lib/api.ts
+index e1a02ac..b061949 100644
+--- a/frontend/src/lib/api.ts
++++ b/frontend/src/lib/api.ts
+@@ -200,16 +200,38 @@ export async function uploadMemoryDocument(file: File): Promise<{ ok: boolean; d
+     const token = localStorage.getItem("autosteer_token");
+     if (token) headers["Authorization"] = `Bearer ${token}`;
+   } catch {}
+   const res = await fetch(`${API_URL}/api/memory/documents/upload`, { method: "POST", headers, body: formData });
+   if (!res.ok) throw new Error(`Upload failed (${res.status}): ${await res.text()}`);
+   return res.json();
+ }
+ 
++// Memory insights (dream / knowledge catalog)
++export interface MemoryInsight {
++  id: string;
++  title: string;
++  body: string;
++  topics: string[];
++  connections: string[];
++  importance: number;
++  source_conversations: string[];
++  created_at: string | null;
++}
++
++export async function getMemoryInsights(): Promise<{ insights: MemoryInsight[] }> {
++  const res = await apiFetch("/api/memory/insights");
++  return res.json();
++}
++
++export async function runMemoryDream(): Promise<{ consolidated: number; insights_created: number; reason?: string }> {
++  const res = await apiFetch("/api/memory/dream", { method: "POST" });
++  return res.json();
++}
++
+ // Status
+ export interface SystemStatus {
+   total_agents: number;
+   total_departments: number;
+   llm_provider: string;
+   uptime_seconds: number;
+ }
+ 
+@@ -293,17 +315,17 @@ export async function getPricing(): Promise<{ plans: PricingPlan[]; self_host: {
+ 
+ export interface WorkflowStepDef {
+   id: string;
+   type?: string;
+   agent?: string | null;
+   tool?: string | null;
+   description?: string;
+   dependencies?: string[];
+-  config?: Record<string, any>;
++  config?: Record<string, unknown>;
+ }
+ 
+ export interface WorkflowDefinition {
+   name: string;
+   description: string;
+   step_count?: number;
+   steps?: WorkflowStepDef[];
+ }
+diff --git a/frontend/src/lib/store.ts b/frontend/src/lib/store.ts
+index a467d44..5c4365e 100644
+--- a/frontend/src/lib/store.ts
++++ b/frontend/src/lib/store.ts
+@@ -28,53 +28,70 @@ export const useToastStore = create<ToastStore>((set) => ({
+ 
+ // ── Chat state ───────────────────────────────────────────────────
+ 
+ export interface ToolTrace { name: string; status: string; result_summary: string; duration_ms: number }
+ export interface SourceTrace { filename: string; chunk_index: number; score: number; snippet: string }
+ export interface StepTrace { id: string; status: string; label: string }
+ export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
+ 
++export interface AgentNode {
++  id: string;
++  agent: string;
++  department: string;
++  description: string;
++  content?: string;
++  status: "running" | "ok" | "error";
++  elapsed_ms?: number;
++}
++
+ export interface ChatMessage {
++  id: string;
+   role: "user" | "assistant";
+   content: string;
+   agent?: string | null;
+   department?: string | null;
+   model?: string | null;
+   tools?: ToolTrace[];
+   sources?: SourceTrace[];
+   steps?: StepTrace[];
+   artifacts?: ArtifactRef[];
++  agentNodes?: AgentNode[];
+ }
+ 
+ export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
+ 
+ interface ChatStore {
+   messages: ChatMessage[];
+   conversationId: string | undefined;
+   targetAgent: string | null;
+   routingStage: RoutingStage;
+   routingEvents: RoutingEvent[];
+   isStreaming: boolean;
+ 
+   setMessages: (messages: ChatMessage[]) => void;
+-  addMessage: (message: ChatMessage) => void;
++  addMessage: (message: Omit<ChatMessage, "id"> & { id?: string }) => string;
+   appendContent: (content: string) => void;
+   replaceLastContent: (content: string) => void;
++  updateLastMeta: (meta: Pick<ChatMessage, "agent" | "department" | "model">) => void;
++  dropLastIfEmptyAssistant: () => void;
+   setConversationId: (id: string | undefined) => void;
+   setTargetAgent: (agent: string | null) => void;
+   setRoutingStage: (stage: RoutingStage) => void;
+   addRoutingEvent: (event: RoutingEvent) => void;
+   clearRoutingEvents: () => void;
+   setIsStreaming: (v: boolean) => void;
+   reset: () => void;
+   addToolTrace: (t: ToolTrace) => void;
+   addSourceTrace: (s: SourceTrace) => void;
+   addStepTrace: (s: StepTrace) => void;
+   addArtifactRef: (a: ArtifactRef) => void;
++  startAgentNode: (n: AgentNode) => void;
++  endAgentNode: (id: string, content: string, status: "ok" | "error", elapsed_ms: number) => void;
++  settleAgentNodes: () => void;
+ }
+ 
+ export interface RoutingEvent {
+   type: "classifying" | "department" | "agent" | "processing" | "done";
+   label: string;
+   detail?: string;
+ }
+ 
+@@ -86,18 +103,21 @@ const initialChatState = {
+   routingEvents: [] as RoutingEvent[],
+   isStreaming: false,
+ };
+ 
+ export const useChatStore = create<ChatStore>((set) => ({
+   ...initialChatState,
+ 
+   setMessages: (messages) => set({ messages }),
+-  addMessage: (message) =>
+-    set((s) => ({ messages: [...s.messages, message] })),
++  addMessage: (message) => {
++    const id = message.id ?? `m-${Math.random().toString(36).slice(2, 10)}`;
++    set((s) => ({ messages: [...s.messages, { ...message, id }] }));
++    return id;
++  },
+   appendContent: (content) =>
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, content: last.content + content };
+       }
+       return { messages: msgs };
+@@ -106,16 +126,38 @@ export const useChatStore = create<ChatStore>((set) => ({
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, content };
+       }
+       return { messages: msgs };
+     }),
++  updateLastMeta: (meta) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = {
++          ...last,
++          agent: meta.agent ?? last.agent,
++          department: meta.department ?? last.department,
++          model: meta.model ?? last.model,
++        };
++      }
++      return { messages: msgs };
++    }),
++  dropLastIfEmptyAssistant: () =>
++    set((s) => {
++      const last = s.messages[s.messages.length - 1];
++      if (last && last.role === "assistant" && last.content === "") {
++        return { messages: s.messages.slice(0, -1) };
++      }
++      return {};
++    }),
+   addToolTrace: (t) =>
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, tools: [...(last.tools || []), t] };
+       }
+       return { messages: msgs };
+@@ -145,16 +187,47 @@ export const useChatStore = create<ChatStore>((set) => ({
+     set((s) => {
+       const msgs = [...s.messages];
+       const last = msgs[msgs.length - 1];
+       if (last && last.role === "assistant") {
+         msgs[msgs.length - 1] = { ...last, artifacts: [...(last.artifacts || []), a] };
+       }
+       return { messages: msgs };
+     }),
++  startAgentNode: (n) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, agentNodes: [...(last.agentNodes || []), n] };
++      }
++      return { messages: msgs };
++    }),
++  endAgentNode: (id, content, status, elapsed_ms) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        const nodes = (last.agentNodes || []).map((n) =>
++          n.id === id ? { ...n, content, status, elapsed_ms } : n);
++        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
++      }
++      return { messages: msgs };
++    }),
++  settleAgentNodes: () =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant" && last.agentNodes) {
++        const nodes = last.agentNodes.map((n) =>
++          n.status === "running" ? { ...n, status: "ok" as const } : n);
++        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
++      }
++      return { messages: msgs };
++    }),
+   setConversationId: (id) => set({ conversationId: id }),
+   setTargetAgent: (agent) => set({ targetAgent: agent }),
+   setRoutingStage: (stage) => set({ routingStage: stage }),
+   addRoutingEvent: (event) =>
+     set((s) => ({ routingEvents: [...s.routingEvents, event] })),
+   clearRoutingEvents: () => set({ routingEvents: [] }),
+   setIsStreaming: (v) => set({ isStreaming: v }),
+   reset: () =>
+diff --git a/frontend/src/lib/websocket.ts b/frontend/src/lib/websocket.ts
+index a9f3667..7ddf279 100644
+--- a/frontend/src/lib/websocket.ts
++++ b/frontend/src/lib/websocket.ts
+@@ -7,16 +7,18 @@ export type WSEvent =
+   | { type: "metadata"; conversation_id: string; agent?: string; department?: string; model?: string }
+   | { type: "error"; message: string }
+   | { type: "approval"; approval_id: string; step_id: string; prompt: string; context?: string }
+   | { type: "tool_call"; name: string; status: string; result_summary: string; duration_ms: number }
+   | { type: "source"; filename: string; chunk_index: number; score: number; snippet: string }
+   | { type: "step"; id: string; status: string; label: string }
+   | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
+   | { type: "final"; content: string }
++  | { type: "node_start"; id: string; agent: string; department: string; description: string }
++  | { type: "node_end"; id: string; agent: string; content: string; status: "ok" | "error"; elapsed_ms: number }
+   | { type: "done" };
+ 
+ interface WSCallbacks {
+   onEvent: (event: WSEvent) => void;
+   onOpen?: () => void;
+   onError?: (error: Event) => void;
+   onClose?: (error: boolean) => void;
+ }

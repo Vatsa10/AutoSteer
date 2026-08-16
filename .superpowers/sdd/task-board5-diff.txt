@@ -1,0 +1,181 @@
+diff --git a/frontend/src/components/agent-board.tsx b/frontend/src/components/agent-board.tsx
+new file mode 100644
+index 0000000..a4ac8b7
+--- /dev/null
++++ b/frontend/src/components/agent-board.tsx
+@@ -0,0 +1,34 @@
++"use client";
++
++import ReactMarkdown from "react-markdown";
++import { Loader2, Check, AlertTriangle } from "lucide-react";
++import type { AgentNode } from "@/lib/store";
++
++export function AgentBoard({ nodes }: { nodes?: AgentNode[] }) {
++  if (!nodes || nodes.length === 0) return null;
++  return (
++    <div className="mb-3 grid grid-cols-1 md:grid-cols-2 gap-2">
++      {nodes.map((n) => (
++        <div key={n.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
++          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-100 bg-slate-50">
++            {n.status === "running" ? <Loader2 className="w-3.5 h-3.5 text-blue-500 animate-spin" />
++              : n.status === "error" ? <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
++              : <Check className="w-3.5 h-3.5 text-green-600" />}
++            <span className="text-xs font-medium text-slate-700 truncate">{n.agent}</span>
++            {n.department && <span className="text-[10px] text-slate-400">{n.department}</span>}
++            {typeof n.elapsed_ms === "number" && n.status !== "running" && (
++              <span className="ml-auto text-[10px] text-slate-400">{(n.elapsed_ms / 1000).toFixed(1)}s</span>
++            )}
++          </div>
++          <div className="px-3 py-2 text-xs text-slate-600 max-h-48 overflow-auto">
++            {n.status === "running" ? (
++              <span className="text-slate-400 italic">{n.description || "working…"}</span>
++            ) : (
++              <div className="prose prose-sm max-w-none"><ReactMarkdown>{n.content || ""}</ReactMarkdown></div>
++            )}
++          </div>
++        </div>
++      ))}
++    </div>
++  );
++}
+diff --git a/frontend/src/components/chat-interface.tsx b/frontend/src/components/chat-interface.tsx
+index 645a92f..884c29c 100644
+--- a/frontend/src/components/chat-interface.tsx
++++ b/frontend/src/components/chat-interface.tsx
+@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
+ import { useQueryClient } from "@tanstack/react-query";
+ import { RoutingPath } from "@/components/routing-path";
+ import { ChatTrace } from "@/components/chat-trace";
++import { AgentBoard } from "@/components/agent-board";
+ import { AgentSelector } from "@/components/agent-selector";
+ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store";
+ import { useConversationMessages, useSendMessage } from "@/lib/hooks";
+@@ -44,6 +45,9 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+   const addSourceTrace = useChatStore((s) => s.addSourceTrace);
+   const addStepTrace = useChatStore((s) => s.addStepTrace);
+   const addArtifactRef = useChatStore((s) => s.addArtifactRef);
++  const startAgentNode = useChatStore((s) => s.startAgentNode);
++  const endAgentNode = useChatStore((s) => s.endAgentNode);
++  const settleAgentNodes = useChatStore((s) => s.settleAgentNodes);
+   const isStreaming = useChatStore((s) => s.isStreaming);
+   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
+   const reset = useChatStore((s) => s.reset);
+@@ -185,6 +189,12 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+             case "artifact":
+               addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
+               break;
++            case "node_start":
++              startAgentNode({ id: event.id, agent: event.agent, department: event.department, description: event.description, status: "running" });
++              break;
++            case "node_end":
++              endAgentNode(event.id, event.content, event.status, event.elapsed_ms);
++              break;
+             case "metadata":
+               if (event.conversation_id && !convId) {
+                 setConversationId(event.conversation_id);
+@@ -206,6 +216,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+               break;
+             case "done":
+               setIsStreaming(false); setRoutingStage("");
++              settleAgentNodes();
+               queryClient.invalidateQueries({ queryKey: ["conversations"] });
+               if (convId) queryClient.invalidateQueries({ queryKey: ["messages", convId] });
+               break;
+@@ -380,6 +391,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
+                     ))}
+                   </div>
+                 )}
++                {msg.role === "assistant" && <AgentBoard nodes={msg.agentNodes} />}
+                 <div className="text-sm leading-relaxed text-slate-900 prose prose-sm prose-slate max-w-none">
+                   <ReactMarkdown>{msg.content}</ReactMarkdown>
+                   {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (
+diff --git a/frontend/src/lib/store.ts b/frontend/src/lib/store.ts
+index 6535532..5c4365e 100644
+--- a/frontend/src/lib/store.ts
++++ b/frontend/src/lib/store.ts
+@@ -33,6 +33,16 @@ export interface SourceTrace { filename: string; chunk_index: number; score: num
+ export interface StepTrace { id: string; status: string; label: string }
+ export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
+ 
++export interface AgentNode {
++  id: string;
++  agent: string;
++  department: string;
++  description: string;
++  content?: string;
++  status: "running" | "ok" | "error";
++  elapsed_ms?: number;
++}
++
+ export interface ChatMessage {
+   id: string;
+   role: "user" | "assistant";
+@@ -44,6 +54,7 @@ export interface ChatMessage {
+   sources?: SourceTrace[];
+   steps?: StepTrace[];
+   artifacts?: ArtifactRef[];
++  agentNodes?: AgentNode[];
+ }
+ 
+ export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
+@@ -73,6 +84,9 @@ interface ChatStore {
+   addSourceTrace: (s: SourceTrace) => void;
+   addStepTrace: (s: StepTrace) => void;
+   addArtifactRef: (a: ArtifactRef) => void;
++  startAgentNode: (n: AgentNode) => void;
++  endAgentNode: (id: string, content: string, status: "ok" | "error", elapsed_ms: number) => void;
++  settleAgentNodes: () => void;
+ }
+ 
+ export interface RoutingEvent {
+@@ -178,6 +192,37 @@ export const useChatStore = create<ChatStore>((set) => ({
+       }
+       return { messages: msgs };
+     }),
++  startAgentNode: (n) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        msgs[msgs.length - 1] = { ...last, agentNodes: [...(last.agentNodes || []), n] };
++      }
++      return { messages: msgs };
++    }),
++  endAgentNode: (id, content, status, elapsed_ms) =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant") {
++        const nodes = (last.agentNodes || []).map((n) =>
++          n.id === id ? { ...n, content, status, elapsed_ms } : n);
++        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
++      }
++      return { messages: msgs };
++    }),
++  settleAgentNodes: () =>
++    set((s) => {
++      const msgs = [...s.messages];
++      const last = msgs[msgs.length - 1];
++      if (last && last.role === "assistant" && last.agentNodes) {
++        const nodes = last.agentNodes.map((n) =>
++          n.status === "running" ? { ...n, status: "ok" as const } : n);
++        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
++      }
++      return { messages: msgs };
++    }),
+   setConversationId: (id) => set({ conversationId: id }),
+   setTargetAgent: (agent) => set({ targetAgent: agent }),
+   setRoutingStage: (stage) => set({ routingStage: stage }),
+diff --git a/frontend/src/lib/websocket.ts b/frontend/src/lib/websocket.ts
+index a9f3667..7ddf279 100644
+--- a/frontend/src/lib/websocket.ts
++++ b/frontend/src/lib/websocket.ts
+@@ -12,6 +12,8 @@ export type WSEvent =
+   | { type: "step"; id: string; status: string; label: string }
+   | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
+   | { type: "final"; content: string }
++  | { type: "node_start"; id: string; agent: string; department: string; description: string }
++  | { type: "node_end"; id: string; agent: string; content: string; status: "ok" | "error"; elapsed_ms: number }
+   | { type: "done" };
+ 
+ interface WSCallbacks {

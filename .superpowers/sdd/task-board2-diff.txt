@@ -1,0 +1,92 @@
+diff --git a/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml b/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml
+index 72afdc6..b9a47f4 100644
+--- a/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml
++++ b/backend/src/agents/definitions/data_analytics/web_researcher/agent.yaml
+@@ -6,6 +6,9 @@ tools:
+   - url_fetch: Fetch and extract text from a single URL
+   - arxiv_search: Search academic papers on arXiv
+   - semantic_search: Search workspace documents (RAG)
++  - reach_github_read: Read public GitHub repos (metadata/readme/issues)
++  - reach_reddit_read: Read public subreddits or Reddit posts
++  - reach_hackernews_read: Search Hacker News stories
+ 
+ response_schema:
+   sections:
+diff --git a/backend/src/engine/tool_aliases.py b/backend/src/engine/tool_aliases.py
+index c307eca..5f37585 100644
+--- a/backend/src/engine/tool_aliases.py
++++ b/backend/src/engine/tool_aliases.py
+@@ -105,6 +105,13 @@ TOOL_ALIASES: dict[str, str] = {
+     "reach_rss_read": "reach_rss_read",
+     "rss_reader": "reach_rss_read",
+     "news_feed": "reach_rss_read",
++    "reach_github_read": "reach_github_read",
++    "github_read": "reach_github_read",
++    "reach_reddit_read": "reach_reddit_read",
++    "reddit_read": "reach_reddit_read",
++    "reach_hackernews_read": "reach_hackernews_read",
++    "hackernews_read": "reach_hackernews_read",
++    "hn_search": "reach_hackernews_read",
+     "notion_export": "notion_export",
+     "gdocs_export": "gdocs_export",
+     "slack_post": "slack_post",
+@@ -197,6 +204,9 @@ TOOL_CATALOG: dict[str, dict] = {
+     "reach_web_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Read any page as markdown via Jina Reader (free)"},
+     "reach_youtube_transcript": {"tier": ToolTier.LIVE, "provider": None, "description": "Fetch YouTube video transcripts (free)"},
+     "reach_rss_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Read RSS/Atom feeds (free)"},
++    "reach_github_read": {"tier": ToolTier.LIVE, "provider": "github", "description": "Read public GitHub repos"},
++    "reach_reddit_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Read public subreddits/posts"},
++    "reach_hackernews_read": {"tier": ToolTier.LIVE, "provider": None, "description": "Search Hacker News"},
+     "arxiv_search": {"tier": ToolTier.LIVE, "provider": None, "description": "Search arXiv papers"},
+     "prompt_playground": {"tier": ToolTier.LIVE, "provider": None, "description": "Save/run/compare prompts"},
+     "eval_runner": {"tier": ToolTier.LIVE, "provider": None, "description": "Batch eval via LiteLLM"},
+diff --git a/backend/src/engine/tool_executor.py b/backend/src/engine/tool_executor.py
+index c59dece..9f02008 100644
+--- a/backend/src/engine/tool_executor.py
++++ b/backend/src/engine/tool_executor.py
+@@ -43,7 +43,10 @@ from src.integrations.notion import notion_export
+ from src.integrations.policy import policy_doc_generate
+ from src.integrations.posthog import posthog_read
+ from src.integrations.rag import semantic_search
+-from src.integrations.reach import reach_rss_read, reach_web_read, reach_youtube_transcript
++from src.integrations.reach import (
++    reach_rss_read, reach_web_read, reach_youtube_transcript,
++    reach_github_read, reach_reddit_read, reach_hackernews_read,
++)
+ from src.integrations.sandbox import code_sandbox_lite
+ from src.integrations.search import web_search
+ from src.integrations.sentry import sentry_read
+@@ -501,6 +504,18 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
+         "reach_rss_read", "Read recent items from an RSS/Atom feed.",
+         {"feed_url": {"type": "string"}, "max_items": {"type": "integer"}},
+     ))
++    registry.register("reach_github_read", reach_github_read, _schema(
++        "reach_github_read", "Read a public GitHub repo (metadata/readme/issues).",
++        {"target": {"type": "string"}, "action": {"type": "string"}, "max_chars": {"type": "integer"}},
++    ))
++    registry.register("reach_reddit_read", reach_reddit_read, _schema(
++        "reach_reddit_read", "Read a public subreddit or Reddit post (no login).",
++        {"target": {"type": "string"}, "sort": {"type": "string"}, "limit": {"type": "integer"}},
++    ))
++    registry.register("reach_hackernews_read", reach_hackernews_read, _schema(
++        "reach_hackernews_read", "Search Hacker News stories via the public Algolia API.",
++        {"query": {"type": "string"}, "kind": {"type": "string"}, "limit": {"type": "integer"}},
++    ))
+     registry.register("prompt_playground", _wrap_prompt_playground, _schema(
+         "prompt_playground", "Save/list/run prompts.",
+         {"action": {"type": "string"}, "name": {"type": "string"}, "prompt": {"type": "string"}, "model": {"type": "string"}},
+diff --git a/backend/tests/test_reach_tools.py b/backend/tests/test_reach_tools.py
+index 540fce7..198dade 100644
+--- a/backend/tests/test_reach_tools.py
++++ b/backend/tests/test_reach_tools.py
+@@ -60,3 +60,10 @@ async def test_hackernews_parses_hits():
+         out = json.loads(await reach.reach_hackernews_read("llm", kind="search", limit=5))
+     assert out["count"] == 1
+     assert out["items"][0]["title"] == "HN1"
++
++
++def test_reach_tools_registered():
++    from src.engine.tool_executor import get_tool_registry
++    reg = get_tool_registry()
++    for name in ("reach_github_read", "reach_reddit_read", "reach_hackernews_read"):
++        assert reg.is_registered(name), f"{name} not registered"
