@@ -25,10 +25,13 @@ async def reach_web_read(url: str, max_chars: int = 12000) -> str:
     """Read any web page as clean markdown via Jina Reader (r.jina.ai, free)."""
     if not url.startswith(("http://", "https://")):
         url = f"https://{url}"
-    async with httpx.AsyncClient(timeout=45.0, follow_redirects=True, headers=_UA) as client:
-        resp = await client.get(f"https://r.jina.ai/{url}")
-        resp.raise_for_status()
-        text = resp.text
+    try:
+        async with httpx.AsyncClient(timeout=45.0, follow_redirects=True, headers=_UA) as client:
+            resp = await client.get(f"https://r.jina.ai/{url}")
+            resp.raise_for_status()
+            text = resp.text
+    except Exception as exc:
+        return json.dumps({"error": f"Web read failed: {exc}", "url": url})
     if len(text) > max_chars:
         text = text[:max_chars] + "\n...[truncated]"
     return json.dumps({"url": url, "markdown": text, "char_count": len(text)}, indent=2)
@@ -62,11 +65,14 @@ async def reach_rss_read(feed_url: str, max_items: int = 10) -> str:
         return json.dumps({"error": "feedparser not installed"})
     if not feed_url.startswith(("http://", "https://")):
         feed_url = f"https://{feed_url}"
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=_UA) as client:
-        resp = await client.get(feed_url)
-        resp.raise_for_status()
-        raw = resp.content
-    parsed = feedparser.parse(raw)
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=_UA) as client:
+            resp = await client.get(feed_url)
+            resp.raise_for_status()
+            raw = resp.content
+        parsed = feedparser.parse(raw)
+    except Exception as exc:
+        return json.dumps({"error": f"RSS read failed: {exc}", "feed": feed_url})
     items = [
         {
             "title": e.get("title", ""),
