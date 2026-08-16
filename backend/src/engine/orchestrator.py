@@ -445,6 +445,98 @@ Available agents: {', '.join(list(self.agents.keys()))}"""
         except Exception:
             return None
 
+    async def _decompose_and_execute_stream(
+        self, user_message: str, has_context: bool,
+        conversation_id: str, session
+    ):
+        """Streaming variant of _decompose_and_execute: yields node_start/node_end events
+        as subtasks execute, then a terminal {"type": "decomp_result", ...} event.
+        Yields nothing (and returns) for simple tasks that don't need decomposition."""
+        if not has_context and len(user_message.split()) < 8:
+            return  # too short to be multi-step
+
+        # Classify: is this a multi-step task?
+        prompt = f"""Classify this user request. Is it a multi-step task needing multiple agents?
+
+User: "{user_message[:500]}"
+File context: {"yes" if has_context else "no"}
+
+Respond with JSON only:
+{{"multi_step": true/false, "subtasks": [{{"agent":"<role>","description":"<task>","dependencies":[]}}]}}
+
+Available agents: {', '.join(list(self.agents.keys()))}"""
+
+        try:
+            resp = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=prompt)],
+                system_prompt="Task decomposition classifier. Return JSON only.",
+                temperature=0.0, max_tokens=300, model=ROUTER_MODEL,
+            )
+            plan = _json.loads(resp.content)
+            if not plan.get("multi_step") or not plan.get("subtasks"):
+                return
+        except Exception:
+            return
+
+        # Build Subtask DAG — normalize LLM dependency references to sub_N format
+        subtasks = []
+        for i, st in enumerate(plan["subtasks"]):
+            agent = st.get("agent", "")
+            if agent not in self.agents:
+                continue
+            raw_deps = st.get("dependencies", [])
+            normalized_deps = []
+            for d in raw_deps:
+                if isinstance(d, int):
+                    normalized_deps.append(f"sub_{d}")
+                elif isinstance(d, str) and d.isdigit():
+                    normalized_deps.append(f"sub_{int(d)}")
+                elif isinstance(d, str) and d.startswith("sub_"):
+                    normalized_deps.append(d)
+            subtasks.append(Subtask(
+                id=f"sub_{i}",
+                agent=agent,
+                description=st.get("description", ""),
+                dependencies=normalized_deps,
+            ))
+        if len(subtasks) < 2:
+            return
+
+        # Execute DAG (streaming) — re-yield node events, capture final results envelope
+        results: dict[str, str] = {}
+        async for ev in self._execute_dag_stream(subtasks, user_message, conversation_id, session):
+            if ev.get("type") == "__results__":
+                results = ev["results"]
+            else:
+                yield ev  # node_start / node_end → live board
+
+        # Synthesize
+        synthesis_prompt = (
+            f"User request: {user_message}\n\n"
+            + "\n\n".join(
+                f"Subtask {t.id} ({t.agent}): {t.description}\nResult: {t.result}"
+                for t in subtasks
+            )
+            + "\n\nSynthesize a coherent final response. Include any download links from results."
+        )
+        try:
+            final = await self.llm.complete(
+                messages=[LLMMessage(role="user", content=synthesis_prompt)],
+                system_prompt="Synthesize multi-agent results into a single coherent response.",
+                temperature=0.3, max_tokens=2048,
+            )
+            yield {
+                "type": "decomp_result",
+                "conversation_id": conversation_id,
+                "response": final.content,
+                "routed_to": "multi-agent",
+                "agent": ",".join(t.agent for t in subtasks),
+                "model": final.model,
+                "usage": final.usage,
+            }
+        except Exception:
+            return
+
     async def _route_department(self, user_message: str) -> RoutingResult | None:
         """Route to department: regex first, then LLM fallback, then direct answer."""
         regex_result = self.master_router.route(user_message)
@@ -1114,16 +1206,21 @@ User request: {user_message}"""
                                "also ", "research and", "compare and", "analyze and",
                                "1.", "2.", "3.", "- ", "* ", "•"]
         looks_multi_step = any(m in user_message.lower() for m in _multi_step_markers)
-        decomp = None
         if looks_multi_step or len(user_message.split()) > 50:
-            decomp = await self._decompose_and_execute(
+            decomp_final = None
+            async for ev in self._decompose_and_execute_stream(
                 effective_message, bool(file_context_parts), conversation_id, session
-            )
-        if decomp:
-            yield {"type": "token", "content": decomp["response"]}
-            yield {"type": "metadata", "conversation_id": conversation_id, "agent": decomp.get("agent"), "department": decomp.get("routed_to"), "model": decomp.get("model"), "usage": decomp.get("usage")}
-            yield {"type": "done"}
-            return
+            ):
+                if ev.get("type") == "decomp_result":
+                    decomp_final = ev
+                else:
+                    yield ev  # node_start / node_end → live board
+            if decomp_final is not None:
+                yield {"type": "token", "content": decomp_final["response"]}
+                yield {"type": "metadata", "conversation_id": conversation_id, "agent": decomp_final.get("agent"), "department": decomp_final.get("routed_to"), "model": decomp_final.get("model"), "usage": decomp_final.get("usage")}
+                yield {"type": "done"}
+                return
+            # else: not a multi-step task → fall through to normal routing below
 
         # LLM-based agent coordination
         stream_intent = await self._classify_intent(user_message, bool(file_context_parts))
