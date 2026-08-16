@@ -12,6 +12,8 @@ export type WSEvent =
   | { type: "step"; id: string; status: string; label: string }
   | { type: "artifact"; id: string; title: string; kind: string; filename: string | null }
   | { type: "final"; content: string }
+  | { type: "node_start"; id: string; agent: string; department: string; description: string }
+  | { type: "node_end"; id: string; agent: string; content: string; status: "ok" | "error"; elapsed_ms: number }
   | { type: "done" };
 
 interface WSCallbacks {

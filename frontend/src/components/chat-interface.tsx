@@ -6,6 +6,7 @@ import ReactMarkdown from "react-markdown";
 import { useQueryClient } from "@tanstack/react-query";
 import { RoutingPath } from "@/components/routing-path";
 import { ChatTrace } from "@/components/chat-trace";
+import { AgentBoard } from "@/components/agent-board";
 import { AgentSelector } from "@/components/agent-selector";
 import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store";
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
@@ -44,6 +45,9 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const addSourceTrace = useChatStore((s) => s.addSourceTrace);
   const addStepTrace = useChatStore((s) => s.addStepTrace);
   const addArtifactRef = useChatStore((s) => s.addArtifactRef);
+  const startAgentNode = useChatStore((s) => s.startAgentNode);
+  const endAgentNode = useChatStore((s) => s.endAgentNode);
+  const settleAgentNodes = useChatStore((s) => s.settleAgentNodes);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
   const reset = useChatStore((s) => s.reset);
@@ -185,6 +189,12 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
             case "artifact":
               addArtifactRef({ id: event.id, title: event.title, kind: event.kind, filename: event.filename });
               break;
+            case "node_start":
+              startAgentNode({ id: event.id, agent: event.agent, department: event.department, description: event.description, status: "running" });
+              break;
+            case "node_end":
+              endAgentNode(event.id, event.content, event.status, event.elapsed_ms);
+              break;
             case "metadata":
               if (event.conversation_id && !convId) {
                 setConversationId(event.conversation_id);
@@ -206,6 +216,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               break;
             case "done":
               setIsStreaming(false); setRoutingStage("");
+              settleAgentNodes();
               queryClient.invalidateQueries({ queryKey: ["conversations"] });
               if (convId) queryClient.invalidateQueries({ queryKey: ["messages", convId] });
               break;
@@ -380,6 +391,7 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
                     ))}
                   </div>
                 )}
+                {msg.role === "assistant" && <AgentBoard nodes={msg.agentNodes} />}
                 <div className="text-sm leading-relaxed text-slate-900 prose prose-sm prose-slate max-w-none">
                   <ReactMarkdown>{msg.content}</ReactMarkdown>
                   {isStreaming && i === messages.length - 1 && msg.role === "assistant" && (

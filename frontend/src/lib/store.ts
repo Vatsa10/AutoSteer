@@ -33,6 +33,16 @@ export interface SourceTrace { filename: string; chunk_index: number; score: num
 export interface StepTrace { id: string; status: string; label: string }
 export interface ArtifactRef { id: string; title: string; kind: string; filename: string | null }
 
+export interface AgentNode {
+  id: string;
+  agent: string;
+  department: string;
+  description: string;
+  content?: string;
+  status: "running" | "ok" | "error";
+  elapsed_ms?: number;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
@@ -44,6 +54,7 @@ export interface ChatMessage {
   sources?: SourceTrace[];
   steps?: StepTrace[];
   artifacts?: ArtifactRef[];
+  agentNodes?: AgentNode[];
 }
 
 export type RoutingStage = "classifying" | "routing" | "department" | "agent" | "processing" | "";
@@ -73,6 +84,9 @@ interface ChatStore {
   addSourceTrace: (s: SourceTrace) => void;
   addStepTrace: (s: StepTrace) => void;
   addArtifactRef: (a: ArtifactRef) => void;
+  startAgentNode: (n: AgentNode) => void;
+  endAgentNode: (id: string, content: string, status: "ok" | "error", elapsed_ms: number) => void;
+  settleAgentNodes: () => void;
 }
 
 export interface RoutingEvent {
@@ -175,6 +189,37 @@ export const useChatStore = create<ChatStore>((set) => ({
       const last = msgs[msgs.length - 1];
       if (last && last.role === "assistant") {
         msgs[msgs.length - 1] = { ...last, artifacts: [...(last.artifacts || []), a] };
+      }
+      return { messages: msgs };
+    }),
+  startAgentNode: (n) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        msgs[msgs.length - 1] = { ...last, agentNodes: [...(last.agentNodes || []), n] };
+      }
+      return { messages: msgs };
+    }),
+  endAgentNode: (id, content, status, elapsed_ms) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        const nodes = (last.agentNodes || []).map((n) =>
+          n.id === id ? { ...n, content, status, elapsed_ms } : n);
+        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
+      }
+      return { messages: msgs };
+    }),
+  settleAgentNodes: () =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant" && last.agentNodes) {
+        const nodes = last.agentNodes.map((n) =>
+          n.status === "running" ? { ...n, status: "ok" as const } : n);
+        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
       }
       return { messages: msgs };
     }),
