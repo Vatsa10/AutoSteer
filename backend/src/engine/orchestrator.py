@@ -87,6 +87,41 @@ def build_node_token(node_id: str, content: str) -> dict:
     return {"type": "node_token", "id": node_id, "content": content}
 
 
+BOARD_STATE_PREFIX = "board:"
+
+
+async def save_board_snapshot(session, conversation_id: str, nodes: list[dict], workspace_id: str = "default") -> None:
+    """Persist the agent-board node states so the board survives a reload/reconnect.
+
+    Best-effort: a snapshot failure must never break a run. Uses a SAVEPOINT so a
+    failed write cannot poison the caller's transaction.
+    """
+    if session is None or not conversation_id:
+        return
+    try:
+        from datetime import datetime, timezone as _tz
+        from sqlalchemy import select as _sel
+        from sqlalchemy.orm.attributes import flag_modified
+        from src.models.shared_state import SharedState
+
+        key = f"{BOARD_STATE_PREFIX}{conversation_id}"
+        async with session.begin_nested():
+            row = (await session.execute(
+                _sel(SharedState).where(SharedState.workspace_id == workspace_id, SharedState.key == key)
+            )).scalar_one_or_none()
+            value = {"nodes": nodes}
+            if row:
+                row.value = value
+                flag_modified(row, "value")
+                row.updated_at = datetime.now(_tz.utc)
+            else:
+                session.add(SharedState(workspace_id=workspace_id, key=key, value=value,
+                                        owner="orchestrator", updated_at=datetime.now(_tz.utc)))
+        await session.commit()
+    except Exception:
+        pass
+
+
 def build_node_replace(node_id: str, content: str) -> dict:
     """Trace event: replace a panel's streamed text with the clean synthesized text.
 
@@ -317,6 +352,11 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
         task_map = {t.id: t for t in subtasks}
         levels = self._topological_levels(subtasks)
         results: dict[str, str] = {}
+        # Board snapshot state — persisted on each transition so a reload can rehydrate.
+        board: dict[str, dict] = {}
+
+        async def _snapshot() -> None:
+            await save_board_snapshot(session, conversation_id, list(board.values()))
 
         for level in levels:
             # Shared queue so parallel siblings interleave their live tokens on the wire.
@@ -353,7 +393,10 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
             # Emit starts for the whole level, then complete as each finishes.
             for tid in level:
                 t = task_map[tid]
+                board[tid] = {"id": tid, "agent": t.agent, "department": getattr(t, "department", "") or "",
+                              "description": t.description, "content": "", "status": "running"}
                 yield build_node_start(tid, t.agent, getattr(t, "department", "") or "", t.description)
+            await _snapshot()
 
             started = {tid: asyncio.ensure_future(run_one(tid)) for tid in level}
             pending = set(started.values())
@@ -377,7 +420,10 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                             rtid, content, status, elapsed = tid, f"Error: {exc}", "error", 0
                         results[rtid] = content
                         task_map[rtid].result = content
+                        if rtid in board:
+                            board[rtid].update({"content": (content or "")[:4000], "status": status, "elapsed_ms": elapsed})
                         yield build_node_end(rtid, task_map[rtid].agent, content, status, elapsed)
+                        await _snapshot()
                 # Drain any tokens that landed after the last sub-agent finished.
                 while not token_q.empty():
                     yield token_q.get_nowait()

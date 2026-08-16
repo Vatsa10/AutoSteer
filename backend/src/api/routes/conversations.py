@@ -117,3 +117,27 @@ async def delete_conversation(
         )
     )
     return {"ok": True, "deleted": conversation_id}
+
+
+@router.get("/conversations/{conversation_id}/board")
+async def get_agent_board(
+    conversation_id: str,
+    workspace_id: str = Query(default="default"),
+    session: AsyncSession = Depends(get_db),
+):
+    """Snapshot of the multi-agent board for this conversation.
+
+    Lets the UI rehydrate agent panels after a reload/reconnect. Returns an empty
+    list when the conversation never ran a multi-agent DAG.
+    """
+    from src.engine.orchestrator import BOARD_STATE_PREFIX
+    from src.models.shared_state import SharedState
+
+    row = (await session.execute(
+        select(SharedState).where(
+            SharedState.workspace_id == workspace_id,
+            SharedState.key == f"{BOARD_STATE_PREFIX}{conversation_id}",
+        )
+    )).scalar_one_or_none()
+    nodes = (row.value or {}).get("nodes", []) if row else []
+    return {"conversation_id": conversation_id, "nodes": nodes}

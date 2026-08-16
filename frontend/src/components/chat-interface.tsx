@@ -12,7 +12,7 @@ import { useChatStore, type RoutingEvent, type RoutingStage } from "@/lib/store"
 import { useConversationMessages, useSendMessage } from "@/lib/hooks";
 import { useToastStore } from "@/lib/store";
 import { createChatWebSocket, sendWSMessage, type WSEvent } from "@/lib/websocket";
-import { resolveApproval } from "@/lib/api";
+import { resolveApproval, getConversationBoard } from "@/lib/api";
 import { Onboarding } from "@/components/onboarding";
 
 interface FileAttachment { filename: string; content: string; mime_type: string; }
@@ -97,6 +97,30 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
       }))
     );
   }, [historyMessages, conversationId, isStreaming, isLoadingHistory, setMessages]);
+
+  // ── Rehydrate the multi-agent board after a reload/reconnect ─────
+  useEffect(() => {
+    if (!conversationId || isStreaming || isLoadingHistory) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { nodes } = await getConversationBoard(conversationId);
+        if (cancelled || !nodes?.length) return;
+        useChatStore.setState((s) => {
+          const msgs = [...s.messages];
+          // Attach to the most recent assistant message — the turn that ran the DAG.
+          for (let i = msgs.length - 1; i >= 0; i--) {
+            if (msgs[i].role === "assistant") {
+              if (!msgs[i].agentNodes?.length) msgs[i] = { ...msgs[i], agentNodes: nodes };
+              break;
+            }
+          }
+          return { messages: msgs };
+        });
+      } catch { /* board is optional context — never block the conversation */ }
+    })();
+    return () => { cancelled = true; };
+  }, [conversationId, isStreaming, isLoadingHistory, historyMessages]);
 
   // ── Scroll ───────────────────────────────────────────────────
   const isHistoryLoad = useRef(false);

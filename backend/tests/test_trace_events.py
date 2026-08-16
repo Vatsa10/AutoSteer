@@ -193,3 +193,34 @@ def test_decompose_and_execute_stream_emits_start_end_and_result():
     assert len(ends) == 2
     assert len(results) == 1
     assert results[0]["response"] == "synthesized final answer"
+
+
+@pytest.mark.asyncio
+async def test_board_snapshot_roundtrip():
+    """save_board_snapshot persists nodes; the board endpoint returns them."""
+    from httpx import ASGITransport, AsyncClient
+    from src.api.main import create_app
+    from src.config import get_settings
+    from src.database import init_db, get_session_factory
+    from src.engine.orchestrator import save_board_snapshot
+    import uuid as _uuid
+
+    await init_db()
+    conv = f"convtest-{_uuid.uuid4().hex[:8]}"
+    nodes = [{"id": "sub_0", "agent": "web_researcher", "department": "", "description": "d",
+              "content": "found it", "status": "ok", "elapsed_ms": 42}]
+    async with get_session_factory()() as s:
+        await save_board_snapshot(s, conv, nodes)
+
+    app = create_app(); app.state.engine = None
+    headers = {"X-API-Key": get_settings().autosteer_api_key or "dev-secret-change-me-in-production"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get(f"/api/conversations/{conv}/board", headers=headers)
+        assert r.status_code == 200
+        got = r.json()["nodes"]
+        assert len(got) == 1 and got[0]["agent"] == "web_researcher" and got[0]["status"] == "ok"
+
+        # A conversation that never ran a DAG returns an empty board, not a 404.
+        r2 = await c.get("/api/conversations/does-not-exist-xyz/board", headers=headers)
+        assert r2.status_code == 200
+        assert r2.json()["nodes"] == []
