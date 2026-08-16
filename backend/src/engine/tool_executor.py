@@ -43,7 +43,10 @@ from src.integrations.notion import notion_export
 from src.integrations.policy import policy_doc_generate
 from src.integrations.posthog import posthog_read
 from src.integrations.rag import semantic_search
-from src.integrations.reach import reach_rss_read, reach_web_read, reach_youtube_transcript
+from src.integrations.reach import (
+    reach_rss_read, reach_web_read, reach_youtube_transcript,
+    reach_github_read, reach_reddit_read, reach_hackernews_read,
+)
 from src.integrations.sandbox import code_sandbox_lite
 from src.integrations.search import web_search
 from src.integrations.sentry import sentry_read
@@ -500,6 +503,18 @@ def register_integration_tools(registry: ToolRegistry) -> ToolRegistry:
     registry.register("reach_rss_read", reach_rss_read, _schema(
         "reach_rss_read", "Read recent items from an RSS/Atom feed.",
         {"feed_url": {"type": "string"}, "max_items": {"type": "integer"}},
+    ))
+    registry.register("reach_github_read", reach_github_read, _schema(
+        "reach_github_read", "Read a public GitHub repo (metadata/readme/issues).",
+        {"target": {"type": "string"}, "action": {"type": "string"}, "max_chars": {"type": "integer"}},
+    ))
+    registry.register("reach_reddit_read", reach_reddit_read, _schema(
+        "reach_reddit_read", "Read a public subreddit or Reddit post (no login).",
+        {"target": {"type": "string"}, "sort": {"type": "string"}, "limit": {"type": "integer"}},
+    ))
+    registry.register("reach_hackernews_read", reach_hackernews_read, _schema(
+        "reach_hackernews_read", "Search Hacker News stories via the public Algolia API.",
+        {"query": {"type": "string"}, "kind": {"type": "string"}, "limit": {"type": "integer"}},
     ))
     registry.register("prompt_playground", _wrap_prompt_playground, _schema(
         "prompt_playground", "Save/list/run prompts.",

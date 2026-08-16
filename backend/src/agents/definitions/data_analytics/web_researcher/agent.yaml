@@ -6,6 +6,9 @@ tools:
   - url_fetch: Fetch and extract text from a single URL
   - arxiv_search: Search academic papers on arXiv
   - semantic_search: Search workspace documents (RAG)
+  - reach_github_read: Read public GitHub repos (metadata/readme/issues)
+  - reach_reddit_read: Read public subreddits or Reddit posts
+  - reach_hackernews_read: Search Hacker News stories
 
 response_schema:
   sections:

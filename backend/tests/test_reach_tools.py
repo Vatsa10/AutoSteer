@@ -60,3 +60,10 @@ async def test_hackernews_parses_hits():
         out = json.loads(await reach.reach_hackernews_read("llm", kind="search", limit=5))
     assert out["count"] == 1
     assert out["items"][0]["title"] == "HN1"
+
+
+def test_reach_tools_registered():
+    from src.engine.tool_executor import get_tool_registry
+    reg = get_tool_registry()
+    for name in ("reach_github_read", "reach_reddit_read", "reach_hackernews_read"):
+        assert reg.is_registered(name), f"{name} not registered"
