@@ -33,7 +33,7 @@ async def _set_cached_route(user_message: str, dept: str, agent: str | None = No
     except Exception:
         pass
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1025,7 +1025,107 @@ User request: {user_message}"""
         ):
             yield event
 
+    async def _persist_turn(
+        self,
+        session: AsyncSession | None,
+        conversation_id: str,
+        workspace_id: str,
+        user_message: str,
+        response: str,
+        agent_role: str | None,
+    ) -> None:
+        """Persist one completed turn (conversation row + user/assistant messages).
+
+        Owned by `_process_impl` so EVERY response path persists — previously this
+        lived on the single-agent branch, so simple replies, workflow runs, LLM
+        fallbacks and multi-agent decompositions were silently never saved.
+        """
+        if session is None or not response:
+            return
+        try:
+            from sqlalchemy import select as sa_select
+            now = datetime.now(timezone.utc)
+
+            conv = (await session.execute(
+                sa_select(Conversation).where(Conversation.id == conversation_id)
+            )).scalar_one_or_none()
+            if conv is None:
+                session.add(Conversation(
+                    id=conversation_id, workspace_id=workspace_id,
+                    title=user_message[:500], status="active",
+                    created_at=now, updated_at=now,
+                ))
+            else:
+                conv.updated_at = now
+
+            session.add(MessageModel(
+                id=str(uuid.uuid4()), workspace_id=workspace_id,
+                conversation_id=conversation_id, from_agent="user",
+                to_agent=agent_role or "unknown", message_type=MessageType.REQUEST,
+                priority=Priority.P2, content=user_message,
+                thread_id=conversation_id, created_at=now,
+            ))
+            session.add(MessageModel(
+                id=str(uuid.uuid4()), workspace_id=workspace_id,
+                conversation_id=conversation_id, from_agent=agent_role or "unknown",
+                to_agent="user", message_type=MessageType.RESPONSE,
+                priority=Priority.P2, content=response,
+                thread_id=conversation_id,
+                # Strictly after the request: identical timestamps made the
+                # `ORDER BY created_at` in the messages API a coin flip.
+                created_at=now + timedelta(milliseconds=1),
+            ))
+            await session.commit()
+        except Exception:
+            pass  # never break the stream for a DB error
+
     async def _process_impl(
+        self,
+        user_message: str,
+        conversation_id: str | None = None,
+        target_agent: str | None = None,
+        session: AsyncSession | None = None,
+        file_ids: list[str] | None = None,
+        preferences: dict | None = None,
+        workspace_id: str = "default",
+    ) -> AsyncGenerator[dict, None]:
+        """Observe the whole stream and persist the turn exactly once, on any path.
+
+        The inner implementation has several early `return`s (simple message,
+        workflow, LLM fallbacks, multi-agent decomposition). Persisting here rather
+        than inside one branch means every path — including any added later — saves
+        its turn.
+        """
+        conversation_id = conversation_id or str(uuid.uuid4())
+        streamed = ""
+        final_text: str | None = None
+        agent_role: str | None = None
+        try:
+            async for ev in self._process_impl_inner(
+                user_message=user_message, conversation_id=conversation_id,
+                target_agent=target_agent, session=session, file_ids=file_ids,
+                preferences=preferences, workspace_id=workspace_id,
+            ):
+                etype = ev.get("type")
+                if etype == "token":
+                    streamed += ev.get("content", "")
+                elif etype == "final":
+                    final_text = ev.get("content")
+                elif etype == "metadata":
+                    agent_role = ev.get("agent") or agent_role
+                yield ev
+        except Exception:
+            # Persist whatever the user already saw, then let the error surface.
+            await self._persist_turn(session, conversation_id, workspace_id,
+                                     user_message, final_text or streamed, agent_role)
+            raise
+        else:
+            await self._persist_turn(session, conversation_id, workspace_id,
+                                     user_message, final_text or streamed, agent_role)
+        # NOTE: deliberately no `finally` — on GeneratorExit (client disconnect) the
+        # loop is tearing down and awaiting a DB write there is unsafe.
+
+    async def _process_impl_inner(
         self,
         user_message: str,
         conversation_id: str | None = None,
@@ -1409,57 +1509,9 @@ User request: {user_message}"""
             yield {"type": "final", "content": display_content}
         full_content = display_content or streamed_content
 
-        # Phase 3: Persist to DB (non-blocking for stream)
+        # Phase 3: persistence is owned by the `_process_impl` wrapper so that every
+        # response path persists, not just this one.
         content = full_content
-        if session is not None:
-            try:
-                from sqlalchemy import select as sa_select
-                now = datetime.now(timezone.utc)
-
-                result = await session.execute(
-                    sa_select(Conversation).where(Conversation.id == conversation_id)
-                )
-                conv = result.scalar_one_or_none()
-                if conv is None:
-                    conv = Conversation(
-                        id=conversation_id,
-                        workspace_id=workspace_id,
-                        title=user_message[:500],
-                        status="active",
-                        created_at=now,
-                        updated_at=now,
-                    )
-                    session.add(conv)
-                else:
-                    conv.updated_at = now
-
-                session.add(MessageModel(
-                    id=str(uuid.uuid4()),
-                    workspace_id=workspace_id,
-                    conversation_id=conversation_id,
-                    from_agent="user",
-                    to_agent=agent_role or "unknown",
-                    message_type=MessageType.REQUEST,
-                    priority=Priority.P2,
-                    content=user_message,
-                    thread_id=conversation_id,
-                    created_at=now,
-                ))
-                session.add(MessageModel(
-                    id=str(uuid.uuid4()),
-                    workspace_id=workspace_id,
-                    conversation_id=conversation_id,
-                    from_agent=agent_role or "unknown",
-                    to_agent="user",
-                    message_type=MessageType.RESPONSE,
-                    priority=Priority.P2,
-                    content=content,
-                    thread_id=conversation_id,
-                    created_at=now,
-                ))
-                await session.commit()
-            except Exception:
-                pass  # Don't break the stream for DB errors
 
         # Phase 4: Final metadata
         yield {
