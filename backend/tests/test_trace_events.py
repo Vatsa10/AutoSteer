@@ -127,3 +127,69 @@ def test_execute_dag_stream_aclose_does_not_raise_runtimeerror():
                 await asyncio.sleep(0)
 
     asyncio.run(run())
+
+
+class _FakeSubAgent:
+    """Fake sub-agent that returns instantly with fixed content."""
+
+    async def process(self, ctx):
+        class _Resp:
+            content = "sub-result"
+        return _Resp()
+
+    def copy_for_request(self):
+        return self
+
+
+class _FakeLLM:
+    """Fake LLM: first call returns the classification JSON, second call
+    (synthesis) returns a fixed final answer."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def complete(self, **kwargs):
+        self.calls += 1
+
+        class _Resp:
+            pass
+
+        r = _Resp()
+        if self.calls == 1:
+            r.content = (
+                '{"multi_step": true, "subtasks": ['
+                '{"agent": "tester", "description": "a", "dependencies": []},'
+                '{"agent": "tester", "description": "b", "dependencies": []}'
+                "]}"
+            )
+        else:
+            r.content = "synthesized final answer"
+            r.model = "gpt-4o-mini"
+            r.usage = {"total_tokens": 10}
+        return r
+
+
+def test_decompose_and_execute_stream_emits_start_end_and_result():
+    """Contract: feeding a multi-step message through _decompose_and_execute_stream
+    yields node_start/node_end pairs per subtask (via _execute_dag_stream), then a
+    terminal decomp_result event carrying the synthesized response."""
+    engine = object.__new__(OrchestrationEngine)
+    engine.agents = {"tester": _FakeSubAgent()}
+    engine.llm = _FakeLLM()
+
+    async def run():
+        events = []
+        async for ev in engine._decompose_and_execute_stream(
+            "first research topic a then research topic b in detail please", False, "c1", None
+        ):
+            events.append(ev)
+        return events
+
+    events = asyncio.run(run())
+    starts = [e for e in events if e["type"] == "node_start"]
+    ends = [e for e in events if e["type"] == "node_end"]
+    results = [e for e in events if e["type"] == "decomp_result"]
+    assert len(starts) == 2
+    assert len(ends) == 2
+    assert len(results) == 1
+    assert results[0]["response"] == "synthesized final answer"
