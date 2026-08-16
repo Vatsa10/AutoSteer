@@ -535,7 +535,21 @@ Available agents: {', '.join(list(self.agents.keys()))}"""
                 "usage": final.usage,
             }
         except Exception:
-            return
+            # Synthesis failed. Do NOT return silently — the caller would then fall
+            # through to normal routing and emit a SECOND, unrelated response after the
+            # board already streamed. Emit a fallback assembled from the sub-agent results.
+            fallback = "\n\n".join(
+                f"**{t.agent}**: {t.result}" for t in subtasks if getattr(t, "result", None)
+            ) or "Multi-agent run completed, but synthesis failed. See the agent outputs above."
+            yield {
+                "type": "decomp_result",
+                "conversation_id": conversation_id,
+                "response": fallback,
+                "routed_to": "multi-agent",
+                "agent": ",".join(t.agent for t in subtasks),
+                "model": "none",
+                "usage": {},
+            }
 
     async def _route_department(self, user_message: str) -> RoutingResult | None:
         """Route to department: regex first, then LLM fallback, then direct answer."""
