@@ -420,7 +420,7 @@ export async function rejectArtifact(id: string): Promise<void> {
   await apiFetch(`/api/artifacts/${id}/reject`, { method: "POST" });
 }
 
-export async function getConversationBoard(conversationId: string): Promise<{ conversation_id: string; nodes: import("@/lib/store").AgentNode[] }> {
+export async function getConversationBoard(conversationId: string): Promise<{ conversation_id: string; nodes: import("@/lib/store").AgentNode[]; assistant_index: number | null }> {
   const res = await apiFetch(`/api/conversations/${conversationId}/board`);
   return res.json();
 }

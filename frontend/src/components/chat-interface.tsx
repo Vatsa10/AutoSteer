@@ -104,16 +104,21 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
     let cancelled = false;
     (async () => {
       try {
-        const { nodes } = await getConversationBoard(conversationId);
+        const { nodes, assistant_index } = await getConversationBoard(conversationId);
         if (cancelled || !nodes?.length) return;
         useChatStore.setState((s) => {
           const msgs = [...s.messages];
-          // Attach to the most recent assistant message — the turn that ran the DAG.
-          for (let i = msgs.length - 1; i >= 0; i--) {
-            if (msgs[i].role === "assistant") {
-              if (!msgs[i].agentNodes?.length) msgs[i] = { ...msgs[i], agentNodes: nodes };
-              break;
-            }
+          // Attach to the bubble that actually ran the DAG. Older snapshots have no
+          // index — fall back to the most recent assistant message.
+          const target =
+            typeof assistant_index === "number" &&
+            assistant_index >= 0 &&
+            assistant_index < msgs.length &&
+            msgs[assistant_index].role === "assistant"
+              ? assistant_index
+              : msgs.map((m) => m.role).lastIndexOf("assistant");
+          if (target >= 0 && !msgs[target].agentNodes?.length) {
+            msgs[target] = { ...msgs[target], agentNodes: nodes };
           }
           return { messages: msgs };
         });

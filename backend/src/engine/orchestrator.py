@@ -90,7 +90,9 @@ def build_node_token(node_id: str, content: str) -> dict:
 BOARD_STATE_PREFIX = "board:"
 
 
-async def save_board_snapshot(session, conversation_id: str, nodes: list[dict], workspace_id: str = "default") -> None:
+async def save_board_snapshot(session, conversation_id: str, nodes: list[dict],
+                              workspace_id: str = "default",
+                              assistant_index: int | None = None) -> None:
     """Persist the agent-board node states so the board survives a reload/reconnect.
 
     Best-effort: a snapshot failure must never break a run. Uses a SAVEPOINT so a
@@ -109,7 +111,9 @@ async def save_board_snapshot(session, conversation_id: str, nodes: list[dict], 
             row = (await session.execute(
                 _sel(SharedState).where(SharedState.workspace_id == workspace_id, SharedState.key == key)
             )).scalar_one_or_none()
-            value = {"nodes": nodes}
+            # assistant_index pins the board to the turn that produced it, so a later
+            # turn in the same conversation doesn't inherit its panels on reload.
+            value = {"nodes": nodes, "assistant_index": assistant_index}
             if row:
                 row.value = value
                 flag_modified(row, "value")
@@ -354,9 +358,24 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
         results: dict[str, str] = {}
         # Board snapshot state — persisted on each transition so a reload can rehydrate.
         board: dict[str, dict] = {}
+        # Index of the assistant message this turn will produce. Messages for this turn
+        # are appended after the existing ones (request at +0, response at +1), so the
+        # board can be pinned to the right bubble instead of the newest one.
+        board_assistant_index: int | None = None
+        if session is not None and conversation_id:
+            try:
+                from sqlalchemy import func as _func, select as _sel_m
+                prior = (await session.execute(
+                    _sel_m(_func.count()).select_from(MessageModel)
+                    .where(MessageModel.conversation_id == conversation_id)
+                )).scalar() or 0
+                board_assistant_index = int(prior) + 1
+            except Exception:
+                board_assistant_index = None
 
         async def _snapshot() -> None:
-            await save_board_snapshot(session, conversation_id, list(board.values()))
+            await save_board_snapshot(session, conversation_id, list(board.values()),
+                                      assistant_index=board_assistant_index)
 
         for level in levels:
             # Shared queue so parallel siblings interleave their live tokens on the wire.

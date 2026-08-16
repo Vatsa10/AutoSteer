@@ -224,3 +224,28 @@ async def test_board_snapshot_roundtrip():
         r2 = await c.get("/api/conversations/does-not-exist-xyz/board", headers=headers)
         assert r2.status_code == 200
         assert r2.json()["nodes"] == []
+
+
+@pytest.mark.asyncio
+async def test_board_snapshot_pins_to_its_own_turn():
+    """A later turn must not inherit an earlier turn's agent panels on reload."""
+    from httpx import ASGITransport, AsyncClient
+    from src.api.main import create_app
+    from src.config import get_settings
+    from src.database import init_db, get_session_factory
+    from src.engine.orchestrator import save_board_snapshot
+    import uuid as _uuid
+
+    await init_db()
+    conv = f"pin-{_uuid.uuid4().hex[:8]}"
+    nodes = [{"id": "sub_0", "agent": "web_researcher", "status": "ok"}]
+    async with get_session_factory()() as s:
+        # Board produced by the 2nd turn → its reply sits at message index 3.
+        await save_board_snapshot(s, conv, nodes, assistant_index=3)
+
+    app = create_app(); app.state.engine = None
+    headers = {"X-API-Key": get_settings().autosteer_api_key or "dev-secret-change-me-in-production"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        body = (await c.get(f"/api/conversations/{conv}/board", headers=headers)).json()
+    assert body["assistant_index"] == 3, "board must remember which bubble it belongs to"
+    assert len(body["nodes"]) == 1

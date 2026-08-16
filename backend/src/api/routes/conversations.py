@@ -141,5 +141,10 @@ async def get_agent_board(
             SharedState.key == f"{BOARD_STATE_PREFIX}{conversation_id}",
         )
     )).scalar_one_or_none()
-    nodes = (row.value or {}).get("nodes", []) if row else []
-    return {"conversation_id": conversation_id, "nodes": nodes}
+    value = (row.value or {}) if row else {}
+    return {
+        "conversation_id": conversation_id,
+        "nodes": value.get("nodes", []),
+        # Which assistant bubble these panels belong to (None = attach to the last one).
+        "assistant_index": value.get("assistant_index"),
+    }
