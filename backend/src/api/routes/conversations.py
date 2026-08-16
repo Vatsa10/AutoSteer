@@ -77,7 +77,9 @@ async def get_conversation_messages(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .where(Message.workspace_id == workspace_id)
-        .order_by(Message.created_at.asc())
+        # Secondary sort: REQUEST sorts before RESPONSE, so even if two rows share a
+        # timestamp the turn never renders inverted.
+        .order_by(Message.created_at.asc(), Message.message_type.asc(), Message.id.asc())
     )
     messages = result.scalars().all()
     return [

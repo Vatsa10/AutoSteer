@@ -96,3 +96,39 @@ async def test_final_event_content_is_persisted_over_raw_tokens():
         )).scalars().all()
     assert len(msgs) == 1
     assert msgs[0].content == "clean answer"
+
+
+@pytest.mark.asyncio
+async def test_tied_timestamps_still_render_request_before_response():
+    """Legacy rows were written with identical created_at; the API must still order them."""
+    from datetime import datetime, timezone
+    from httpx import ASGITransport, AsyncClient
+    from src.api.main import create_app
+    from src.config import get_settings
+    from src.messaging.schemas import Priority
+
+    await init_db()
+    conv_id = f"tie-{uuid.uuid4().hex[:10]}"
+    same = datetime.now(timezone.utc)
+    async with get_session_factory()() as s:
+        s.add(Conversation(id=conv_id, workspace_id="default", title="t", status="active",
+                           created_at=same, updated_at=same))
+        await s.flush()
+        # Insert RESPONSE first so insertion order can't be what saves us.
+        s.add(Message(id=str(uuid.uuid4()), workspace_id="default", conversation_id=conv_id,
+                      from_agent="a", to_agent="user", message_type=MessageType.RESPONSE,
+                      priority=Priority.P2, content="the answer",
+                      thread_id=conv_id, created_at=same))
+        s.add(Message(id=str(uuid.uuid4()), workspace_id="default", conversation_id=conv_id,
+                      from_agent="user", to_agent="a", message_type=MessageType.REQUEST,
+                      priority=Priority.P2, content="the question",
+                      thread_id=conv_id, created_at=same))
+        await s.commit()
+
+    app = create_app(); app.state.engine = None
+    headers = {"X-API-Key": get_settings().autosteer_api_key or "dev-secret-change-me-in-production"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        r = await c.get(f"/api/conversations/{conv_id}/messages", headers=headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert [m["content"] for m in body] == ["the question", "the answer"]
