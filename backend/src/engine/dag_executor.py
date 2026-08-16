@@ -12,6 +12,7 @@ import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any
 
 from src.engine.retry import RetryConfig, retry
@@ -31,6 +32,34 @@ class Subtask:
     config: dict[str, Any] = field(default_factory=dict)
 
 
+class NodeStatus(str, Enum):
+    """Closed status enum for a DAG node (borrowed from dsh-workflow).
+
+    A node always ends in exactly one of these — callers branch on data, not on
+    try/except around an untyped gather.
+    """
+
+    DONE = "done"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class NodeEnvelope:
+    """Typed per-node outcome. Never raises — the failure lives in the envelope."""
+
+    node_id: str
+    status: NodeStatus
+    value: str | None = None
+    error: str | None = None
+    elapsed_ms: int = 0
+
+    @property
+    def ok(self) -> bool:
+        return self.status is NodeStatus.DONE
+
+
 @dataclass
 class DAGResult:
     run_id: str
@@ -38,6 +67,7 @@ class DAGResult:
     results: dict[str, str]  # subtask_id → output
     errors: dict[str, str]   # subtask_id → error message
     synthesis: str | None = None
+    nodes: dict[str, NodeEnvelope] = field(default_factory=dict)  # subtask_id → typed outcome
 
 
 def topological_levels(subtasks: list[Subtask]) -> list[list[Subtask]]:
@@ -74,6 +104,7 @@ async def execute_persisted_dag(
     retry_config: RetryConfig | None = None,
     llm_synthesize: Any | None = None,
     max_parallel: int = 3,
+    max_total_nodes: int = 200,
 ) -> DAGResult:
     """Execute a DAG of subtasks with full persistence.
 
@@ -89,9 +120,13 @@ async def execute_persisted_dag(
     levels = topological_levels(subtasks)
     results: dict[str, str] = {}
     errors: dict[str, str] = {}
+    nodes: dict[str, NodeEnvelope] = {}
+    # Per-RUN concurrency cap (was per-level, so it never bounded across the run)
+    # plus a runaway backstop — engine caps, invisible to the workflow author.
+    sem = asyncio.Semaphore(max_parallel)
+    nodes_started = 0
 
     for level_idx, level in enumerate(levels):
-        sem = asyncio.Semaphore(max_parallel)
 
         async def run_subtask(s: Subtask) -> tuple[str, str | None, str | None]:
             async with sem:
@@ -134,14 +169,33 @@ async def execute_persisted_dag(
                     )
                     return s.id, None, err_msg
 
-        level_tasks = [run_subtask(s) for s in level]
-        level_results = await asyncio.gather(*level_tasks)
+        # Backstop: never run away past max_total_nodes; remaining nodes are SKIPPED.
+        runnable: list[Subtask] = []
+        for s in level:
+            if nodes_started >= max_total_nodes:
+                nodes[s.id] = NodeEnvelope(s.id, NodeStatus.SKIPPED,
+                                           error=f"node cap {max_total_nodes} reached")
+                errors[s.id] = nodes[s.id].error or "skipped"
+                continue
+            nodes_started += 1
+            runnable.append(s)
 
-        for sid, result_text, err in level_results:
+        level_tasks = [run_subtask(s) for s in runnable]
+        level_results = await asyncio.gather(*level_tasks, return_exceptions=True)
+
+        for s, item in zip(runnable, level_results):
+            if isinstance(item, BaseException):
+                # Infra fault — record it as a typed envelope instead of vanishing.
+                errors[s.id] = str(item)
+                nodes[s.id] = NodeEnvelope(s.id, NodeStatus.FAILED, error=str(item))
+                continue
+            sid, result_text, err = item
             if result_text is not None:
                 results[sid] = result_text
+                nodes[sid] = NodeEnvelope(sid, NodeStatus.DONE, value=result_text)
             if err is not None:
                 errors[sid] = err
+                nodes[sid] = NodeEnvelope(sid, NodeStatus.FAILED, error=err)
 
     # Synthesis (if LLM is available and we have results)
     synthesis = None
@@ -174,4 +228,5 @@ async def execute_persisted_dag(
         results=results,
         errors=errors,
         synthesis=synthesis,
+        nodes=nodes,
     )
