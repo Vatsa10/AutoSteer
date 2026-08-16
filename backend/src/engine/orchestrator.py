@@ -72,6 +72,16 @@ def should_emit_final(streamed: str, display: str) -> bool:
     return bool(display) and display.strip() != (streamed or "").strip()
 
 
+def build_node_start(node_id: str, agent: str, department: str, description: str) -> dict:
+    """Trace event: a DAG sub-agent panel has started."""
+    return {"type": "node_start", "id": node_id, "agent": agent, "department": department, "description": description}
+
+
+def build_node_end(node_id: str, agent: str, content: str, status: str, elapsed_ms: int) -> dict:
+    """Trace event: a DAG sub-agent panel finished (block-fill)."""
+    return {"type": "node_end", "id": node_id, "agent": agent, "content": (content or "")[:4000], "status": status, "elapsed_ms": elapsed_ms}
+
+
 @dataclass
 class Subtask:
     id: str
@@ -286,6 +296,60 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                     print(f"[dag] subtask {level[0] if len(level)==1 else 'parallel'} failed: {item}")
 
         return results
+
+    async def _execute_dag_stream(self, subtasks: list[Subtask], context: str, conversation_id: str, session):
+        """Streaming DAG: yields node_start/node_end per subtask, then a __results__ envelope."""
+        import time
+        task_map = {t.id: t for t in subtasks}
+        levels = self._topological_levels(subtasks)
+        results: dict[str, str] = {}
+
+        for level in levels:
+            async def run_one(tid: str):
+                t = task_map[tid]
+                dep_context = "\n".join(f"[Subtask {d} result]: {results.get(d, '')}" for d in t.dependencies)
+                full_ctx = f"{context}\n\n{dep_context}\n\nTask: {t.description}"
+                template = self.agents.get(t.agent)
+                _t0 = time.monotonic()
+                content, status = "", "ok"
+                if not template:
+                    return tid, f"Agent {t.agent} not available", "error", 0
+                agent = template.copy_for_request()
+                try:
+                    r = await agent.process(full_ctx)
+                    content = getattr(r, "content", str(r))
+                except Exception as exc:
+                    content, status = f"Error: {exc}", "error"
+                return tid, content, status, int((time.monotonic() - _t0) * 1000)
+
+            # Emit starts for the whole level, then complete as each finishes.
+            for tid in level:
+                t = task_map[tid]
+                yield build_node_start(tid, t.agent, getattr(t, "department", "") or "", t.description)
+
+            started = {tid: asyncio.ensure_future(run_one(tid)) for tid in level}
+            pending = set(started.values())
+            fut_to_tid = {f: tid for tid, f in started.items()}
+            try:
+                while pending:
+                    done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                    for f in done:
+                        tid = fut_to_tid[f]
+                        try:
+                            rtid, content, status, elapsed = f.result()
+                        except Exception as exc:
+                            rtid, content, status, elapsed = tid, f"Error: {exc}", "error", 0
+                        results[rtid] = content
+                        task_map[rtid].result = content
+                        yield build_node_end(rtid, task_map[rtid].agent, content, status, elapsed)
+            finally:
+                # Settlement: any node that started but has no result yields a terminal error end.
+                for tid in level:
+                    if tid not in results:
+                        results[tid] = "cancelled"
+                        yield build_node_end(tid, task_map[tid].agent, "cancelled", "error", 0)
+
+        yield {"type": "__results__", "results": results}
 
     async def _decompose_and_execute(
         self, user_message: str, has_context: bool,

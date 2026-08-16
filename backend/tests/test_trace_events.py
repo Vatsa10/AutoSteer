@@ -66,3 +66,14 @@ def test_should_emit_final_false_when_same():
 
 def test_should_emit_final_false_when_display_empty():
     assert should_emit_final("streamed", "") is False
+
+
+from src.engine.orchestrator import build_node_start, build_node_end
+
+
+def test_build_node_start_end_shape():
+    s = build_node_start("sub_0", "web_researcher", "data_analytics", "find sources")
+    assert s["type"] == "node_start" and s["id"] == "sub_0" and s["agent"] == "web_researcher"
+    e = build_node_end("sub_0", "web_researcher", "x" * 5000, "ok", 1200)
+    assert e["type"] == "node_end" and e["status"] == "ok" and e["elapsed_ms"] == 1200
+    assert len(e["content"]) <= 4000
