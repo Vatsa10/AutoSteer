@@ -82,6 +82,20 @@ def build_node_end(node_id: str, agent: str, content: str, status: str, elapsed_
     return {"type": "node_end", "id": node_id, "agent": agent, "content": (content or "")[:4000], "status": status, "elapsed_ms": elapsed_ms}
 
 
+def build_node_token(node_id: str, content: str) -> dict:
+    """Trace event: a live token chunk for one sub-agent's panel."""
+    return {"type": "node_token", "id": node_id, "content": content}
+
+
+def build_node_replace(node_id: str, content: str) -> dict:
+    """Trace event: replace a panel's streamed text with the clean synthesized text.
+
+    Mirrors the top-level `final` event — after a sub-agent runs tools, the raw streamed
+    tokens contain TOOL_CALL markers; display_content is the cleaned result.
+    """
+    return {"type": "node_replace", "id": node_id, "content": (content or "")[:4000]}
+
+
 @dataclass
 class Subtask:
     id: str
@@ -305,6 +319,9 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
         results: dict[str, str] = {}
 
         for level in levels:
+            # Shared queue so parallel siblings interleave their live tokens on the wire.
+            token_q: asyncio.Queue = asyncio.Queue()
+
             async def run_one(tid: str):
                 t = task_map[tid]
                 dep_context = "\n".join(f"[Subtask {d} result]: {results.get(d, '')}" for d in t.dependencies)
@@ -316,8 +333,19 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                     return tid, f"Agent {t.agent} not available", "error", 0
                 agent = template.copy_for_request()
                 try:
-                    r = await agent.process(full_ctx)
-                    content = getattr(r, "content", str(r))
+                    # Stream the sub-agent so its panel fills live, token by token.
+                    async for ev in agent.process_stream(full_ctx):
+                        etype = ev.get("type")
+                        if etype == "token":
+                            chunk = ev.get("content", "")
+                            content += chunk
+                            await token_q.put(build_node_token(tid, chunk))
+                        elif etype == "metadata":
+                            # display_content is the post-tool-synthesis text (markers stripped)
+                            disp = ev.get("display_content") or ""
+                            if disp and disp.strip() != content.strip():
+                                content = disp
+                                await token_q.put(build_node_replace(tid, disp))
                 except Exception as exc:
                     content, status = f"Error: {exc}", "error"
                 return tid, content, status, int((time.monotonic() - _t0) * 1000)
@@ -332,8 +360,16 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
             fut_to_tid = {f: tid for tid, f in started.items()}
             try:
                 while pending:
-                    done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-                    for f in done:
+                    # Wait for either a live token or a finished sub-agent, whichever comes first.
+                    q_get = asyncio.ensure_future(token_q.get())
+                    done, _ = await asyncio.wait({q_get, *pending}, return_when=asyncio.FIRST_COMPLETED)
+                    if q_get in done:
+                        yield q_get.result()
+                    else:
+                        q_get.cancel()
+                    finished = [f for f in pending if f in done]
+                    for f in finished:
+                        pending.discard(f)
                         tid = fut_to_tid[f]
                         try:
                             rtid, content, status, elapsed = f.result()
@@ -342,6 +378,9 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                         results[rtid] = content
                         task_map[rtid].result = content
                         yield build_node_end(rtid, task_map[rtid].agent, content, status, elapsed)
+                # Drain any tokens that landed after the last sub-agent finished.
+                while not token_q.empty():
+                    yield token_q.get_nowait()
             except Exception:
                 # A genuine error (NOT teardown/cancel — GeneratorExit/CancelledError are
                 # BaseException and won't be caught here): settle unfinished panels, then re-raise.
@@ -1220,7 +1259,9 @@ User request: {user_message}"""
                                "also ", "research and", "compare and", "analyze and",
                                "1.", "2.", "3.", "- ", "* ", "•"]
         looks_multi_step = any(m in user_message.lower() for m in _multi_step_markers)
-        if looks_multi_step or len(user_message.split()) > 50:
+        # Respect an explicit agent pick — the UI promises "routing bypassed", so never
+        # fan out to a multi-agent DAG when the user selected a specific agent.
+        if not target_agent and (looks_multi_step or len(user_message.split()) > 50):
             decomp_final = None
             async for ev in self._decompose_and_execute_stream(
                 effective_message, bool(file_context_parts), conversation_id, session

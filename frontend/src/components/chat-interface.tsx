@@ -47,6 +47,8 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
   const addArtifactRef = useChatStore((s) => s.addArtifactRef);
   const startAgentNode = useChatStore((s) => s.startAgentNode);
   const endAgentNode = useChatStore((s) => s.endAgentNode);
+  const appendAgentNodeContent = useChatStore((s) => s.appendAgentNodeContent);
+  const replaceAgentNodeContent = useChatStore((s) => s.replaceAgentNodeContent);
   const settleAgentNodes = useChatStore((s) => s.settleAgentNodes);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const setIsStreaming = useChatStore((s) => s.setIsStreaming);
@@ -192,6 +194,12 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
             case "node_start":
               startAgentNode({ id: event.id, agent: event.agent, department: event.department, description: event.description, status: "running" });
               break;
+            case "node_token":
+              appendAgentNodeContent(event.id, event.content);
+              break;
+            case "node_replace":
+              replaceAgentNodeContent(event.id, event.content);
+              break;
             case "node_end":
               endAgentNode(event.id, event.content, event.status, event.elapsed_ms);
               break;
@@ -208,7 +216,10 @@ export function ChatInterface({ initialConversationId }: ChatInterfaceProps) {
               addToast(event.message, "error");
               setIsStreaming(false);
               setRoutingStage("");
-              dropLastIfEmptyAssistant(); // remove the blank placeholder bubble
+              // Settle any running panels, then drop the placeholder ONLY if it carries
+              // no agent board — otherwise an error would erase the whole multi-agent run.
+              settleAgentNodes();
+              dropLastIfEmptyAssistant();
               break;
             case "approval":
               setIsStreaming(false);

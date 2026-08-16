@@ -21,10 +21,14 @@ export function AgentBoard({ nodes }: { nodes?: AgentNode[] }) {
             )}
           </div>
           <div className="px-3 py-2 text-xs text-slate-600 max-h-48 overflow-auto">
-            {n.status === "running" ? (
+            {/* Live: show streamed tokens as they arrive; fall back to the task
+                description until the first token lands. */}
+            {n.status === "running" && !n.content ? (
               <span className="text-slate-400 italic">{n.description || "working…"}</span>
             ) : (
-              <div className="prose prose-sm max-w-none"><ReactMarkdown>{n.content || ""}</ReactMarkdown></div>
+              <div className="prose prose-sm max-w-none">
+                <ReactMarkdown>{n.content || ""}</ReactMarkdown>
+              </div>
             )}
           </div>
         </div>

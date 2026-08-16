@@ -86,6 +86,8 @@ interface ChatStore {
   addArtifactRef: (a: ArtifactRef) => void;
   startAgentNode: (n: AgentNode) => void;
   endAgentNode: (id: string, content: string, status: "ok" | "error", elapsed_ms: number) => void;
+  appendAgentNodeContent: (id: string, chunk: string) => void;
+  replaceAgentNodeContent: (id: string, content: string) => void;
   settleAgentNodes: () => void;
 }
 
@@ -148,7 +150,10 @@ export const useChatStore = create<ChatStore>((set) => ({
   dropLastIfEmptyAssistant: () =>
     set((s) => {
       const last = s.messages[s.messages.length - 1];
-      if (last && last.role === "assistant" && last.content === "") {
+      // Keep the bubble if it carries an agent board — dropping it would erase a
+      // completed multi-agent run just because synthesis never produced text.
+      const hasBoard = !!last?.agentNodes?.length;
+      if (last && last.role === "assistant" && last.content === "" && !hasBoard) {
         return { messages: s.messages.slice(0, -1) };
       }
       return {};
@@ -208,6 +213,28 @@ export const useChatStore = create<ChatStore>((set) => ({
       if (last && last.role === "assistant") {
         const nodes = (last.agentNodes || []).map((n) =>
           n.id === id ? { ...n, content, status, elapsed_ms } : n);
+        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
+      }
+      return { messages: msgs };
+    }),
+  appendAgentNodeContent: (id, chunk) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        const nodes = (last.agentNodes || []).map((n) =>
+          n.id === id ? { ...n, content: (n.content || "") + chunk } : n);
+        msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
+      }
+      return { messages: msgs };
+    }),
+  replaceAgentNodeContent: (id, content) =>
+    set((s) => {
+      const msgs = [...s.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === "assistant") {
+        const nodes = (last.agentNodes || []).map((n) =>
+          n.id === id ? { ...n, content } : n);
         msgs[msgs.length - 1] = { ...last, agentNodes: nodes };
       }
       return { messages: msgs };

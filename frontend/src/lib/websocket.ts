@@ -14,6 +14,8 @@ export type WSEvent =
   | { type: "final"; content: string }
   | { type: "node_start"; id: string; agent: string; department: string; description: string }
   | { type: "node_end"; id: string; agent: string; content: string; status: "ok" | "error"; elapsed_ms: number }
+  | { type: "node_token"; id: string; content: string }
+  | { type: "node_replace"; id: string; content: string }
   | { type: "done" };
 
 interface WSCallbacks {
