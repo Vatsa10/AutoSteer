@@ -77,3 +77,53 @@ def test_build_node_start_end_shape():
     e = build_node_end("sub_0", "web_researcher", "x" * 5000, "ok", 1200)
     assert e["type"] == "node_end" and e["status"] == "ok" and e["elapsed_ms"] == 1200
     assert len(e["content"]) <= 4000
+
+
+import asyncio
+import pytest
+
+from src.engine.orchestrator import OrchestrationEngine, Subtask
+
+
+class _SlowAgent:
+    """Fake sub-agent whose .process() never returns on its own."""
+
+    async def process(self, ctx):
+        await asyncio.sleep(3600)
+        return None  # unreachable
+
+    def copy_for_request(self):
+        return self
+
+
+def test_execute_dag_stream_aclose_does_not_raise_runtimeerror():
+    """
+    Regression test for the illegal-yield-in-finally bug: closing the
+    _execute_dag_stream async generator mid-flight (as happens on client
+    disconnect or task cancellation) must not raise
+    `RuntimeError: async generator ignored GeneratorExit`, and must not
+    leave the sub-agent task still pending afterwards.
+    """
+    engine = object.__new__(OrchestrationEngine)
+    engine.agents = {"tester": _SlowAgent()}
+
+    subtasks = [Subtask(id="t0", agent="tester", description="do something", dependencies=[])]
+
+    async def run():
+        gen = engine._execute_dag_stream(subtasks, context="", conversation_id="c1", session=None)
+        first = await gen.__anext__()
+        assert first["type"] == "node_start"
+
+        # Grab the pending sub-agent task before closing so we can confirm cleanup.
+        pending_tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+
+        # Closing early triggers GeneratorExit at the `yield` inside the while-loop.
+        await gen.aclose()
+
+        # Give cancellation a chance to propagate.
+        await asyncio.sleep(0)
+        for t in pending_tasks:
+            if not t.done():
+                await asyncio.sleep(0)
+
+    asyncio.run(run())

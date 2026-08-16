@@ -342,12 +342,19 @@ Respond with a single JSON object: {{"action":"...","doc_type":"...","needs_rese
                         results[rtid] = content
                         task_map[rtid].result = content
                         yield build_node_end(rtid, task_map[rtid].agent, content, status, elapsed)
-            finally:
-                # Settlement: any node that started but has no result yields a terminal error end.
+            except Exception:
+                # A genuine error (NOT teardown/cancel — GeneratorExit/CancelledError are
+                # BaseException and won't be caught here): settle unfinished panels, then re-raise.
                 for tid in level:
                     if tid not in results:
-                        results[tid] = "cancelled"
-                        yield build_node_end(tid, task_map[tid].agent, "cancelled", "error", 0)
+                        results[tid] = "error"
+                        yield build_node_end(tid, task_map[tid].agent, "error", "error", 0)
+                raise
+            finally:
+                # Safe cleanup only — NEVER yield here (illegal during GeneratorExit).
+                # Cancel any still-pending sub-agent tasks so they don't leak after teardown.
+                for f in pending:
+                    f.cancel()
 
         yield {"type": "__results__", "results": results}
 
